@@ -16,9 +16,9 @@ build
 !README.md
 
 # Test files
-__tests__
-*.test.*
-*.spec.*
+**/__tests__
+**/*.test.*
+**/*.spec.*
 
 # Environment files
 .env*

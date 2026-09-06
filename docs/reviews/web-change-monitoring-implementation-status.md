@@ -2,6 +2,8 @@
 
 2026-09-06：本轮修复已完成，覆盖此前审查的 R01–R24、U01–U14、DEV-01。完整映射、验证和发布顺序见 [修复与验收](./web-change-monitoring-fix-validation-2026-09-06.md)。没有 commit、push、部署或重放生产历史告警。
 
+**后续交付状态：** 上述为本地验收时的记录。后端已提交并推送至 dev，PR #99 待合入 main；Dashboard 已直接推送 main。后端 Docker amd64 与 Vercel 暴露出测试直接依赖遗漏，发布构建验收未通过，详见 [CI 错误审查](./pr-99-ci-errors-2026-09-06.md)。本地 E2E 结果保留，不能替代干净安装与镜像验收。
+
 ## 实现
 
 - owner 隔离、SQLite/PG 事务和迁移兼容、job/check 原子关联、持久化 lease/重试、串行检查、普通任务配额排除。

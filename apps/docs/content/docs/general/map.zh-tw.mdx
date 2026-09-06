@@ -1,0 +1,361 @@
+---
+title: Map（網站地圖）
+description: 透過網站地圖、搜尋引擎和頁面連結分析，擷取網站的所有 URL。
+icon: Map
+---
+
+## 簡介
+
+AnyCrawl Map API 透過組合多種探索來源來擷取網站 URL：網站地圖解析、搜尋引擎結果和 HTML 連結擷取。這為網站映射、內容索引和爬取規劃提供了全面的 URL 探索能力。
+
+**核心特點**：API **即時同步回傳資料**——無需輪詢或 Webhook。它結合三種 URL 來源以實現最大涵蓋率。
+
+### 核心功能
+
+- **多來源探索**：結合網站地圖解析、搜尋引擎結果和頁面連結擷取
+- **網站地圖支援**：解析 robots.txt 和 sitemap.xml（包括網站地圖索引和 gzip 壓縮）
+- **搜尋引擎整合**：自動使用搜尋引擎的 `site:` 運算子探索 URL
+- **連結擷取**：從目標頁面擷取所有 `<a href>` 連結
+- **網域篩選**：按精確網域篩選或包含子網域
+- **即時回應**：**同步 API**——無需輪詢即可立即取得結果
+
+## API 端點
+
+```
+POST https://api.anycrawl.dev/v1/map
+```
+
+## 使用範例
+
+### cURL
+
+#### 基礎 URL 映射
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data); // Array of URLs with metadata
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### 包含子網域
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "include_subdomains": true,
+    "limit": 1000
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        include_subdomains: true,
+        limit: 1000,
+    }),
+});
+const result = await response.json();
+// Includes URLs from blog.example.com, docs.example.com, etc.
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'include_subdomains': True,
+        'limit': 1000
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### 跳過網站地圖解析
+
+當只需要頁面連結和搜尋結果時，可取得更快的回應：
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "ignore_sitemap": true
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        ignore_sitemap: true,
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'ignore_sitemap': True
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## 請求參數
+
+| 參數 | 類型 | 必填 | 預設值 | 描述 |
+| --------- | ---- | -------- | ------- | ----------- |
+| `url` | string | 是 | - | 要映射的目標 URL，必須是有效的 HTTP/HTTPS 位址 |
+| `limit` | number | 否 | `5000` | 回傳的最大 URL 數量（1-50000） |
+| `include_subdomains` | boolean | 否 | `false` | 包含子網域的 URL（例如 blog.example.com） |
+| `ignore_sitemap` | boolean | 否 | `false` | 跳過網站地圖解析，僅使用搜尋引擎和頁面連結 |
+| `max_age` | number | 否 | - | 快取最大有效期（毫秒）。使用 `0` 跳過快取讀取；省略則使用伺服器預設值 |
+| `use_index` | boolean | 否 | `true` | 是否使用頁面快取索引（`page_cache`）作為額外的 URL 來源 |
+
+### 快取行為
+
+- `max_age` 控制 Map 快取的讀取。`0` 強制重新整理。
+- `use_index=false` 停用頁面快取索引來源（需要頁面快取已啟用才有效果）。
+- `/v1/map` 的回應中不回傳 `fromCache`（快取使用為內部行為）。
+
+### URL 探索來源
+
+Map API 結合三種來源探索 URL：
+
+#### 1. 網站地圖解析
+
+- 解析 `robots.txt` 以尋找網站地圖位置
+- 嘗試常見網站地圖路徑：`/sitemap.xml`、`/sitemap.xml.gz`
+- 支援網站地圖索引（包含其他網站地圖的網站地圖）
+- 支援 gzip 壓縮的網站地圖
+
+#### 2. 搜尋引擎結果
+
+- 自動使用 `site:domain.com` 運算子探索已索引的頁面
+- 為探索到的 URL 提供標題和描述中繼資料
+
+#### 3. 頁面連結擷取
+
+- 從目標頁面 HTML 中擷取所有 `<a href>` 連結
+- 將連結文字擷取為標題中繼資料
+- 將 `title` 屬性和 `aria-label` 擷取為描述
+
+### 中繼資料來源
+
+| 來源 | 標題 | 描述 |
+| ------ | ----- | ----------- |
+| Sitemap | - | - |
+| 搜尋引擎 | 搜尋結果標題 | 搜尋結果摘要 |
+| 頁面連結 | 連結文字或 title 屬性 | aria-label 屬性 |
+
+## 回應格式
+
+### 成功回應（HTTP 200）
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "url": "https://example.com/page1",
+            "title": "Page Title",
+            "description": "Page description from search results"
+        },
+        {
+            "url": "https://example.com/page2",
+            "title": "Another Page"
+        },
+        {
+            "url": "https://example.com/page3"
+        }
+    ]
+}
+```
+
+### 錯誤回應
+
+#### 400 - 驗證錯誤
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid url",
+    "details": {
+        "issues": [
+            {
+                "field": "url",
+                "message": "Invalid url",
+                "code": "invalid_string"
+            }
+        ]
+    }
+}
+```
+
+#### 402 - 點數不足
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits",
+    "message": "Estimated credits required (1) exceeds available credits (0).",
+    "details": {
+        "estimated_total": 1,
+        "available_credits": 0
+    }
+}
+```
+
+#### 500 - 內部伺服器錯誤
+
+```json
+{
+    "success": false,
+    "error": "Internal server error",
+    "message": "Error message details"
+}
+```
+
+## 最佳實踐
+
+### 使用場景
+
+1. **爬取規劃**：在開始完整爬取之前，使用 Map 探索所有 URL
+2. **內容索引**：建構網站頁面的完整索引
+3. **網站稽核**：尋找所有頁面以進行 SEO 或無障礙稽核
+4. **連結分析**：分析內部連結結構
+
+### 效能技巧
+
+- 當不需要網站地圖時，使用 `ignore_sitemap: true` 取得更快的結果
+- 設定合適的 `limit` 以避免處理不必要的 URL
+- 除非需要跨子網域探索，否則使用 `include_subdomains: false`（預設值）
+
+### 結合 Crawl 使用
+
+Map 非常適合規劃爬取操作：
+
+```javascript
+// Step 1: Discover URLs with Map
+const mapResponse = await fetch("/v1/map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        limit: 100,
+    }),
+});
+const { data: urls } = await mapResponse.json();
+
+// Step 2: Use discovered URLs to plan crawl
+const crawlResponse = await fetch("/v1/crawl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        include_paths: urls.map((u) => new URL(u.url).pathname),
+        limit: 100,
+    }),
+});
+```
+
+## 點數
+
+| 操作 | 點數 |
+| --------- | ------- |
+| Map 操作 | 1 |
+
+**總計**：每次請求 1 點數。
+
+## 常見問題
+
+### 問：Map 和 Crawl 有什麼區別？
+
+答：**Map** 探索 URL 但不擷取頁面內容——快速且輕量。**Crawl** 擷取並處理每個頁面的實際內容。使用 Map 進行 URL 探索和規劃，使用 Crawl 進行內容擷取。
+
+### 問：為什麼結果中缺少某些 URL？
+
+答：可能的原因：
+- URL 位於不同的網域/子網域上（使用 `include_subdomains: true`）
+- 網站沒有網站地圖
+- URL 由 JavaScript 動態產生
+- URL 超過了 `limit` 參數
+
+### 問：搜尋引擎探索是如何運作的？
+
+答：Map API 自動使用 `site:domain.com` 查詢搜尋引擎以探索已索引的頁面。這有助於找到可能不在網站地圖中或未從首頁連結的 URL。
+
+### 問：Map 會追蹤重新導向嗎？
+
+答：Map 按網站地圖和頁面連結中的原樣擷取 URL。它不會追蹤重新導向來探索額外的 URL。
+
+### 問：有速率限制嗎？
+
+答：沒有，API **原生支援高併發**。你可以同時發起多個請求，無需擔心速率限制。

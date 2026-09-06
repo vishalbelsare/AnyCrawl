@@ -9,6 +9,11 @@
             "apiKey": "OPENROUTER_API_KEY",
             "baseURL": "https://openrouter.ai/api/v1"
         },
+        "atlascloud": {
+            "enabled": false,
+            "apiKey": "ATLASCLOUD_API_KEY",
+            "baseURL": "https://api.atlascloud.ai/v1"
+        },
         "custom": {
             "enabled": false,
             "apiKey": "CUSTOM_API_KEY",
@@ -33,6 +38,13 @@
         "gemini-2.5-flash": {
             "displayName": "Gemini 2.5 Flash",
             "providers": [{ "provider": "openrouter", "modelId": "google/gemini-2.5-flash" }]
+        },
+        "deepseek-v3": {
+            "displayName": "DeepSeek V3",
+            "providers": [
+                { "provider": "atlascloud", "modelId": "deepseek-v3" },
+                { "provider": "openrouter", "modelId": "deepseek/deepseek-v3" }
+            ]
         }
     },
     "defaults": {

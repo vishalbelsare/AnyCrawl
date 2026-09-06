@@ -1,0 +1,107 @@
+---
+title: Cursor
+description: Adicione web scraping e busca ao Cursor com o AnyCrawl MCP
+icon: MousePointer
+---
+
+# Busca na web e scraping com MCP no Cursor
+
+Adicione capacidades de scraping e busca na web ao Cursor com o AnyCrawl MCP.
+
+## Configuração rápida
+
+### 1. Obtenha sua chave de API
+
+Cadastre-se em [anycrawl.dev](https://anycrawl.dev) e copie sua chave de API no painel.
+
+### 2. Adicione ao Cursor
+
+Abra Configurações (`Cmd+,` no Mac, `Ctrl+,` no Windows), pesquise por "MCP" e adicione:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Substitua `your-api-key` pela sua chave real do AnyCrawl.
+
+### 3. Reinicie o Cursor
+
+Pronto. Agora você pode buscar e fazer scraping da web a partir do Cursor.
+
+## Demonstração rápida
+
+Experimente no chat do Cursor (`Cmd+K`):
+
+**Buscar na web:**
+
+```
+Search for TypeScript best practices 2025
+```
+
+**Fazer scraping de uma página:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Obter documentação:**
+
+```
+Scrape the React hooks documentation and explain useEffect
+```
+
+**Rastrear um site:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+O Cursor usará automaticamente as ferramentas de busca, scrape e crawl do AnyCrawl.
+
+## Solução de problemas
+
+### Servidor não responde
+
+1. Verifique se a chave de API é válida
+2. Certifique-se de ter Node.js 18+
+3. Reinicie o Cursor após alterar a configuração
+
+### Erros de permissão
+
+Garanta que o `npx` possa executar. Pode ser necessário instalar o pacote globalmente:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Depois atualize a configuração para usar o pacote global:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Próximos passos
+
+- Saiba mais sobre [opções de scraping](../scrape)
+- Explore [recursos de crawling](../crawl)
+- Veja [recursos de busca](../search)
+- Consulte a [documentação completa do servidor MCP](../mcp)

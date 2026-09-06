@@ -1,0 +1,604 @@
+---
+title: Scrape
+description: ดึงข้อมูลจาก URL และแปลงเป็นข้อมูลมีโครงสร้างพร้อมสำหรับ LLM
+icon: Crosshair
+---
+
+## บทนำ
+
+API การดึงข้อมูลของ AnyCrawl แปลงหน้าเว็บใดก็ได้เป็นข้อมูลมีโครงสร้างที่เหมาะกับโมเดลภาษาขนาดใหญ่ (LLM) รองรับหลายเครื่องมือดึงข้อมูล รวมถึง Cheerio, Playwright, Puppeteer และผลลัพธ์หลายรูปแบบ เช่น HTML, Markdown, JSON ฯลฯ
+
+**คุณสมบัติหลัก**: API **คืนข้อมูลทันทีแบบซิงโครนัส** — ไม่ต้อง polling หรือ webhook และ**รองรับ concurrency สูงแบบเนทีฟ**สำหรับงานดึงข้อมูลขนาดใหญ่
+
+### คุณสมบัติหลัก
+
+- **รองรับหลายเครื่องมือ**: `auto` (เลือกเครื่องมืออัจฉริยะ ค่าเริ่มต้น), `cheerio` (แยก HTML คงที่ เร็วที่สุด), `playwright` (เรนเดอร์ JavaScript ข้ามเบราว์เซอร์), `puppeteer` (เรนเดอร์ JavaScript เน้น Chrome)
+- **เหมาะกับ LLM**: แยกและจัดรูปแบบเนื้อหาอัตโนมัติ สร้าง Markdown สำหรับ LLM
+- **รองรับ Proxy**: รองรับการตั้งค่า proxy HTTP/HTTPS
+- **จัดการข้อผิดพลาดแข็งแรง**: ครอบคลุมและมีกลไกลองใหม่
+- **ประสิทธิภาพสูง**: **รองรับ concurrency สูงแบบเนทีฟ** พร้อมคิวประมวลผลแบบอะซิงโครนัส
+- **ตอบกลับทันที**: **API แบบซิงโครนัส** — ได้ผลทันทีโดยไม่ต้อง polling
+
+## เอนด์พอยต์ API
+
+```
+POST https://api.anycrawl.dev/v1/scrape
+```
+
+## ตัวอย่างการใช้งาน
+
+### cURL
+
+#### การดึงข้อมูลพื้นฐาน (ใช้เครื่องมือ auto ค่าเริ่มต้น)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### ดึงเนื้อหาไดนามิกด้วยเครื่องมือ Playwright
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://spa-example.com",
+    "engine": "playwright"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://spa-example.com",
+        engine: "playwright",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://spa-example.com',
+        'engine': 'playwright'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### ดึงข้อมูลผ่าน Proxy
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://proxy.example.com:8080"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        engine: "playwright",
+        proxy: "http://proxy.example.com:8080",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'engine': 'playwright',
+        'proxy': 'http://proxy.example.com:8080'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+## พารามิเตอร์คำขอ
+
+| พารามิเตอร์           | ชนิด                     | จำเป็น | ค่าเริ่มต้น       | คำอธิบาย                                                                                                                                 |
+| ------------------- | ------------------------ | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | string                   | ใช่      | -              | URL ที่จะดึง ต้องเป็น HTTP/HTTPS ที่ถูกต้อง                                                                                           |
+| `template_id`       | string                   | ไม่       | -              | ID เทมเพลตสำหรับการดึงครั้งนี้                                                                                                          |
+| `variables`         | object                   | ไม่       | -              | ตัวแปรเทมเพลต (ใช้เมื่อมี `template_id`)                                                                               |
+| `engine`            | enum                     | ไม่       | `auto`         | ชนิดเครื่องมือ: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                 |
+| `formats`           | array                    | ไม่       | `["markdown"]` | รูปแบบผลลัพธ์: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                      |
+| `timeout`           | number                   | ไม่       | `60000`        | Timeout มิลลิวินาที หากไม่ระบุ: `120000` เมื่อ `proxy=stealth` / `proxy=auto` มิฉะนั้น `60000` |
+| `retry`             | boolean                  | ไม่       | `false`        | ลองใหม่เมื่อล้มเหลวหรือไม่                                                                                                                 |
+| `max_age`           | number                   | ไม่       | -              | อายุแคชสูงสุด (ms) ใช้ `0` เพื่อข้ามการอ่านแคช ไม่ระบุใช้ค่าเริ่มต้นของเซิร์ฟเวอร์                                                                     |
+| `store_in_cache`    | boolean                  | ไม่       | `true`         | เขียน Page Cache สำหรับการดึงครั้งนี้หรือไม่                                                                                                  |
+| `wait_for`          | number                   | ไม่       | -              | หน่วงก่อนแยก (ms) เฉพาะเครื่องมือเบราว์เซอร์ ลำดับต่ำกว่า `wait_for_selector`                                                 |
+| `wait_until`        | enum                     | ไม่       | -              | เงื่อนไขรอการนำทางสำหรับเบราว์เซอร์: `load`, `domcontentloaded`, `networkidle`, `commit`                                           |
+| `wait_for_selector` | string, object, or array | ไม่       | -              | รอ selector หนึ่งหรือหลายตัว (เฉพาะเบราว์เซอร์) รับสตริง CSS อ็อบเจ็กต์ `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }` หรืออาร์เรย์ รอตามลำดับ มีความสำคัญเหนือ `wait_for` |
+| `include_tags`      | array                    | ไม่       | -              | รวมแท็ก เช่น `h1`                                                                                                                    |
+| `exclude_tags`      | array                    | ไม่       | -              | ยกเว้นแท็ก เช่น `h1`                                                                                                                    |
+| `only_main_content` | boolean                  | ไม่       | `true`         | แยกเฉพาะเนื้อหาหลัก ตัดหัว ท้าย นำทาง ฯลฯ (`include_tags` มีความสำคัญกว่า)                                     |
+| `proxy`             | string (URI)             | ไม่       | -              | ที่อยู่ proxy รูปแบบ `http://proxy:port` หรือ `https://proxy:port`                                                                   |
+| `json_options`      | json                     | ไม่       | -              | ตัวเลือก JSON เช่น `{"schema": {}, "user_prompt": "Extract key fields"}`                                                                  |
+| `extract_source`    | enum                     | ไม่       | `markdown`     | แหล่งดึง JSON: `markdown` (ค่าเริ่มต้น) หรือ `html`                                                                                 |
+| `ocr_options`       | boolean                  | ไม่       | `false`        | เปิด OCR เสริมสำหรับรูปใน markdown เท่านั้น เพิ่มบล็อกข้อความ OCR ใน markdown ไม่เปลี่ยน `html`/`rawHtml`                |
+
+### พฤติกรรมแคช
+
+- `max_age` ควบคุมการอ่านแคช `0` บังคับรีเฟรช
+- `store_in_cache=false` ข้ามการเขียนแคช
+- เมื่อแคชตรง การตอบกลับมี `cachedAt` และ `maxAge` (ms)
+
+### ชนิดเครื่องมือ
+
+**หมายเหตุ**: ทั้ง `playwright` และ `puppeteer` ใช้ Chromium ได้ แต่จุดประสงค์และความสามารถต่างกัน
+
+#### `auto` (ค่าเริ่มต้น)
+
+- **กรณีใช้**: เมื่อไม่แน่ใจว่าเครื่องมือใดเหมาะกับหน้าเป้าหมาย
+- **ข้อดี**: วิเคราะห์หน้าและเลือกเครื่องมือที่เหมาะสม — ใช้ `cheerio` กับหน้าคงที่ และ `playwright` กับหน้าที่ใช้ JavaScript หนัก
+- **การทำงาน**: ส่ง HTTP เบาๆ ก่อน หากต้องเรนเดอร์ JavaScript จะอัปเกรดเป็นเครื่องมือเบราว์เซอร์
+- **แนะนำสำหรับ**: การดึงข้อมูลทั่วไปเมื่อต้องการประสิทธิภาพดีโดยไม่เลือกเครื่องมือเอง
+
+#### `cheerio`
+
+- **กรณีใช้**: เนื้อหา HTML คงที่
+- **ข้อดี**: เร็วที่สุด ใช้ทรัพยากรน้อย
+- **ข้อจำกัด**: ไม่รัน JavaScript ไม่จัดการเนื้อหาไดนามิก
+- **แนะนำสำหรับ**: บทความ บล็อก เว็บคงที่
+
+#### `playwright`
+
+- **กรณีใช้**: เว็บสมัยใหม่ที่ต้องเรนเดอร์ JavaScript การทดสอมข้ามเบราว์เซอร์
+- **ข้อดี**: รออัตโนมัติแข็งแรง เสถียรกว่า
+- **ข้อจำกัด**: ใช้ทรัพยากรมากกว่า
+- **แนะนำสำหรับ**: เว็บแอปที่ซับซ้อน
+
+#### `puppeteer`
+
+- **ข้อดี**: เชื่อมกับ Chrome DevTools ลึก ตัวชี้วัดประสิทธิภาพดี รันเร็ว
+- **ข้อจำกัด**: **ไม่รองรับสถาปัตยกรรม CPU ARM**
+
+### รูปแบบผลลัพธ์
+
+ระบุรูปแบบข้อมูลในการตอบกลับด้วยพารามิเตอร์ `formats`:
+
+#### `markdown`
+
+- **คำอธิบาย**: แปลง HTML เป็น Markdown สะอาดมีโครงสร้าง
+- **กรณีใช้**: เหมาะกับ LLM เอกสาร วิเคราะห์เนื้อหา
+- **แนะนำสำหรับ**: เนื้อหาข้อความหนา บทความ บล็อก
+
+#### `html`
+
+- **คำอธิบาย**: คืน HTML ที่ทำความสะอาดและจัดรูปแบบ
+- **กรณีใช้**: เมื่อต้องการ HTML โครงสร้างพร้อมการจัดรูปแบบ
+- **แนะนำสำหรับ**: เนื้อหาที่ต้องรักษาโครงสร้าง HTML
+
+#### `text`
+
+- **คำอธิบาย**: แยกข้อความล้วนไม่มีการจัดรูปแบบ
+- **กรณีใช้**: แยกข้อความง่ายๆ สำหรับวิเคราะห์เบื้องต้น
+- **แนะนำสำหรับ**: ประมวลผลเฉพาะข้อความ สกัดคีย์เวิร์ด
+
+#### `screenshot`
+
+- **คำอธิบาย**: จับภาพพื้นที่มองเห็นของหน้า
+- **กรณีใช้**: แสดงภาพหน้า
+- **ข้อจำกัด**: ใช้ได้กับ `playwright` และ `puppeteer` เท่านั้น
+- **แนะนำสำหรับ**: ตรวจสอบภาพ ทดสอบ UI
+
+#### `screenshot@fullPage`
+
+- **คำอธิบาย**: จับภาพเต็มหน้าลงไปด้านล่าง
+- **กรณีใช้**: ภาพครบทั้งหน้า
+- **ข้อจำกัด**: ใช้ได้กับ `playwright` และ `puppeteer` เท่านั้น
+- **แนะนำสำหรับ**: เอกสารทั้งหน้า เก็บถาวร
+
+#### `rawHtml`
+
+- **คำอธิบาย**: คืน HTML ต้นฉบับที่ยังไม่ประมวลผล
+- **กรณีใช้**: เมื่อต้องการ HTML ตามที่ได้จากเซิร์ฟเวอร์
+- **แนะนำสำหรับ**: วิเคราะห์ทางเทคนิค ดีบัก รักษาโครงสร้างต้นฉบับ
+
+#### `summary`
+
+- **คำอธิบาย**: ใช้ AI สรุปเนื้อหาหน้าแบบกระชับ
+- **กรณีใช้**: เข้าใจเนื้อหาเร็ว สรุปเอกสาร สรุปย่อ
+- **แนะนำสำหรับ**: รวบรวมข่าว วิจัย คัดเนื้อหา สร้างบทคัดย่อ
+
+#### `links`
+
+- **คำอธิบาย**: แยกลิงก์ทั้งหมด (URL) จากหน้าเป็นอาร์เรย์ของสตริง
+- **กรณีใช้**: ค้นพบลิงก์ สร้าง sitemap เตรียมครอล วิเคราะห์ลิงก์
+- **คุณสมบัติ**: แปลง URL สัมพัทธ์เป็น absolute ลบซ้ำและ fragment
+- **แนะนำสำหรับ**: สร้าง crawler วิเคราะห์โครงสร้างไซต์ ค้นหาหน้าที่เกี่ยวข้อง
+
+### อ็อบเจ็กต์ json_options
+
+พารามิเตอร์ `json_options` เป็นอ็อบเจ็กต์ที่รับ:
+
+- `schema`: schema สำหรับการแยกข้อมูล
+- `user_prompt`: พรอมต์ผู้ใช้สำหรับการแยก
+- `schema_name`: ชื่อผลลัพธ์ (ไม่บังคับ)
+- `schema_description`: คำอธิบายผลลัพธ์ (ไม่บังคับ)
+
+#### ตัวอย่าง
+
+```json
+{
+    "schema": {},
+    "user_prompt": "Extract the title and content of the page"
+}
+```
+
+หรือ
+
+```json
+{
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string"
+            },
+            "company_name": {
+                "type": "string"
+            },
+            "summary": {
+                "type": "string"
+            },
+            "is_open_source": {
+                "type": "boolean"
+            }
+        },
+        "required": ["company_name", "summary"]
+    },
+    "user_prompt": "Extract the company name, summary, and if it is open source"
+}
+```
+
+## รูปแบบการตอบกลับ
+
+### การตอบกลับสำเร็จ (HTTP 200)
+
+#### การดึงข้อมูลสำเร็จ
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://mock.httpstatus.io/200",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "title": "",
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">200 OK</pre></body></html>",
+        "screenshot": "http://localhost:8080/v1/public/storage/file/screenshot-c9fb76c4-2d7b-41f9-9141-b9ec9af58b39.jpeg",
+        "timestamp": "2025-07-01T04:38:02.951Z"
+    }
+}
+```
+
+#### การตอบกลับเมื่อแคชตรง
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "cachedAt": "2026-02-08T12:34:56.000Z",
+        "maxAge": 172800000
+    }
+}
+```
+
+### การตอบกลับเมื่อผิดพลาด
+
+#### 400 — ข้อผิดพลาดการตรวจสอบ
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": [
+            "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'"
+        ]
+    }
+}
+```
+
+#### 401 — ข้อผิดพลาดการยืนยันตัวตน
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+### การดึงข้อมูลล้มเหลว
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 404 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/404",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 404 ",
+        "code": 404,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "34cd1d26-eb83-40ce-9d63-3be1a901f4a3",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">404 Not Found</pre></body></html>",
+        "screenshot": "screenshot-34cd1d26-eb83-40ce-9d63-3be1a901f4a3.jpeg",
+        "timestamp": "2025-07-01T04:36:20.978Z",
+        "statusCode": 404,
+        "statusMessage": ""
+    }
+}
+```
+
+หรือ
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 502 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/502",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 502 ",
+        "code": 502,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "5fc50008-07e0-4913-a6af-53b0b3e0214b",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">502 Bad Gateway</pre></body></html>",
+        "screenshot": "screenshot-5fc50008-07e0-4913-a6af-53b0b3e0214b.jpeg",
+        "timestamp": "2025-07-01T04:39:59.981Z",
+        "statusCode": 502,
+        "statusMessage": ""
+    }
+}
+```
+
+หรือ
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 400 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/400",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 400 ",
+        "code": 400,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "0081747c-1fc5-44f9-800c-e27b24b55a2c",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">400 Bad Request</pre></body></html>",
+        "screenshot": "screenshot-0081747c-1fc5-44f9-800c-e27b24b55a2c.jpeg",
+        "timestamp": "2025-07-01T04:38:24.136Z",
+        "statusCode": 400,
+        "statusMessage": ""
+    }
+}
+```
+
+หรือ
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available",
+    "data": {
+        "url": "https://httpstat.us/401",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available"
+    }
+}
+```
+
+## แนวทางปฏิบัติที่ดี
+
+### แนวทางการเลือกเครื่องมือ
+
+1. **ไม่แน่ใจ / ทั่วไป** → ใช้ `auto` (ค่าเริ่มต้น) — เซิร์ฟเวอร์เลือกเครื่องมือที่เหมาะสม
+2. **เว็บเนื้อหาคงที่** (ข่าว บล็อก เอกสาร) → ใช้ `cheerio`
+3. **เว็บแอปที่ซับซ้อน** (SPA ที่ต้องเรนเดอร์ JavaScript) → ใช้ `playwright` หรือ `puppeteer`
+
+### ปรับประสิทธิภาพ
+
+- งานดึงเนื้อหาคงที่จำนวนมาก ให้ใช้ `cheerio` ก่อน
+- ใช้ `playwright` หรือ `puppeteer` เมื่อต้องเรนเดอร์ JavaScript เท่านั้น
+- ผลลัพธ์ดีที่สุด: ใช้ proxy หมุนเวียนเพื่อหลีกเลี่ยงการบล็อก IP และขีดจำกัดอัตรา ให้ proxy เสถียร
+- **ใช้ concurrency สูงแบบเนทีฟ** — API จัดการคำขอพร้อมกันได้มีประสิทธิภาพ
+
+### การจัดการข้อผิดพลาด
+
+```javascript
+try {
+    const response = await fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.data.status === "completed") {
+        // Handle successful result
+        console.log(result.data.markdown);
+    } else {
+        // Handle scraping failure
+        console.error("Scraping failed:", result.data.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## การใช้งาน concurrency สูง
+
+API **รองรับ concurrency สูงแบบเนทีฟ** คุณส่งคำขอพร้อมกันหลายรายการได้โดยไม่ต้องกังวลเรื่อง rate limit:
+
+```javascript
+// ตัวอย่างการดึงข้อมูลพร้อมกัน
+const urls = ["https://example1.com", "https://example2.com", "https://example3.com"];
+
+const scrapePromises = urls.map((url) =>
+    fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, engine: "cheerio" }),
+    }).then((res) => res.json())
+);
+
+// คำขอทั้งหมดรันพร้อมกันและคืนผลทันที
+const results = await Promise.all(scrapePromises);
+```
+
+## คำถามที่พบบ่อย
+
+### ถาม: ควรใช้เครื่องมือต่างกันเมื่อไร?
+
+ตอบ: แต่ละเครื่องมือมีจุดแข็งต่างกัน:
+
+- **Auto** (ค่าเริ่มต้น): เลือกเครื่องมือที่ดีที่สุดต่อ URL — เริ่มเร็วด้วย Cheerio และอัปเกรดเป็น Playwright เมื่อต้องเรนเดอร์ JavaScript
+- **Cheerio**: HTML คงที่ เร็วที่สุด ไม่รัน JavaScript
+- **Playwright**: เว็บแอปซับซ้อน เสถียรกว่า รออัตโนมัติดี ในอนาคตจะรองรับเบราว์เซอร์เพิ่ม
+- **Puppeteer**: เฉพาะ Chrome/Chromium ไม่ทำงานบน CPU ARM และเราไม่จัดเตรียมอิมเมจ Docker ที่เกี่ยวข้อง
+
+### ถาม: ทำไมบางเว็บดึงไม่สำเร็จ?
+
+ตอบ: สาเหตุที่เป็นไปได้:
+
+- เว็บบล็อก crawler (คืน 403/404)
+- ต้องเรนเดอร์ JavaScript แต่ใช้ cheerio
+- เว็บต้องยืนยันตัวตนหรือหัวข้อพิเศษ
+- ปัญหาเครือข่าย
+
+### ถาม: จัดการเว็บที่ต้องล็อกอินอย่างไร?
+
+ตอบ: ปัจจุบัน API ไม่รองรับการยืนยันตัวตน แนะนำ:
+
+- ดึงเฉพาะหน้าที่เข้าถึงได้สาธารณะ
+- ใช้วิธีอื่นเพื่อได้เนื้อหาหลังล็อกอิน
+
+### ถาม: ต้องตั้งค่า proxy อย่างไร?
+
+ตอบ:
+
+- หมายเหตุ: เรามี proxy คุณภาพดีเป็นค่าเริ่มต้น หากไม่มีความต้องการพิเศษไม่จำเป็นต้องตั้ง proxy เอง
+- รองรับ proxy HTTP/HTTPS
+- รูปแบบ: `http://host:port` หรือ `https://host:port`
+- ให้ proxy เสถียรและพร้อมใช้
+
+### ถาม: มี rate limit สำหรับคำขอพร้อมกันหรือไม่?
+
+ตอบ: ไม่ API **รองรับ concurrency สูงแบบเนทีฟ** ส่งคำขอพร้อมกันได้โดยไม่ต้องกังวล rate limit และคืนข้อมูลทันที

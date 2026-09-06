@@ -1,0 +1,28 @@
+{
+    "title": "Geral",
+    "description": "Documentação geral",
+    "root": true,
+    "icon": "Building2",
+    "pages": [
+        "---Começar---",
+        "index",
+        "mcp",
+        "---Recursos---",
+        "scrape",
+        "crawl",
+        "cache",
+        "search",
+        "map",
+        "json-mode",
+        "template",
+        "---Automação---",
+        "scheduled-tasks",
+        "monitors",
+        "webhooks",
+        "---Guias para desenvolvedores---",
+        "mcp-setup-guides",
+        "---Auto-hospedagem---",
+        "docker",
+        "proxy-rule"
+    ]
+}

@@ -1,0 +1,107 @@
+---
+title: Cursor
+description: Web-Scraping und Suche in Cursor mit AnyCrawl MCP ergänzen
+icon: MousePointer
+---
+
+# MCP-Websuche und Web-Scraping in Cursor
+
+Ergänzen Sie Cursor um Web-Scraping und Suche mit AnyCrawl MCP.
+
+## Schnellstart
+
+### 1. API-Schlüssel holen
+
+Registrieren Sie sich auf [anycrawl.dev](https://anycrawl.dev) und kopieren Sie Ihren API-Schlüssel aus dem Dashboard.
+
+### 2. In Cursor eintragen
+
+Öffnen Sie die Einstellungen (`Cmd+,` auf dem Mac, `Ctrl+,` unter Windows), suchen Sie nach „MCP“ und fügen Sie hinzu:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Ersetzen Sie `your-api-key` durch Ihren echten AnyCrawl-API-Schlüssel.
+
+### 3. Cursor neu starten
+
+Fertig – Sie können in Cursor jetzt im Web suchen und Seiten scrapen.
+
+## Kurzdemonstration
+
+Probieren Sie im Cursor-Chat (`Cmd+K`):
+
+**Websuche:**
+
+```
+Search for TypeScript best practices 2025
+```
+
+**Seite scrapen:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Dokumentation holen:**
+
+```
+Scrape the React hooks documentation and explain useEffect
+```
+
+**Website crawlen:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Cursor nutzt automatisch die Such-, Scrape- und Crawl-Tools von AnyCrawl.
+
+## Fehlerbehebung
+
+### Server reagiert nicht
+
+1. Prüfen Sie, ob der API-Schlüssel gültig ist.
+2. Stellen Sie sicher, dass Node.js 18+ installiert ist.
+3. Starten Sie Cursor nach Konfigurationsänderungen neu.
+
+### Berechtigungsfehler
+
+Stellen Sie sicher, dass `npx` ausführen darf. Ggf. global installieren:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Konfiguration auf das globale Paket umstellen:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Nächste Schritte
+
+- Mehr zu [Scrape-Optionen](../scrape)
+- [Crawl-Funktionen](../crawl) erkunden
+- [Suchfunktionen](../search) ansehen
+- Vollständige [MCP-Server-Dokumentation](../mcp)

@@ -1,0 +1,107 @@
+---
+title: Cursor
+description: Ajoutez le scraping web et la recherche à Cursor avec AnyCrawl MCP
+icon: MousePointer
+---
+
+# Recherche web et scraping MCP dans Cursor
+
+Ajoutez des capacités de scraping web et de recherche à Cursor avec AnyCrawl MCP.
+
+## Configuration rapide
+
+### 1. Obtenir votre clé API
+
+Inscrivez-vous sur [anycrawl.dev](https://anycrawl.dev) et copiez votre clé API depuis le tableau de bord.
+
+### 2. Ajouter à Cursor
+
+Ouvrez les paramètres (`Cmd+,` sur Mac, `Ctrl+,` sur Windows), recherchez « MCP », puis ajoutez :
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Remplacez `your-api-key` par votre véritable clé API AnyCrawl.
+
+### 3. Redémarrer Cursor
+
+Terminé ! Vous pouvez désormais rechercher et scraper le web depuis Cursor.
+
+## Démo rapide
+
+Essayez ceci dans le chat Cursor (`Cmd+K`) :
+
+**Rechercher sur le web :**
+
+```
+Search for TypeScript best practices 2025
+```
+
+**Scraper une page :**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Obtenir de la documentation :**
+
+```
+Scrape the React hooks documentation and explain useEffect
+```
+
+**Crawler un site :**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Cursor utilisera automatiquement les outils de recherche, scraping et crawl d’AnyCrawl.
+
+## Dépannage
+
+### Le serveur ne répond pas
+
+1. Vérifiez que votre clé API est valide
+2. Assurez-vous d’avoir Node.js 18+ installé
+3. Redémarrez Cursor après modification de la configuration
+
+### Erreurs de permissions
+
+Assurez-vous que `npx` peut s’exécuter. Vous pouvez installer le package globalement :
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Puis mettez à jour votre configuration pour utiliser le package global :
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Étapes suivantes
+
+- En savoir plus sur les [options de scraping](../scrape)
+- Explorer les [capacités de crawl](../crawl)
+- Consulter les [fonctionnalités de recherche](../search)
+- Voir la [documentation complète du serveur MCP](../mcp)

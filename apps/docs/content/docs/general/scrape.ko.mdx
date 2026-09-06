@@ -1,0 +1,600 @@
+---
+title: Scrape
+description: URL을 스크래핑해 LLM에 바로 쓸 수 있는 구조화 데이터로 변환합니다.
+icon: Crosshair
+---
+
+## 소개
+
+AnyCrawl 스크래프 API는 웹 페이지를 대규모 언어 모델(LLM)에 맞게 최적화된 구조화 데이터로 변환합니다. Cheerio, Playwright, Puppeteer 등 여러 스크래핑 엔진을 지원하며 HTML, Markdown, JSON 등 다양한 형식으로 출력할 수 있습니다.
+
+**핵심**: API는 **즉시 동기적으로** 데이터를 반환합니다 — 폴링이나 웹훅이 필요 없습니다. 대규모 스크래핑을 위해 **원래부터 높은 동시성**을 지원합니다.
+
+### 핵심 기능
+
+- **다중 엔진**: `auto`(지능형 선택, 기본), `cheerio`(정적 HTML, 가장 빠름), `playwright`(크로스 브라우저 JS 렌더링), `puppeteer`(Chrome 최적화 JS 렌더링)
+- **LLM 최적화**: 콘텐츠 자동 추출·포맷, LLM 처리에 적합한 Markdown 생성
+- **프록시**: HTTP/HTTPS 프록시 설정 지원
+- **견고한 오류 처리**: 포괄적 오류 처리 및 재시도
+- **고성능**: 비동기 큐 처리와 함께 **네이티브 고동시성**
+- **즉시 응답**: **동기 API** — 폴링 없이 바로 결과
+
+## API 엔드포인트
+
+```
+POST https://api.anycrawl.dev/v1/scrape
+```
+
+## 사용 예
+
+### cURL
+
+#### 기본 스크래핑(기본 auto 엔진)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### Playwright 엔진으로 동적 콘텐츠 스크래핑
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://spa-example.com",
+    "engine": "playwright"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://spa-example.com",
+        engine: "playwright",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://spa-example.com',
+        'engine': 'playwright'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### 프록시로 스크래핑
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://proxy.example.com:8080"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        engine: "playwright",
+        proxy: "http://proxy.example.com:8080",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'engine': 'playwright',
+        'proxy': 'http://proxy.example.com:8080'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+## 요청 파라미터
+
+| 파라미터           | 타입                     | 필수 | 기본값        | 설명                                                                                                                                 |
+| ------------------- | ------------------------ | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | string                   | 예   | -              | 스크래핑할 URL, 유효한 HTTP/HTTPS 주소                                                                                           |
+| `template_id`       | string                   | 아니오 | -              | 이번 스크래프에 사용할 템플릿 ID                                                                                                          |
+| `variables`         | object                   | 아니오 | -              | 템플릿 변수(`template_id`가 있을 때만)                                                                               |
+| `engine`            | enum                     | 아니오 | `auto`         | 엔진: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                 |
+| `formats`           | array                    | 아니오 | `["markdown"]` | 출력 형식: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                      |
+| `timeout`           | number                   | 아니오 | `60000`        | 타임아웃(ms). 생략 시 `proxy=stealth`/`proxy=auto`이면 `120000`, 그 외 `60000`. |
+| `retry`             | boolean                  | 아니오 | `false`        | 실패 시 재시도 여부                                                                                                                 |
+| `max_age`           | number                   | 아니오 | -              | 캐시 최대 수명(ms). `0`이면 캐시 읽기 생략, 생략 시 서버 기본값                                                                     |
+| `store_in_cache`    | boolean                  | 아니오 | `true`         | 이번 스크래프에 페이지 캐시 쓰기 여부                                                                                                  |
+| `wait_for`          | number                   | 아니오 | -              | 추출 전 지연(ms), 브라우저 엔진만, `wait_for_selector`보다 낮은 우선순위                                                 |
+| `wait_until`        | enum                     | 아니오 | -              | 브라우저 탐색 대기: `load`, `domcontentloaded`, `networkidle`, `commit`                                           |
+| `wait_for_selector` | string, object, or array | 아니오 | -              | 브라우저에서만. CSS 문자열, 객체 `{ selector: string, state?: "attached" \| "visible" \| "hidden" \| "detached", timeout?: number }`, 또는 혼합 배열. 순차 대기. `wait_for`보다 우선. |
+| `include_tags`      | array                    | 아니오 | -              | 포함할 태그, 예: `h1`                                                                                                                    |
+| `exclude_tags`      | array                    | 아니오 | -              | 제외할 태그, 예: `h1`                                                                                                                    |
+| `only_main_content` | boolean                  | 아니오 | `true`         | 본문만 추출(헤더·푸터·내비 등 제거, `include_tags` 우선)                                     |
+| `proxy`             | string (URI)             | 아니오 | -              | 프록시 주소, 형식: `http://proxy:port` 또는 `https://proxy:port`                                                                   |
+| `json_options`      | json                     | 아니오 | -              | JSON 옵션, 예: `{"schema": {}, "user_prompt": "Extract key fields"}`                                                                  |
+| `extract_source`    | enum                     | 아니오 | `markdown`     | JSON 추출 소스: `markdown`(기본) 또는 `html`                                                                                 |
+| `ocr_options`       | boolean                  | 아니오 | `false`        | 마크다운 이미지에만 OCR 강화. 마크다운 출력에 OCR 텍스트 블록 추가, `html`/`rawHtml`는 변경하지 않음.                |
+
+### 캐시 동작
+
+- `max_age`는 캐시 읽기를 제어합니다. `0`이면 강제 새로고침.
+- `store_in_cache=false`이면 캐시 쓰기 생략.
+- 캐시 히트 시 응답에 `cachedAt`과 `maxAge`(ms)가 포함됩니다.
+
+### 엔진 유형
+
+**참고**: `playwright`와 `puppeteer` 모두 Chromium을 쓸 수 있지만 목적과 기능이 다릅니다.
+
+#### `auto`(기본)
+
+- **용도**: 어떤 엔진이 좋을지 모를 때
+- **장점**: 페이지를 분석해 최적 엔진 선택 — 정적 페이지는 `cheerio`, JS가 많은 페이지는 `playwright`
+- **동작**: 먼저 가벼운 HTTP 요청, JS 렌더링이 필요하면 브라우저 엔진으로 자동 승급
+- **권장**: 범용 스크래핑, 수동 선택 없이 성능을 원할 때
+
+#### `cheerio`
+
+- **용도**: 정적 HTML 스크래핑
+- **장점**: 가장 빠름, 리소스 최소
+- **제한**: JavaScript 실행 불가, 동적 콘텐츠 처리 불가
+- **권장**: 뉴스, 블로그, 정적 사이트
+
+#### `playwright`
+
+- **용도**: JS 렌더링이 필요한 현대적 사이트, 크로스 브라우저 테스트
+- **장점**: 강한 자동 대기, 안정성
+- **제한**: 리소스 소비 큼
+- **권장**: 복잡한 웹 앱
+
+#### `puppeteer`
+
+- **장점**: Chrome DevTools와 깊은 연동, 성능 지표, 빠른 실행
+- **제한**: **ARM CPU 아키텍처 미지원**
+
+### 출력 형식
+
+`formats`로 응답에 포함할 데이터 형식을 지정합니다.
+
+#### `markdown`
+
+- **설명**: HTML을 깨끗한 Markdown으로 변환
+- **용도**: LLM 처리, 문서, 콘텐츠 분석에 최적
+- **권장**: 텍스트 위주, 기사, 블로그
+
+#### `html`
+
+- **설명**: 정리·포맷된 HTML 반환
+- **용도**: 서식이 유지된 구조화 HTML이 필요할 때
+- **권장**: HTML 구조를 유지해야 할 콘텐츠
+
+#### `text`
+
+- **설명**: 서식 없는 순수 텍스트
+- **용도**: 기본 콘텐츠 분석용 간단 추출
+- **권장**: 텍스트만 처리, 키워드 추출
+
+#### `screenshot`
+
+- **설명**: 보이는 영역 스크린샷
+- **용도**: 페이지 시각적 표현
+- **제한**: `playwright`/`puppeteer`만
+- **권장**: 시각 검증, UI 테스트
+
+#### `screenshot@fullPage`
+
+- **설명**: 폴드 아래까지 전체 페이지 스크린샷
+- **용도**: 페이지 전체 시각 캡처
+- **제한**: `playwright`/`puppeteer`만
+- **권장**: 전체 문서화, 보관
+
+#### `rawHtml`
+
+- **설명**: 가공하지 않은 원본 HTML
+- **용도**: 서버에서 받은 그대로의 HTML이 필요할 때
+- **권장**: 기술 분석, 디버깅, 원본 구조 보존
+
+#### `summary`
+
+- **설명**: AI로 페이지 콘텐츠 요약 생성
+- **용도**: 빠른 이해, 문서 요약, 다이제스트
+- **권장**: 뉴스 집계, 리서치, 큐레이션, 초록
+
+#### `links`
+
+- **설명**: 페이지의 모든 링크(URL)를 문자열 배열로 추출
+- **용도**: 링크 발견, 사이트맵 준비, 크롤 준비, 링크 분석
+- **특징**: 상대 URL을 절대 URL로 변환, 중복·프래그먼트 제거
+- **권장**: 크롤러 구축, 사이트 구조 분석, 관련 페이지 발견
+
+### json_options 객체
+
+`json_options`는 다음을 받는 객체입니다.
+
+- `schema`: 추출에 사용할 스키마
+- `user_prompt`: 추출에 사용할 사용자 프롬프트
+- `schema_name`: 생성할 출력 이름(선택)
+- `schema_description`: 생성할 출력 설명(선택)
+
+#### 예
+
+```json
+{
+    "schema": {},
+    "user_prompt": "Extract the title and content of the page"
+}
+```
+
+or
+
+```json
+{
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string"
+            },
+            "company_name": {
+                "type": "string"
+            },
+            "summary": {
+                "type": "string"
+            },
+            "is_open_source": {
+                "type": "boolean"
+            }
+        },
+        "required": ["company_name", "summary"]
+    },
+    "user_prompt": "Extract the company name, summary, and if it is open source"
+}
+```
+
+## 응답 형식
+
+### 성공 응답(HTTP 200)
+
+#### 스크래핑 성공
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://mock.httpstatus.io/200",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "title": "",
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">200 OK</pre></body></html>",
+        "screenshot": "http://localhost:8080/v1/public/storage/file/screenshot-c9fb76c4-2d7b-41f9-9141-b9ec9af58b39.jpeg",
+        "timestamp": "2025-07-01T04:38:02.951Z"
+    }
+}
+```
+
+#### 캐시 히트 응답
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "cachedAt": "2026-02-08T12:34:56.000Z",
+        "maxAge": 172800000
+    }
+}
+```
+
+### 오류 응답
+
+#### 400 - 유효성 검사 오류
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": [
+            "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'"
+        ]
+    }
+}
+```
+
+#### 401 - 인증 오류
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+### 스크래핑 실패
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 404 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/404",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 404 ",
+        "code": 404,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "34cd1d26-eb83-40ce-9d63-3be1a901f4a3",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">404 Not Found</pre></body></html>",
+        "screenshot": "screenshot-34cd1d26-eb83-40ce-9d63-3be1a901f4a3.jpeg",
+        "timestamp": "2025-07-01T04:36:20.978Z",
+        "statusCode": 404,
+        "statusMessage": ""
+    }
+}
+```
+
+or
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 502 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/502",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 502 ",
+        "code": 502,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "5fc50008-07e0-4913-a6af-53b0b3e0214b",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">502 Bad Gateway</pre></body></html>",
+        "screenshot": "screenshot-5fc50008-07e0-4913-a6af-53b0b3e0214b.jpeg",
+        "timestamp": "2025-07-01T04:39:59.981Z",
+        "statusCode": 502,
+        "statusMessage": ""
+    }
+}
+```
+
+or
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 400 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/400",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 400 ",
+        "code": 400,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "0081747c-1fc5-44f9-800c-e27b24b55a2c",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">400 Bad Request</pre></body></html>",
+        "screenshot": "screenshot-0081747c-1fc5-44f9-800c-e27b24b55a2c.jpeg",
+        "timestamp": "2025-07-01T04:38:24.136Z",
+        "statusCode": 400,
+        "statusMessage": ""
+    }
+}
+```
+
+or
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available",
+    "data": {
+        "url": "https://httpstat.us/401",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available"
+    }
+}
+```
+
+## 모범 사례
+
+### 엔진 선택 가이드
+
+1. **불확실/일반** → `auto`(기본) — 서버가 최적 엔진 선택
+2. **정적 콘텐츠**(뉴스, 블로그, 문서) → `cheerio`
+3. **복잡한 웹 앱**(JS 렌더링 SPA) → `playwright` 또는 `puppeteer`
+
+### 성능 최적화
+
+- 대량 정적 스크래핑에는 `cheerio` 우선
+- JS 렌더링이 필요할 때만 `playwright`/`puppeteer`
+- IP 차단·속도 제한을 피하려면 로테이션 프록시 사용, 프록시는 안정적으로
+- **네이티브 고동시성 활용** — API가 동시 요청을 효율적으로 처리
+
+### 오류 처리
+
+```javascript
+try {
+    const response = await fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.data.status === "completed") {
+        console.log(result.data.markdown);
+    } else {
+        console.error("Scraping failed:", result.data.error);
+    }
+} catch (error) {
+    console.error("Request failed:", error);
+}
+```
+
+## 높은 동시성 사용
+
+API는 **원래부터 높은 동시성**을 지원합니다. 여러 요청을 동시에 보내도 속도 제한 걱정이 없습니다.
+
+```javascript
+// 동시 스크래핑 예
+const urls = ["https://example1.com", "https://example2.com", "https://example3.com"];
+
+const scrapePromises = urls.map((url) =>
+    fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, engine: "cheerio" }),
+    }).then((res) => res.json())
+);
+
+const results = await Promise.all(scrapePromises);
+```
+
+## 자주 묻는 질문
+
+### Q: 언제 어떤 엔진을 써야 하나요?
+
+A: 엔진마다 장점이 있습니다.
+
+- **Auto**(기본): URL마다 최적 엔진 — Cheerio로 빠르게 시작하고 JS 렌더링이 필요하면 Playwright로 승급
+- **Cheerio**: 정적 HTML, 가장 빠름, JS 미실행
+- **Playwright**: 복잡한 웹 앱, 안정성·자동 대기, 향후 브라우저 종류 확대 예정
+- **Puppeteer**: Chrome/Chromium만, ARM CPU에서 동작하지 않으며 관련 Docker 이미지는 제공하지 않음
+
+### Q: 일부 사이트가 스크래핑 실패하는 이유는?
+
+A: 가능한 이유:
+
+- 크롤러 차단(403/404)
+- JS 렌더링이 필요한데 cheerio 사용
+- 인증·특수 헤더 필요
+- 네트워크 문제
+
+### Q: 로그인이 필요한 사이트는?
+
+A: 현재 API는 인증을 지원하지 않습니다.
+
+- 공개 페이지만 스크래핑
+- 인증이 필요한 콘텐츠는 다른 방법 사용
+
+### Q: 프록시 설정 요구사항은?
+
+A:
+
+- 기본값으로 고품질 프록시를 제공합니다. 특별한 요구가 없으면 직접 설정하지 않아도 됩니다.
+- HTTP/HTTPS 프록시 지원
+- 형식: `http://host:port` 또는 `https://host:port`
+- 프록시는 안정적으로 사용 가능해야 합니다.
+
+### Q: 동시 요청에 속도 제한이 있나요?
+
+A: 없습니다. API는 **원래부터 높은 동시성**을 지원하며, 여러 요청을 동시에 보내도 속도 제한 없이 즉시 데이터를 반환합니다.

@@ -1,5 +1,6 @@
 import { Configuration, KeyValueStore, log, RequestQueueV2 } from "crawlee";
-import { join } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import IORedis from "ioredis";
 import { Job } from "bullmq";
 import type { EngineOptions } from "./types/engine.js";
@@ -11,12 +12,10 @@ export class Utils {
     private static instance: Utils;
     private keyValueStore: KeyValueStore | undefined = undefined;
     private queueMap: Map<string, RequestQueueV2> = new Map();
+    private redisConnection: IORedis.Redis | undefined = undefined;
 
     private constructor() {
-        const config = Configuration.getGlobalConfig();
-        config.set("storageClientOptions", {
-            localDataDirectory: join(process.cwd(), "../../storage"),
-        });
+        this.configureCrawleeStorageDirectory();
     }
 
     static getInstance(): Utils {
@@ -48,11 +47,45 @@ export class Utils {
      * Set the storage directory
      */
     public setStorageDirectory = () => {
+        this.configureCrawleeStorageDirectory();
+    };
+
+    private configureCrawleeStorageDirectory(): void {
         const config = Configuration.getGlobalConfig();
         config.set("storageClientOptions", {
-            localDataDirectory: join(process.cwd(), "../../storage"),
+            localDataDirectory: this.getCrawleeStorageDirectory(),
         });
-    };
+    }
+
+    public getLocalStorageDirectory(): string {
+        return resolve(process.env.ANYCRAWL_LOCAL_STORAGE_DIR || join(process.cwd(), "../../storage"));
+    }
+
+    public getCrawleeStorageDirectory(): string {
+        return resolve(
+            process.env.ANYCRAWL_CRAWLEE_STORAGE_DIR
+            || process.env.CRAWLEE_STORAGE_DIR
+            || this.getLocalStorageDirectory()
+        );
+    }
+
+    public getPublicFileStoreDirectory(): string {
+        return join(this.getLocalStorageDirectory(), "key_value_stores", this.getStorageName());
+    }
+
+    public getPublicFilePath(key: string): string {
+        if (!key || key === "." || key === ".." || key.includes("/") || key.includes("\\") || basename(key) !== key) {
+            throw new Error(`Invalid public storage key: ${key}`);
+        }
+        return join(this.getPublicFileStoreDirectory(), key);
+    }
+
+    public async writePublicFile(key: string, data: Buffer | Uint8Array | string): Promise<string> {
+        const filePath = this.getPublicFilePath(key);
+        await mkdir(this.getPublicFileStoreDirectory(), { recursive: true });
+        await writeFile(filePath, data);
+        return filePath;
+    }
 
     /**
      * Get a queue by name
@@ -70,14 +103,22 @@ export class Utils {
     }
 
     /**
-     * Get the Redis connection
+     * Get the shared Redis connection (singleton)
      * @returns The Redis connection
      */
     public getRedisConnection(): IORedis.Redis {
-        const redisConnection = new IORedis.default(process.env.ANYCRAWL_REDIS_URL!, {
-            maxRetriesPerRequest: null,
-        });
-        return redisConnection;
+        if (!this.redisConnection) {
+            this.redisConnection = new IORedis.default(process.env.ANYCRAWL_REDIS_URL!, {
+                maxRetriesPerRequest: null,
+            });
+            // Always keep an 'error' listener attached. Without one, ioredis emits
+            // an unhandled 'error' event on connection blips, which surfaces as an
+            // uncaughtException and (via index.ts) tears down the whole process.
+            this.redisConnection.on("error", (err) => {
+                log.error(`[Redis] connection error: ${err instanceof Error ? err.message : String(err)}`);
+            });
+        }
+        return this.redisConnection;
     }
 
     public async once(job: Job, options?: EngineOptions) {

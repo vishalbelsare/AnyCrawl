@@ -1,0 +1,415 @@
+---
+title: Template
+description: Công thức scrape, crawl và tìm kiếm tái sử dụng với biến và logic tùy chỉnh.
+icon: Puzzle
+---
+
+## Giới thiệu
+
+Template là cấu hình tái sử dụng cho scrape, crawl hoặc tìm kiếm. Thay vì lặp lại cùng tùy chọn trong mọi lần gọi API, bạn định nghĩa một lần trong template (hoặc lấy template từ AnyCrawl Template Store) và tham chiếu bằng `template_id`.
+
+**Lợi ích:**
+
+- **Đơn giản**: Gọi API chỉ với `template_id` + đầu vào tối thiểu
+- **Nhất quán**: Chuẩn hóa hành vi trong nhóm hoặc dự án
+- **An toàn**: Template có thể giới hạn domain được phép và chỉ expose biến cần thiết
+- **Mạnh**: Handler tùy chỉnh tùy chọn cho biến đổi nâng cao
+
+**Loại được hỗ trợ:**
+
+- `scrape`: trích một trang qua `/v1/scrape`
+- `crawl`: crawl nhiều trang qua `/v1/crawl`
+- `search`: kết quả công cụ tìm kiếm qua `/v1/search`
+
+## Template Marketplace
+
+Duyệt template sẵn dùng tại **[anycrawl.dev/template](https://anycrawl.dev/template)**.
+
+**Cách dùng:**
+
+1. Duyệt marketplace và chọn template phù hợp
+2. Sao chép `template_id` từ trang chi tiết template
+3. Gọi API với `template_id` và đầu vào bắt buộc
+
+**Ví dụ:**
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "content-extractor",
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "content-extractor",
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'template_id': 'content-extractor',
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## Dùng template trong lời gọi API
+
+### Tham số request
+
+Khi dùng `template_id`, chỉ cho phép các trường tối thiểu:
+
+| Endpoint     | Required Field | Optional Fields      |
+| ------------ | -------------- | -------------------- |
+| `/v1/scrape` | `template_id`  | `url`, `variables`   |
+| `/v1/crawl`  | `template_id`  | `url`, `variables`   |
+| `/v1/search` | `template_id`  | `query`, `variables` |
+
+**Lưu ý quan trọng:**
+
+- `url` hoặc `query` có thể tùy chọn nếu template đã định nghĩa sẵn. Xem mô tả template.
+- `variables` truyền đầu vào động mà template mong đợi (xem phần Variables).
+- Các trường khác (như `engine`, `formats`, `timeout`, …) đến từ template và không thể ghi đè.
+- Gửi trường không được phép trả về **lỗi xác thực 400**.
+
+### Scrape với template
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-scrape-template",
+    "url": "https://example.com",
+    "variables": { "category": "tech" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-scrape-template",
+        url: "https://example.com",
+        variables: { category: "tech" },
+    }),
+});
+const data = await res.json();
+```
+
+### Crawl với template
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-crawl-template",
+    "url": "https://docs.example.com",
+    "variables": { "maxPages": 50 }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-crawl-template",
+        url: "https://docs.example.com",
+        variables: { maxPages: 50 },
+    }),
+});
+const { job_id } = (await res.json()).data;
+// Poll for results...
+```
+
+### Search với template
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-search-template",
+    "query": "machine learning tutorials",
+    "variables": { "lang": "en" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-search-template",
+        query: "machine learning tutorials",
+        variables: { lang: "en" },
+    }),
+});
+const data = await res.json();
+console.log(data.data);
+```
+
+## Biến
+
+Template có thể khai báo **variables** để nhận đầu vào động lúc gọi.
+
+- Mỗi biến có `type`: `string`, `number`, `boolean`, hoặc `url`
+- Biến có thể `required` hoặc tùy chọn với `defaultValue`
+- Xem mô tả template để biết biến nào được mong đợi
+
+**Ví dụ request có biến:**
+
+```json
+{
+    "template_id": "blog-scraper",
+    "url": "https://example.com/blog/post-123",
+    "variables": {
+        "author": "john-doe",
+        "includeComments": true,
+        "maxComments": 50
+    }
+}
+```
+
+Nếu thiếu biến bắt buộc hoặc sai kiểu, bạn nhận **lỗi xác thực 400**.
+
+## Định dạng phản hồi
+
+Phản hồi template theo cùng định dạng lời gọi API chuẩn:
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "markdown": "# Page Title\n\nContent...",
+        "metadata": { ... },
+        // Additional fields from custom handlers (if any)
+        "extractedData": { ... }
+    }
+}
+```
+
+Template có handler tùy chỉnh có thể thêm trường bổ sung vào phản hồi.
+
+## Xử lý lỗi
+
+Lỗi thường gặp khi dùng template:
+
+| Error                        | HTTP Status | Mô tả                                         |
+| ---------------------------- | ----------- | --------------------------------------------------- |
+| Template not found           | 404         | `template_id` không tồn tại hoặc bạn không có quyền      |
+| Validation error             | 400         | Thiếu biến bắt buộc hoặc sai kiểu           |
+| Domain restriction violation | 403         | URL không được phép theo chính sách domain của template         |
+| Invalid fields               | 400         | Trường top-level thừa không được phép với template |
+
+**Ví dụ phản hồi lỗi:**
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "When using template_id, only template_id, url, variables are allowed. Invalid fields: engine, formats",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Field 'engine' is not allowed when using template_id",
+                "code": "invalid_field"
+            }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+## Thực hành tốt
+
+### Cho người gọi API
+
+- Luôn xem mô tả template cho biến bắt buộc và domain/từ khóa được phép
+- Dùng template marketplace khi có để tiết kiệm thời gian
+- Xử lý lỗi 404 (template có thể đã xóa hoặc lưu trữ)
+- Không cố ghi đè cài đặt template (engine, formats, …) — sẽ thất bại
+
+### Cho tác giả template
+
+- Giữ template tập trung một use case
+- Ghi rõ mọi biến kèm mô tả
+- Dùng giới hạn domain để tránh lạm dụng
+- Đặt giá phù hợp độ phức tạp
+- Kiểm thử kỹ trước khi xuất bản
+
+## Tạo template (nâng cao)
+
+Khi tự tạo template, bạn có thể cấu hình:
+
+### Giới hạn domain
+
+Giới hạn domain template có thể dùng:
+
+```json
+{
+    "allowedDomains": {
+        "type": "glob",
+        "patterns": ["*.example.com", "docs.mysite.com"]
+    }
+}
+```
+
+- `type`: `"exact"` (khớp chính xác) hoặc `"glob"` (khớp pattern)
+- `patterns`: mảng domain hoặc pattern được phép
+
+### Giới hạn từ khóa (template search)
+
+Giới hạn truy vấn dùng với template tìm kiếm:
+
+```json
+{
+    "allowedKeywords": {
+        "type": "glob",
+        "patterns": ["*tutorial*", "*documentation*"]
+    }
+}
+```
+
+- `allowedKeywords` được xác thực trước khi chạy truy vấn.
+- `type`: `"exact"` hoặc `"glob"`
+- `patterns`: giá trị/pattern từ khóa được phép
+- Xác thực truy vấn trước khi áp dụng `queryTransform`.
+
+### Định giá
+
+Đặt chi phí credit mỗi lần gọi:
+
+```json
+{
+    "pricing": {
+        "perCall": 10,
+        "currency": "credits"
+    }
+}
+```
+
+### Handler tùy chỉnh
+
+Viết mã JavaScript/TypeScript để:
+
+- **`requestHandler`**: Hậu xử lý kết quả scrape và thêm trường tùy chỉnh
+- **`failedRequestHandler`**: Xử lý lỗi với logic thử lại tùy chỉnh
+- **`queryTransform`** (chỉ search): Biến đổi truy vấn trước khi tìm
+- **`urlTransform`** (chỉ scrape/crawl): Biến đổi URL trước khi xử lý
+
+Cả hai biến đổi hỗ trợ:
+
+- Chế độ template với placeholder (query: `{{query}}`, url: `{{url}}`)
+- Chế độ append với `prefix` và `suffix`
+- `regexExtract` tùy chọn để trích chuỗi con trước khi áp dụng chế độ
+
+Ví dụ trích regex cho hồ sơ TikTok:
+
+```json
+{
+    "customHandlers": {
+        "urlTransform": {
+            "enabled": true,
+            "mode": "append",
+            "prefix": "",
+            "suffix": "",
+            "regexExtract": {
+                "pattern": "^(https?:\\/\\/www\\.tiktok\\.com\\/@[^\\/?#]+)",
+                "flags": "i",
+                "group": 1
+            }
+        }
+    }
+}
+```
+
+Trích `https://www.tiktok.com/@piperrockelle` từ đầu vào như:
+
+- `https://www.tiktok.com/@piperrockelle?abb=ccc`
+- `https://www.tiktok.com/@piperrockelle`
+
+Ví dụ `requestHandler`:
+
+```javascript
+// Extract structured data from page context
+const title = context.data.title;
+const content = context.data.markdown;
+
+return {
+    extractedTitle: title,
+    wordCount: content.split(/\s+/).length,
+    customMetric: calculateMetric(content),
+};
+```
+
+### Mô hình bảo mật
+
+- **Template không tin cậy**: Chạy trong sandbox VM cứng với giới hạn chặt
+- **Template tin cậy**: Có thể dùng async function với quyền truy cập trang trình duyệt có kiểm soát
+
+Chỉ template được AnyCrawl review và phê duyệt mới được đánh dấu trusted.
+
+## FAQ
+
+### Có thể ghi đè cài đặt template như engine hay formats không?
+
+Không. Template là cấu hình bất biến. Chỉ có thể cung cấp `url`/`query` và `variables`.
+
+### Dùng template từ marketplace thì sao?
+
+Template marketplace công khai. Bạn trả credit theo mức tác giả định nghĩa.
+
+### Template có thấy API key của tôi không?
+
+Không. Template chạy trong sandbox cách ly và không truy cập thông tin đăng nhập của bạn.
+
+### Làm sao tạo template riêng?
+
+Truy cập playground AnyCrawl để tạo và thử template. Sau khi xuất bản, dùng qua API.
+
+## Xem thêm
+
+- [Tài liệu Scrape API](./scrape)
+- [Tài liệu Crawl API](./crawl)
+- [Tài liệu Search API](./search)
+- [Template Marketplace](https://anycrawl.dev/template)

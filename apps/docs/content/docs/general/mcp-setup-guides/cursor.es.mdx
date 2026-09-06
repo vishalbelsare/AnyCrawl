@@ -1,0 +1,107 @@
+---
+title: Cursor
+description: Añade rastreo web y búsqueda a Cursor con AnyCrawl MCP
+icon: MousePointer
+---
+
+# Búsqueda web y extracción con MCP en Cursor
+
+Añade capacidades de rastreo web y búsqueda a Cursor con AnyCrawl MCP.
+
+## Configuración rápida
+
+### 1. Obtén tu clave API
+
+Regístrate en [anycrawl.dev](https://anycrawl.dev) y copia tu clave API desde el panel.
+
+### 2. Añadir a Cursor
+
+Abre Ajustes (`Cmd+,` en Mac, `Ctrl+,` en Windows), busca "MCP" y añade:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Sustituye `your-api-key` por tu clave API real de AnyCrawl.
+
+### 3. Reinicia Cursor
+
+¡Listo! Ya puedes buscar y rastrear la web desde Cursor.
+
+## Demostración rápida
+
+Prueba esto en el chat de Cursor (`Cmd+K`):
+
+**Buscar en la web:**
+
+```
+Search for TypeScript best practices 2025
+```
+
+**Extraer una página:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Obtener documentación:**
+
+```
+Scrape the React hooks documentation and explain useEffect
+```
+
+**Rastrear un sitio:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Cursor usará automáticamente las herramientas de búsqueda, extracción y rastreo de AnyCrawl.
+
+## Solución de problemas
+
+### El servidor no responde
+
+1. Comprueba que tu clave API sea válida
+2. Asegúrate de tener Node.js 18 o superior instalado
+3. Reinicia Cursor tras cambiar la configuración
+
+### Errores de permisos
+
+Asegúrate de que npx pueda ejecutarse. Puede que necesites instalar el paquete globalmente:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Luego actualiza la configuración para usar el paquete global:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Próximos pasos
+
+- Más sobre [opciones de extracción](../scrape)
+- Explora [capacidades de rastreo](../crawl)
+- Consulta [funciones de búsqueda](../search)
+- Lee la [documentación completa del servidor MCP](../mcp)

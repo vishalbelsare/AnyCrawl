@@ -1,0 +1,499 @@
+---
+title: Monitors
+description: Track webpage and price changes on a schedule with diff detection, AI filtering, and webhook or email alerts.
+icon: Radar
+---
+
+## Introduction
+
+Monitors let you watch URLs for meaningful changes over time. Each monitor runs on a cron schedule, scrapes the target page, compares the result against the previous snapshot, and notifies you when something important changed.
+
+**Key Features**: Webpage text diffing, structured price extraction, optional AI judgment, webhook and email notifications, snapshot history, and on-demand checks.
+
+### Monitor Types
+
+| Type | `monitor_type` | Default `track_mode` | Use Case |
+|------|----------------|----------------------|----------|
+| Webpage | `"webpage"` | `"text"` | Docs, blog posts, terms of service, status pages |
+| Price | `"price"` | `"json"` | Product prices, stock status, structured fields |
+
+Monitors are built on top of [Scheduled Tasks](./scheduled-tasks). Creating a monitor also creates a backing scheduled scrape task (1:1). You manage scheduling through the monitor API; the underlying task is managed automatically.
+
+<Callout type="info">
+**MVP note:** Multiple targets are accepted in the request body, but only the **first target** is scheduled today. Additional multi-target support may arrive in a future release.
+</Callout>
+
+## API Endpoints
+
+```
+POST   /v1/monitors                         # Create a monitor
+GET    /v1/monitors                         # List monitors
+GET    /v1/monitors/changes                 # List changes across all monitors (feed)
+GET    /v1/monitors/:id                     # Get monitor details
+PATCH  /v1/monitors/:id                     # Update monitor
+DELETE /v1/monitors/:id                     # Delete monitor
+POST   /v1/monitors/:id/pause                 # Pause monitoring
+POST   /v1/monitors/:id/resume                # Resume monitoring
+POST   /v1/monitors/:id/check                 # Trigger on-demand check
+GET    /v1/monitors/:id/snapshots             # List snapshots
+GET    /v1/monitors/:id/changes               # List detected changes
+GET    /v1/monitors/:id/changes/:changeId     # Get change detail
+```
+
+## Quick Start
+
+### Webpage Change Monitor
+
+Watch a documentation page every hour and get webhook alerts when content changes:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/monitors" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Docs Changelog Watch",
+    "monitor_type": "webpage",
+    "cron_expression": "0 * * * *",
+    "timezone": "UTC",
+    "targets": [
+      {
+        "url": "https://example.com/changelog",
+        "engine": "auto"
+      }
+    ],
+    "diff_options": {
+      "only_main_content": true,
+      "min_change_ratio": 0.01
+    },
+    "notify_options": {
+      "channels": ["webhook"],
+      "only_meaningful": true
+    }
+  }'
+```
+
+```javascript tab="JavaScript (SDK)"
+import { AnyCrawlClient } from "@anycrawl/js-sdk";
+
+const client = new AnyCrawlClient(process.env.ANYCRAWL_API_KEY);
+
+const monitor = await client.createMonitor({
+  name: "Docs Changelog Watch",
+  monitor_type: "webpage",
+  cron_expression: "0 * * * *",
+  targets: [{ url: "https://example.com/changelog", engine: "auto" }],
+  diff_options: { only_main_content: true, min_change_ratio: 0.01 },
+  notify_options: { channels: ["webhook"], only_meaningful: true },
+});
+
+console.log("Monitor ID:", monitor.monitor_id);
+console.log("Next check:", monitor.next_execution_at);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/monitors",
+    headers={
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    json={
+        "name": "Docs Changelog Watch",
+        "monitor_type": "webpage",
+        "cron_expression": "0 * * * *",
+        "targets": [{"url": "https://example.com/changelog", "engine": "auto"}],
+        "diff_options": {"only_main_content": True, "min_change_ratio": 0.01},
+        "notify_options": {"channels": ["webhook"], "only_meaningful": True},
+    },
+)
+
+data = response.json()
+print("Monitor ID:", data["data"]["monitor_id"])
+```
+
+### Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "monitor_id": "550e8400-e29b-41d4-a716-446655440000",
+    "scheduled_task_id": "660e8400-e29b-41d4-a716-446655440001",
+    "track_mode": "text",
+    "next_execution_at": "2026-07-17T13:00:00.000Z"
+  }
+}
+```
+
+### Price Monitor
+
+Track a product price every 15 minutes with structured extraction:
+
+```json
+{
+  "name": "Product Price Tracker",
+  "monitor_type": "price",
+  "cron_expression": "*/15 * * * *",
+  "timezone": "America/New_York",
+  "targets": [
+    {
+      "url": "https://shop.example.com/product/12345",
+      "engine": "auto"
+    }
+  ],
+  "extract_schema": {
+    "type": "object",
+    "properties": {
+      "price": { "type": "number" },
+      "currency": { "type": "string" },
+      "in_stock": { "type": "boolean" }
+    },
+    "required": ["price"]
+  },
+  "notify_options": {
+    "channels": ["webhook"],
+    "only_meaningful": true,
+    "thresholds": {
+      "price_change_pct": 5
+    }
+  }
+}
+```
+
+<Callout type="warn">
+`extract_schema` is **required** when `monitor_type` is `"price"`.
+</Callout>
+
+## Request Parameters
+
+### Core Configuration
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `name` | string | Yes | - | Monitor name (1–255 characters) |
+| `description` | string | No | - | Optional description |
+| `monitor_type` | string | No | `"webpage"` | `"webpage"` or `"price"` |
+| `cron_expression` | string | Yes | - | Standard 5-field cron expression |
+| `timezone` | string | No | `"UTC"` | Timezone for scheduling |
+| `targets` | array | Yes | - | One or more target URLs (see below) |
+| `goal` | string | No | - | Natural-language criterion for AI change judgment |
+| `track_mode` | string | No | inferred | `"text"`, `"json"`, or `"mixed"` |
+| `extract_schema` | object | Conditional | - | JSON schema for structured extraction (required for `price`) |
+| `concurrency_mode` | string | No | `"skip"` | `"skip"` or `"queue"` |
+| `max_executions_per_day` | number | No | - | Daily execution cap |
+| `tags` | string[] | No | - | Organization tags |
+| `metadata` | object | No | - | Custom metadata |
+
+### Target Object
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `url` | string | Yes | - | Page URL to monitor |
+| `engine` | string | No | `"auto"` | `"auto"`, `"cheerio"`, `"playwright"`, or `"puppeteer"` |
+| `options` | object | No | - | Additional scrape options passed through to the worker |
+| `location` | object | No | - | Unsupported for new targets; fixed-country routing is not available |
+
+### Diff Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `only_main_content` | boolean | `true` | Strip navigation and boilerplate before diffing |
+| `ignore_selectors` | string[] | - | Substring filters — any line of the normalized text containing one of these strings is excluded from comparison (matched against text, not the DOM) |
+| `min_change_ratio` | number | - | Minimum normalized change ratio (0–1) to treat as changed |
+
+### Notification Options
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `channels` | string[] | `["webhook"]` | `"webhook"` and/or `"email"` |
+| `email_recipients` | string[] | - | Required when `"email"` is in `channels` |
+| `only_meaningful` | boolean | `true` | Suppress alerts for noise (uses AI judge when `goal` is set) |
+| `thresholds.price_change_pct` | number | - | Minimum price change percentage to alert (price monitors) |
+
+<Callout type="info">
+Email notifications require SMTP configuration on self-hosted deployments. See [Docker](./docker) and set `ANYCRAWL_SMTP_*` environment variables.
+</Callout>
+
+## How Change Detection Works
+
+Each scheduled run follows this pipeline:
+
+1. **Scrape** — The backing scheduled task scrapes the target URL.
+2. **Normalize** — Content is normalized (main content extraction, literal text-line exclusion).
+3. **Compare** — Text and JSON are compared independently; mixed mode considers both. Invalid extraction, including on the first check, produces an error.
+4. **Judge** — When `goal` is set, the judge receives both kinds of diff. Unavailable or incomplete judgment is recorded as unknown and preserves the change.
+5. **Commit** — Snapshot, change, durable notification intents and check completion commit together.
+6. **Deliver** — A recovery worker attempts each recipient/channel with bounded retries and records actual SMTP/HTTP delivery.
+
+### Snapshot Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `same` | No meaningful change detected |
+| `changed` | Content or extracted fields changed |
+| `new` | First valid snapshot for this configuration revision |
+| `error` | Scrape or processing failed |
+
+## Managing Monitors
+
+### List Monitors
+
+```bash
+curl -X GET "https://api.anycrawl.dev/v1/monitors" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### Pause and Resume
+
+```bash
+# Pause
+curl -X POST "https://api.anycrawl.dev/v1/monitors/:id/pause" \
+  -H "Authorization: Bearer <your-api-key>"
+
+# Resume
+curl -X POST "https://api.anycrawl.dev/v1/monitors/:id/resume" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### Trigger On-Demand Check
+
+```bash
+curl -X POST "https://api.anycrawl.dev/v1/monitors/:id/check" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+Returns `202 Accepted` when the check is queued. Returns `409` if a check is already in progress.
+
+```javascript tab="JavaScript (SDK)"
+await client.runMonitor(monitorId);
+```
+
+### Update a Monitor
+
+```bash
+curl -X PATCH "https://api.anycrawl.dev/v1/monitors/:id" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cron_expression": "0 */2 * * *",
+    "goal": "Alert only when pricing or availability changes"
+  }'
+```
+
+### Delete a Monitor
+
+Deleting a monitor also removes its backing scheduled task, snapshots, and change history.
+
+```bash
+curl -X DELETE "https://api.anycrawl.dev/v1/monitors/:id" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+## Snapshots and Changes
+
+### List Snapshots
+
+```bash
+curl -X GET "https://api.anycrawl.dev/v1/monitors/:id/snapshots?limit=20&offset=0" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript (SDK)"
+const snapshots = await client.getMonitorSnapshots(monitorId, { limit: 20 });
+```
+
+### List Changes
+
+```bash
+curl -X GET "https://api.anycrawl.dev/v1/monitors/:id/changes?limit=20" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript (SDK)"
+const changes = await client.getMonitorChanges(monitorId, { limit: 20 });
+const detail = await client.getMonitorChange(monitorId, changeId);
+```
+
+### Cross-Monitor Change Feed
+
+List detected changes across **all** of your monitors, newest first — the source
+for a unified "changes inbox". Rows are lightweight (monitor name/type, url,
+change type, AI judgment, timestamp) and omit the heavy diff payload; fetch the
+full diff per change via `GET /v1/monitors/:id/changes/:changeId`.
+
+```bash
+# Optional ?change_type= filters (e.g. content, price_up, price_down)
+curl -X GET "https://api.anycrawl.dev/v1/monitors/changes?limit=50" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### Example Change Record
+
+```json
+{
+  "uuid": "change-uuid",
+  "monitor_uuid": "monitor-uuid",
+  "url": "https://example.com/changelog",
+  "change_type": "text",
+  "diff_text": "--- previous\n+++ current\n...",
+  "judgment": {
+    "meaningful": true,
+    "confidence": "high",
+    "reason": "New release section added"
+  },
+  "captured_at": "2026-07-17T12:00:00.000Z"
+}
+```
+
+## Webhook Events
+
+Subscribe to monitor events via [Webhooks](./webhooks):
+
+| Event | Description |
+|-------|-------------|
+| `monitor.check.completed` | A scheduled or on-demand check finished (includes summary) |
+| `monitor.changed` | Webpage content changed meaningfully |
+| `monitor.price.changed` | Extracted price or structured fields changed |
+| `monitor.error` | Monitor check failed |
+
+Monitor webhook payloads include inline diff data so you can act without an extra API call:
+
+```json
+{
+  "event": "monitor.changed",
+  "data": {
+    "monitor_id": "550e8400-e29b-41d4-a716-446655440000",
+    "monitor_name": "Docs Changelog Watch",
+    "monitor_type": "webpage",
+    "url": "https://example.com/changelog",
+    "change_type": "text",
+    "summary": { "total": 1, "same": 0, "changed": 1, "new": 0, "removed": 0, "error": 0 },
+    "diff_text": "...",
+    "judgment": { "meaningful": true, "confidence": "high", "reason": "..." },
+    "captured_at": "2026-07-17T12:00:00.000Z"
+  }
+}
+```
+
+## JavaScript SDK
+
+Install `@anycrawl/js-sdk` **0.0.6+** for monitor support:
+
+```bash
+pnpm add @anycrawl/js-sdk
+```
+
+```ts
+import { AnyCrawlClient } from "@anycrawl/js-sdk";
+
+const client = new AnyCrawlClient(process.env.ANYCRAWL_API_KEY!);
+
+// Create, list, get, update, delete
+const created = await client.createMonitor({ /* ... */ });
+const monitors = await client.listMonitors();
+const monitor = await client.getMonitor(created.monitor_id);
+await client.updateMonitor(created.monitor_id, { name: "Updated name" });
+await client.deleteMonitor(created.monitor_id);
+
+// Lifecycle
+await client.pauseMonitor(created.monitor_id);
+await client.resumeMonitor(created.monitor_id);
+await client.runMonitor(created.monitor_id);
+
+// History
+await client.getMonitorSnapshots(created.monitor_id, { limit: 10 });
+await client.getMonitorChanges(created.monitor_id, { limit: 10 });
+await client.getMonitorChange(created.monitor_id, changeId);
+```
+
+## Best Practices
+
+### 1. Choose the Right Monitor Type
+
+- Use **webpage** monitors for editorial content, docs, and legal pages.
+- Use **price** monitors when you need structured field comparison (price, stock, SKU).
+
+### 2. Reduce Noise
+
+- Set `only_main_content: true` for webpage monitors.
+- Add `ignore_selectors` for ads, timestamps, or dynamic widgets.
+- Use `min_change_ratio` to ignore tiny edits.
+- Set a `goal` and enable `only_meaningful` for AI filtering.
+
+### 3. Set Sensible Schedules
+
+- Match cron frequency to how often the page actually updates.
+- Use `max_executions_per_day` to cap credit usage on expensive pages.
+
+### 4. Use Webhooks for Automation
+
+- Subscribe to `monitor.changed` or `monitor.price.changed`.
+- Payloads include diffs inline — no need to poll the changes API.
+
+## Limitations
+
+| Item | Limit |
+|------|-------|
+| Targets per monitor (scheduled) | 1 (first target only in MVP) |
+| Targets in request body | Up to 50 |
+| Email recipients | Up to 20 |
+| Ignore selectors | Up to 50 |
+| Tags | Up to 20 |
+| Inline snapshot content | Configurable via `ANYCRAWL_MONITOR_MAX_INLINE_CHARS` (default 256 KB) |
+
+## Troubleshooting
+
+### Monitor Not Running
+
+- Confirm the monitor is active (`is_active: true`).
+- Confirm it is not paused.
+- Verify the cron expression and timezone.
+- Ensure the scheduler worker is running (self-hosted).
+
+### Too Many Alerts
+
+- Increase `min_change_ratio`.
+- Add `ignore_selectors` for dynamic sections.
+- Set a `goal` with `only_meaningful: true`.
+- For price monitors, raise `thresholds.price_change_pct`.
+
+### On-Demand Check Returns 503
+
+The scheduler worker must be running to process `/check` requests. On self-hosted deployments, ensure the scrape worker with scheduler enabled is up.
+
+## Related Documentation
+
+- [Scheduled Tasks](./scheduled-tasks) — Underlying cron scheduling
+- [Webhooks](./webhooks) — Event notifications including monitor events
+- [Scrape API](./scrape) — Scrape options passed through targets
+- [JSON Mode](./json-mode) — Structured extraction used by price monitors
+
+## Reliable Checks, History and Delivery
+
+A check has durable `pending`, `ready`, `processing`, `completed` or `failed` state. Concurrent processing uses leases; an expired processor cannot publish the result twice. Only one check per monitor is active across scraping and post-processing. `skip` drops an overlapping cron run; `queue` delays it. Manual requests also respect the guard. Monitor-backed tasks do not count toward the ordinary scheduled-task quota.
+
+`GET /v1/monitors/:id` includes `in_progress`, `last_check_state`, `last_check_at`, `last_check_error`, `pause_reason` and `revision`. Use `is_active && !is_paused` for the effective state. HTTP 409 codes distinguish `MONITOR_PAUSED` and `MONITOR_CHECK_IN_PROGRESS`. Resume an auto-paused monitor directly.
+
+PATCH merges option siblings and validates the resulting configuration inside the transaction. `goal: null` clears the goal and extraction prompt; schema removal is only allowed when the final mode does not require it. `monitor_type` cannot be changed. Unknown top-level fields return 400. Target options cannot use templates. Changes to effective scraping, tracking mode, goal or ignored text lines create a new revision and baseline. Notification/threshold-only edits retain the baseline.
+
+Snapshot lists are slim. `GET /v1/monitors/:id/snapshots/:snapshotId` returns a bounded content preview and extracted data, with `content_truncated`, `content_length`, `content_complete` and `monitor_revision`. Complete comparison text is retained in the database. The default preview limit is 262,144 characters; the comparison limit is 2,000,000 characters. Oversized content is an error. Legacy incomplete snapshots remain readable but are not used as a new baseline.
+
+Snapshot, monitor-change and owner-feed lists return `pagination: {has_more, next_cursor}` alongside `data`. Send the returned cursor for the next page; offset remains available. Changes support `include_diff_text=false`, with full diffs fetched from change detail. IDs break timestamp ties, so new arrivals do not shift cursor pages.
+
+New `notified` values mean at least one actual SMTP acceptance or Webhook HTTP 2xx. `notification_status` distinguishes `none`, `pending`, `queued`, `delivered`, `failed` and `skipped`; `legacy` means the older boolean cannot prove delivery. Check detail uses `GET /v1/monitors/:id/checks`; per-recipient delivery history uses `GET /v1/monitors/:id/notifications`. Change detail also returns its `notifications`. Error checks send email when email is enabled. Missing SMTP configuration and temporary transport failures remain visible and retryable. Delivery is at least once; stable Webhook delivery IDs and email Message-IDs support deduplication.
+
+The recovery worker runs with the scheduler, or separately with `--queues=monitor`. Defaults: `ANYCRAWL_MONITOR_MAX_ATTEMPTS=5`, `ANYCRAWL_MONITOR_RETRY_DELAY_MS=5000`, `ANYCRAWL_MONITOR_LEASE_MS=120000`, `ANYCRAWL_MONITOR_POLL_MS=5000`. Set `ANYCRAWL_MONITOR_RETENTION_DAYS` to enable bounded history cleanup; default `0` retains history. Cleanup protects healthy baselines, retained references, pending deliveries and legacy records. Upgrading never replays old alerts automatically.
+
+`capabilities.location=false` means country locking is unavailable. `ignore_selectors` matches literal substrings of normalized text lines, not CSS. Price history should be grouped by URL, field path and known currency; loaded change points are not the complete price history.
+
+```ts
+const feed = await client.listMonitorChanges({ limit: 20 });
+const page = await client.getMonitorSnapshotsPage(monitorId, { limit: 20 });
+if (page.data[0]) {
+  const detail = await client.getMonitorSnapshot(monitorId, page.data[0].uuid);
+}
+const checks = await client.getMonitorChecks(monitorId);
+const deliveries = await client.getMonitorNotifications(monitorId);
+```

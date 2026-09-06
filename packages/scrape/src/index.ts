@@ -30,6 +30,7 @@ export * from "./managers/Event.js";
 export * from "./managers/Progress.js";
 export * from "./managers/Webhook.js";
 export * from "./managers/Scheduler.js";
+export { MonitorManager } from "./monitor/MonitorManager.js";
 export * from "./HttpClient.js";
 
 // Services
@@ -37,3 +38,10 @@ export * from "./services/MapService.js";
 
 // Cache Manager
 export * from "./managers/Cache.js";
+
+// Auto engine utilities
+export { resolveAutoEngine, analyzeHtmlForJSRequirement } from "./utils/autoEngine.js";
+export { runAutoCrawl } from "./utils/crawlCoordinator.js";
+export { runBatchScrape } from "./utils/batchScrapeCoordinator.js";
+export { DomainCache } from "./utils/DomainCache.js";
+export { smartWaitForDOMStable } from "./utils/smartWait.js";

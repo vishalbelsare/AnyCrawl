@@ -1,0 +1,360 @@
+---
+title: Map
+description: Alle URLs einer Website per Sitemap, Suchmaschine und Seitenlink-Analyse extrahieren.
+icon: Map
+---
+
+## Einführung
+
+Die AnyCrawl-Map-API extrahiert URLs einer Website, indem sie mehrere Quellen kombiniert: Sitemap-Parsing, Suchmaschinenergebnisse und HTML-Link-Extraktion. So erhalten Sie umfassende URL-Discovery für Site-Mapping, Content-Indexing und Crawl-Planung.
+
+**Kernpunkt**: Die API **liefert Daten sofort und synchron** – kein Polling und keine Webhooks nötig. Drei URL-Quellen werden für maximale Abdeckung kombiniert.
+
+### Kernfunktionen
+
+- **Multi-Source-Discovery**: Kombination aus Sitemap-Parsing, Suchergebnissen und Link-Extraktion von Seiten
+- **Sitemap-Unterstützung**: Parst `robots.txt` und `sitemap.xml` (inkl. Sitemap-Index und gzip)
+- **Suchintegration**: Nutzt automatisch Suchmaschinen mit dem `site:`-Operator
+- **Link-Extraktion**: Extrahiert alle `<a href>`-Links der Zielseite
+- **Domain-Filterung**: Filter nach exakter Domain oder inklusive Subdomains
+- **Sofortige Antwort**: **Synchrones API** – Ergebnisse ohne Polling
+
+## API-Endpunkt
+
+```
+POST https://api.anycrawl.dev/v1/map
+```
+
+## Nutzungsbeispiele
+
+### cURL
+
+#### Einfaches URL-Mapping
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data); // Array of URLs with metadata
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### Subdomains einschließen
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "include_subdomains": true,
+    "limit": 1000
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        include_subdomains: true,
+        limit: 1000,
+    }),
+});
+const result = await response.json();
+// Includes URLs from blog.example.com, docs.example.com, etc.
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'include_subdomains': True,
+        'limit': 1000
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### Sitemap-Parsing überspringen
+
+Für schnellere Ergebnisse, wenn nur Seitenlinks und Suchergebnisse benötigt werden:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "ignore_sitemap": true
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        ignore_sitemap: true,
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'ignore_sitemap': True
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## Anfrageparameter
+
+| Parameter | Typ | Erforderlich | Standard | Beschreibung |
+| --------- | ---- | -------- | ------- | ----------- |
+| `url` | string | Ja | - | Ziel-URL zum Mappen, gültige HTTP/HTTPS-Adresse |
+| `limit` | number | Nein | `5000` | Maximale Anzahl zurückgegebener URLs (1–50000) |
+| `include_subdomains` | boolean | Nein | `false` | URLs von Subdomains einschließen (z. B. blog.example.com) |
+| `ignore_sitemap` | boolean | Nein | `false` | Sitemap-Parsing überspringen, nur Suche und Seitenlinks |
+| `max_age` | number | Nein | - | Cache-Maximalalter (ms). `0` erzwingt Neuaufbau; weglassen = Server-Standard |
+| `use_index` | boolean | Nein | `true` | Page-Cache-Index (`page_cache`) als zusätzliche URL-Quelle nutzen |
+
+### Cache-Verhalten
+
+- `max_age` steuert Lesevorgänge aus dem Map-Cache. `0` erzwingt Aktualisierung.
+- `use_index=false` deaktiviert die Page-Cache-Index-Quelle (wirkt nur, wenn Page Cache aktiv ist).
+- `/v1/map` liefert kein öffentliches `fromCache` in der Antwort (internes Caching).
+
+### URL-Discovery-Quellen
+
+Die Map-API kombiniert drei Quellen:
+
+#### 1. Sitemap-Parsing
+
+- Parst `robots.txt` nach Sitemap-Angaben
+- Versucht typische Pfade: `/sitemap.xml`, `/sitemap.xml.gz`
+- Unterstützt Sitemap-Indexe und gzip-komprimierte Sitemaps
+
+#### 2. Suchmaschinenergebnisse
+
+- Nutzt automatisch `site:domain.com` für indexierte Seiten
+- Liefert Titel- und Beschreibungs-Metadaten
+
+#### 3. Seitenlink-Extraktion
+
+- Extrahiert alle `<a href>`-Links aus dem HTML der Zielseite
+- Linktext als Titel-Metadatum
+- `title`-Attribut und `aria-label` als Beschreibung
+
+### Metadaten-Quellen
+
+| Quelle | Titel | Beschreibung |
+| ------ | ----- | ----------- |
+| Sitemap | - | - |
+| Suchmaschine | Titel aus SERP | Snippet aus SERP |
+| Seitenlinks | Linktext oder title-Attribut | aria-label-Attribut |
+
+## Antwortformat
+
+### Erfolgsantwort (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "url": "https://example.com/page1",
+            "title": "Page Title",
+            "description": "Page description from search results"
+        },
+        {
+            "url": "https://example.com/page2",
+            "title": "Another Page"
+        },
+        {
+            "url": "https://example.com/page3"
+        }
+    ]
+}
+```
+
+### Fehlerantworten
+
+#### 400 – Validierungsfehler
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid url",
+    "details": {
+        "issues": [
+            {
+                "field": "url",
+                "message": "Invalid url",
+                "code": "invalid_string"
+            }
+        ]
+    }
+}
+```
+
+#### 402 – Unzureichendes Guthaben
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits",
+    "message": "Estimated credits required (1) exceeds available credits (0).",
+    "details": {
+        "estimated_total": 1,
+        "available_credits": 0
+    }
+}
+```
+
+#### 500 – Interner Serverfehler
+
+```json
+{
+    "success": false,
+    "error": "Internal server error",
+    "message": "Error message details"
+}
+```
+
+## Best Practices
+
+### Anwendungsfälle
+
+1. **Crawl-Planung**: Zuerst alle URLs mit Map finden, dann vollständigen Crawl starten
+2. **Content-Indexing**: Vollständigen Index aller Seiten aufbauen
+3. **Site-Audits**: Alle Seiten für SEO oder Barrierefreiheit finden
+4. **Link-Analyse**: Interne Verlinkungsstruktur analysieren
+
+### Performance-Tipps
+
+- `ignore_sitemap: true` für schnellere Antworten, wenn keine Sitemap nötig ist
+- Passendes `limit` setzen, um unnötige Verarbeitung zu vermeiden
+- `include_subdomains: false` (Standard), sofern keine Subdomain-Discovery nötig ist
+
+### Kombination mit Crawl
+
+Map eignet sich zur Planung von Crawls:
+
+```javascript
+// Schritt 1: URLs mit Map ermitteln
+const mapResponse = await fetch("/v1/map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        limit: 100,
+    }),
+});
+const { data: urls } = await mapResponse.json();
+
+// Schritt 2: Gefundene URLs für Crawl-Plan nutzen
+const crawlResponse = await fetch("/v1/crawl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        include_paths: urls.map((u) => new URL(u.url).pathname),
+        limit: 100,
+    }),
+});
+```
+
+## Credits
+
+| Vorgang | Credits |
+| --------- | ------- |
+| Map-Vorgang | 1 |
+
+**Gesamt**: 1 Credit pro Anfrage.
+
+## Häufige Fragen
+
+### F: Was ist der Unterschied zwischen Map und Crawl?
+
+**A:** **Map** findet URLs, ohne Seiteninhalte vollständig abzurufen – schnell und leichtgewichtig. **Crawl** lädt und verarbeitet die Inhalte jeder Seite. Map für Discovery und Planung, Crawl für Content-Extraktion.
+
+### F: Warum fehlen manche URLs?
+
+**A:** Mögliche Gründe:
+- Andere Domain/Subdomain (ggf. `include_subdomains: true`)
+- Keine Sitemap vorhanden
+- URLs nur per JavaScript generiert
+- `limit` zu niedrig
+
+### F: Wie funktioniert die Suchmaschinen-Discovery?
+
+**A:** Die Map-API fragt Suchmaschinen mit `site:domain.com` ab, um indexierte Seiten zu finden – auch solche, die nicht in der Sitemap oder nur schwer von der Startseite erreichbar sind.
+
+### F: Folgt Map Weiterleitungen?
+
+**A:** Map extrahiert URLs wie in Sitemaps und Links vorkommend; zusätzliche URLs durch Redirect-Follow werden nicht gezielt entdeckt.
+
+### F: Gibt es ein Ratenlimit?
+
+**A:** Nein, die API **unterstützt nativ hohe Parallelität**. Mehrere gleichzeitige Anfragen sind unkritisch.

@@ -320,7 +320,7 @@ export class WebhooksController {
                     },
                     "webhook",
                     webhookId!,
-                    owner.userId || owner.apiKeyId
+                    owner
                 );
 
                 res.json({

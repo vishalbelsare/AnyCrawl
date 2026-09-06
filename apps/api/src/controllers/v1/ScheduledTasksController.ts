@@ -13,6 +13,7 @@ import {
     buildLimitExceededResponse,
     normalizePagination,
     log,
+    config,
 } from "@anycrawl/libs";
 import {
     getDB,
@@ -25,7 +26,10 @@ import {
 } from "@anycrawl/db";
 import { randomUUID } from "crypto";
 import { serializeRecord, serializeRecords } from "../../utils/serializer.js";
-import { handleWebhookAssociations, removeWebhookAssociations } from "./scheduled-tasks/webhookAssociations.js";
+import {
+    handleWebhookAssociations,
+    removeWebhookAssociations,
+} from "./scheduled-tasks/webhookAssociations.js";
 
 const TASK_TYPE_ICONS: Record<string, string> = {
     scrape: "FileText",
@@ -56,21 +60,28 @@ export class ScheduledTasksController {
                 const db = await getDB();
 
                 const result = await db
-                    .select({
-                        subscriptionTier: schemas.apiKey.subscriptionTier,
-                        taskCount: sql<number>`(
-                            SELECT count(*) FROM scheduled_tasks
-                            WHERE is_active = true
-                            AND user_id = ${userId || apiKeyId}
-                        )`,
-                    })
+                    .select({ subscriptionTier: schemas.apiKey.subscriptionTier })
                     .from(schemas.apiKey)
                     .where(eq(schemas.apiKey.uuid, apiKeyId))
                     .limit(1);
 
+                // Count active tasks EXCLUDING monitor-backed ones — monitors are
+                // hidden from the scheduled-tasks list, so counting them here would
+                // make the quota reject creations the UI says are available.
+                // Filtered in JS: the metadata JSON operators differ across drivers.
+                const activeTasks = await db
+                    .select({ metadata: schemas.scheduledTasks.metadata })
+                    .from(schemas.scheduledTasks)
+                    .where(
+                        sql`${schemas.scheduledTasks.isActive} = true
+                            AND ${schemas.scheduledTasks.userId} = ${userId || apiKeyId}`
+                    );
+                const currentCount = activeTasks.filter(
+                    (task: any) => task?.metadata?.monitorManaged !== true
+                ).length;
+
                 const tier = result[0]?.subscriptionTier || "free";
                 const limit = getScheduledTasksLimit(tier);
-                const currentCount = Number(result[0]?.taskCount || 0);
 
                 if (currentCount >= limit) {
                     res.status(403).json(buildLimitExceededResponse(tier, limit, currentCount));
@@ -79,10 +90,15 @@ export class ScheduledTasksController {
             }
 
             let template = null;
-            if (validatedData.task_payload.template_id) {
+            // Accept both template_id (business key) and template_uuid (primary key).
+            const taskTemplateRef =
+                validatedData.task_payload.template_id || validatedData.task_payload.template_uuid;
+            if (taskTemplateRef) {
                 try {
-                    const { getTemplate } = await import("@anycrawl/db");
-                    template = await getTemplate(String(validatedData.task_payload.template_id));
+                    const { getTemplate, getTemplateByUuid } = await import("@anycrawl/db");
+                    template = validatedData.task_payload.template_id
+                        ? await getTemplate(String(validatedData.task_payload.template_id))
+                        : await getTemplateByUuid(String(validatedData.task_payload.template_uuid));
                 } catch (error) {
                     log.warning(`Failed to fetch template for credit calculation: ${error}`);
                 }
@@ -102,6 +118,16 @@ export class ScheduledTasksController {
             const db = await getDB();
             const taskUuid = randomUUID();
 
+            // monitorManaged/monitorUuid are reserved flags set exclusively by
+            // MonitorController — a user-supplied monitorManaged would hide this
+            // task from the scheduled-tasks list (and its quota) while it keeps
+            // running and billing.
+            let safeMetadata = validatedData.metadata;
+            if (safeMetadata && typeof safeMetadata === "object") {
+                const { monitorManaged: _mm, monitorUuid: _mu, ...rest } = safeMetadata as Record<string, any>;
+                safeMetadata = rest;
+            }
+
             await db.insert(schemas.scheduledTasks).values({
                 uuid: taskUuid,
                 apiKey: apiKeyId,
@@ -119,7 +145,7 @@ export class ScheduledTasksController {
                 isPaused: false,
                 nextExecutionAt: nextExecution,
                 tags: validatedData.tags,
-                metadata: validatedData.metadata,
+                metadata: safeMetadata,
                 createdAt: new Date(),
                 updatedAt: new Date(),
             });
@@ -234,11 +260,26 @@ export class ScheduledTasksController {
                 });
                 return;
             }
+            if (this.rejectIfMonitorManaged(existing, res)) return;
 
             const updateData: any = {
                 ...validatedData,
                 updatedAt: new Date(),
             };
+
+            // monitorManaged/monitorUuid are reserved (set by MonitorController):
+            // strip them from user input, but carry the existing row's flags forward
+            // so replacing metadata on a monitor-backed task cannot unhide it.
+            if (updateData.metadata && typeof updateData.metadata === "object") {
+                const { monitorManaged: _mm, monitorUuid: _mu, ...rest } = updateData.metadata as Record<string, any>;
+                const existingMeta = (existing.metadata ?? {}) as Record<string, any>;
+                updateData.metadata = {
+                    ...rest,
+                    ...(existingMeta.monitorManaged !== undefined
+                        ? { monitorManaged: existingMeta.monitorManaged, monitorUuid: existingMeta.monitorUuid }
+                        : {}),
+                };
+            }
 
             if (validatedData.cron_expression) {
                 updateData.cronExpression = validatedData.cron_expression;
@@ -251,8 +292,10 @@ export class ScheduledTasksController {
 
             if (validatedData.task_type) updateData.taskType = validatedData.task_type;
             if (validatedData.task_payload) updateData.taskPayload = validatedData.task_payload;
-            if (validatedData.concurrency_mode) updateData.concurrencyMode = validatedData.concurrency_mode;
-            if (validatedData.max_executions_per_day) updateData.maxExecutionsPerDay = validatedData.max_executions_per_day;
+            if (validatedData.concurrency_mode)
+                updateData.concurrencyMode = validatedData.concurrency_mode;
+            if (validatedData.max_executions_per_day)
+                updateData.maxExecutionsPerDay = validatedData.max_executions_per_day;
 
             delete updateData.task_type;
             delete updateData.task_payload;
@@ -319,6 +362,9 @@ export class ScheduledTasksController {
             const { reason } = req.body;
             const db = await getDB();
 
+            const existing = await getOwnedTask(db, taskId!, owner);
+            if (this.rejectIfMonitorManaged(existing, res)) return;
+
             const whereClause = buildTaskWhereClause(taskId!, owner);
 
             await db
@@ -338,7 +384,7 @@ export class ScheduledTasksController {
             }
 
             try {
-                if (process.env.ANYCRAWL_WEBHOOKS_ENABLED === "true") {
+                if (config.webhooks.enabled) {
                     const pausedTask = await db
                         .select()
                         .from(schemas.scheduledTasks)
@@ -358,7 +404,7 @@ export class ScheduledTasksController {
                             },
                             "task",
                             taskId!,
-                            pausedTask[0].userId ?? undefined
+                            { userId: pausedTask[0].userId ?? undefined, apiKeyId: pausedTask[0].apiKey ?? undefined }
                         );
                     }
                 }
@@ -383,6 +429,9 @@ export class ScheduledTasksController {
             const { taskId } = req.params;
             const owner = this.getOwnerContext(req);
             const db = await getDB();
+
+            const existing = await getOwnedTask(db, taskId!, owner);
+            if (this.rejectIfMonitorManaged(existing, res)) return;
 
             const whereClause = buildTaskWhereClause(taskId!, owner);
 
@@ -418,7 +467,7 @@ export class ScheduledTasksController {
             }
 
             try {
-                if (process.env.ANYCRAWL_WEBHOOKS_ENABLED === "true") {
+                if (config.webhooks.enabled) {
                     const resumedTask = await db
                         .select()
                         .from(schemas.scheduledTasks)
@@ -437,7 +486,7 @@ export class ScheduledTasksController {
                             },
                             "task",
                             taskId!,
-                            resumedTask[0].userId ?? undefined
+                            { userId: resumedTask[0].userId ?? undefined, apiKeyId: resumedTask[0].apiKey ?? undefined }
                         );
                     }
                 }
@@ -471,6 +520,10 @@ export class ScheduledTasksController {
 
             const owner = this.getOwnerContext(req);
             const db = await getDB();
+
+            const existing = await getOwnedTask(db, taskId, owner);
+            if (this.rejectIfMonitorManaged(existing, res)) return;
+
             const whereClause = buildTaskWhereClause(taskId, owner);
 
             const deletedTasks = await db
@@ -618,9 +671,10 @@ export class ScheduledTasksController {
 
             const executionsWithDuration = executions.map((execution: any) => ({
                 ...execution,
-                durationMs: execution.startedAt && execution.completedAt
-                    ? execution.completedAt.getTime() - execution.startedAt.getTime()
-                    : null,
+                durationMs:
+                    execution.startedAt && execution.completedAt
+                        ? execution.completedAt.getTime() - execution.startedAt.getTime()
+                        : null,
             }));
 
             const serialized = serializeRecords(executionsWithDuration);
@@ -637,6 +691,25 @@ export class ScheduledTasksController {
             this.handleError(error, res);
         }
     };
+
+    /**
+     * Monitor-backed tasks are hidden from the task list but were still
+     * mutable/deletable by taskId — deleting one silently cascaded the monitor
+     * and its snapshots away. Mutations (update/pause/resume/delete) must go
+     * through /v1/monitors; reads (get/executions) stay open. Returns true when
+     * the request was rejected. A null/missing task is NOT rejected here — the
+     * caller keeps its existing not-found behavior.
+     */
+    private rejectIfMonitorManaged(task: any, res: Response): boolean {
+        if (task?.metadata?.monitorManaged === true) {
+            res.status(409).json({
+                success: false,
+                error: "This task is managed by a monitor. Use the /v1/monitors endpoints instead.",
+            });
+            return true;
+        }
+        return false;
+    }
 
     private calculateNextExecution(cronExpression: string, timezone: string): Date | null {
         try {

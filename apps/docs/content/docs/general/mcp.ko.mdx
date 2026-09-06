@@ -1,0 +1,458 @@
+---
+title: MCP 서버
+description: Model Context Protocol(MCP)로 Cursor, Claude, VS Code에 AnyCrawl 웹 스크래핑 연동
+icon: Zap
+---
+
+**AnyCrawl MCP Server** — Model Context Protocol(MCP)을 통해 Cursor, Claude 및 기타 LLM 클라이언트에 강력한 웹 스크래핑·크롤링을 제공합니다.
+
+## 기능
+
+- 웹 스크래핑, 크롤링, 콘텐츠 추출
+- 검색 및 탐색
+- 배치 처리 및 동시성
+- 클라우드 및 셀프 호스팅 지원
+- 실시간 진행 추적
+- SSE 지원
+
+## 설치
+
+### npx로 실행
+
+```bash
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### 호스팅 API 사용
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/mcp"
+        }
+    }
+}
+```
+
+### 수동 설치
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
+```
+
+## Cursor에서 실행
+
+Cursor에 AnyCrawl MCP 서버를 추가합니다.
+
+1. Cursor 설정 열기
+2. Features > MCP Servers로 이동
+3. "+ Add new global MCP server" 클릭
+4. 아래 설정 입력
+
+```json
+{
+    "mcpServers": {
+        "anycrawl-mcp": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+            }
+        }
+    }
+}
+```
+
+## VS Code에서 실행
+
+VS Code 사용자 설정(JSON)에 아래 JSON 블록을 추가합니다.
+
+```json
+{
+    "mcp": {
+        "inputs": [
+            {
+                "type": "promptString",
+                "id": "apiKey",
+                "description": "AnyCrawl API Key",
+                "password": true
+            }
+        ],
+        "servers": {
+            "anycrawl": {
+                "command": "npx",
+                "args": ["-y", "anycrawl-mcp"],
+                "env": {
+                    "ANYCRAWL_API_KEY": "${input:apiKey}"
+                }
+            }
+        }
+    }
+}
+```
+
+## Claude Desktop에서 실행
+
+Claude 설정 파일에 다음을 추가합니다.
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/sse"
+        }
+    }
+}
+```
+
+## 설정
+
+### 환경 변수
+
+#### 클라우드 API에 필요
+
+- `ANYCRAWL_API_KEY`: AnyCrawl API 키
+    - 클라우드 API 사용 시 필수(기본)
+    - 셀프 호스팅 인스턴스 사용 시 선택
+- `ANYCRAWL_BASE_URL`: AnyCrawl API 기본 URL
+    - 선택
+    - 셀프 호스팅 인스턴스에는 필수
+
+### 설정 예
+
+#### 기본 클라우드 설정
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key-here"
+npx -y anycrawl-mcp
+```
+
+#### 셀프 호스팅 설정
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key"
+export ANYCRAWL_BASE_URL="https://your-instance.com"
+npx -y anycrawl-mcp
+```
+
+## 사용 가능한 도구
+
+### 1. 스크래프 도구 (`anycrawl_scrape`)
+
+단일 URL을 스크래핑하고 여러 형식으로 콘텐츠를 추출합니다.
+
+**적합한 경우:**
+
+- 한 페이지에서 콘텐츠 추출
+- 빠른 데이터 추출
+- 특정 URL 테스트
+
+**파라미터:**
+
+- `url`(필수): 스크래핑할 URL
+- `engine`(선택): 엔진(`auto`, `playwright`, `cheerio`, `puppeteer`). 기본 `auto`
+- `formats`(선택): 출력 형식(`markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`)
+- `timeout`(선택): 타임아웃(ms, 기본 300000)
+- `wait_for`(선택): 페이지 로드 대기 시간
+- `include_tags`(선택): 포함할 HTML 태그
+- `exclude_tags`(선택): 제외할 HTML 태그
+- `json_options`(선택): JSON 추출 옵션
+- `ocr_options`(선택): 마크다운 이미지에만 OCR 강화. `html`/`rawHtml`는 변경하지 않음
+
+**예:**
+
+```json
+{
+    "name": "anycrawl_scrape",
+    "arguments": {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "formats": ["markdown", "html"],
+        "timeout": 30000
+    }
+}
+```
+
+### 2. 크롤 도구 (`anycrawl_crawl`)
+
+웹사이트에서 여러 페이지를 스크래핑하는 크롤 작업을 시작합니다. 기본적으로 완료까지 대기하며 SDK `client.crawl`로 집계 결과를 반환합니다(기본: 3초마다 폴링, 60초 타임아웃).
+
+**적합한 경우:**
+
+- 여러 관련 페이지에서 콘텐츠 추출
+- 사이트 전반 분석
+- 대량 데이터 수집
+
+**파라미터:**
+
+- `url`(필수): 크롤할 기준 URL
+- `engine`(선택): 엔진(`auto`, `playwright`, `cheerio`, `puppeteer`). 기본 `auto`
+- `max_depth`(선택): 최대 깊이(기본 10)
+- `limit`(선택): 최대 페이지 수(기본 100)
+- `strategy`(선택): 전략(`all`, `same-domain`, `same-hostname`, `same-origin`)
+- `exclude_paths`(선택): 제외할 URL 패턴
+- `include_paths`(선택): 포함할 URL 패턴
+- `scrape_options`(선택): 페이지별 스크래프 옵션
+- `poll_seconds`(선택): 대기 시 폴링 간격(초, 기본 3)
+- `timeout_ms`(선택): 대기 전체 타임아웃(ms, 기본 60000)
+
+**예:**
+
+```json
+{
+    "name": "anycrawl_crawl",
+    "arguments": {
+        "url": "https://example.com/blog",
+        "engine": "playwright",
+        "max_depth": 2,
+        "limit": 50,
+        "strategy": "same-domain",
+        "poll_seconds": 3,
+        "timeout_ms": 60000
+    }
+}
+```
+
+반환: `{ "job_id": "...", "status": "completed", "total": N, "completed": N, "credits_used": N, "data": [...] }`.
+
+### 3. 크롤 상태 도구 (`anycrawl_crawl_status`)
+
+크롤 작업 상태를 확인합니다.
+
+**파라미터:**
+
+- `job_id`(필수): 크롤 작업 ID
+
+**예:**
+
+```json
+{
+    "name": "anycrawl_crawl_status",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 4. 크롤 결과 도구 (`anycrawl_crawl_results`)
+
+크롤 작업 결과를 가져옵니다.
+
+**파라미터:**
+
+- `job_id`(필수): 크롤 작업 ID
+- `skip`(선택): 건너뛸 결과 수(페이지네이션)
+
+**예:**
+
+```json
+{
+    "name": "anycrawl_crawl_results",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "skip": 0
+    }
+}
+```
+
+### 5. 크롤 취소 도구 (`anycrawl_cancel_crawl`)
+
+대기 중인 크롤 작업을 취소합니다.
+
+**파라미터:**
+
+- `job_id`(필수): 취소할 크롤 작업 ID
+
+**예:**
+
+```json
+{
+    "name": "anycrawl_cancel_crawl",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 6. 검색 도구 (`anycrawl_search`)
+
+AnyCrawl 검색 엔진으로 웹을 검색합니다.
+
+**적합한 경우:**
+
+- 여러 사이트에 걸친 정보 찾기
+- 조사·탐색
+- 어느 사이트에 정보가 있는지 모를 때
+
+**파라미터:**
+
+- `query`(필수): 검색어
+- `engine`(선택): 검색 엔진(`google`)
+- `limit`(선택): 최대 결과 수(기본 5)
+- `offset`(선택): 건너뛸 결과 수(기본 0)
+- `pages`(선택): 검색할 페이지 수
+- `lang`(선택): 언어 코드
+- `country`(선택): 국가 코드
+- `scrape_options`(선택): 검색 결과 스크래프 옵션
+- `safeSearch`(선택): 세이프서치(0=끔, 1=보통, 2=엄격)
+
+**예:**
+
+```json
+{
+    "name": "anycrawl_search",
+    "arguments": {
+        "query": "latest AI research papers 2024",
+        "engine": "google",
+        "limit": 5,
+        "scrape_options": {
+            "engine": "cheerio",
+            "formats": ["markdown"]
+        }
+    }
+}
+```
+
+## 출력 형식
+
+### Markdown
+
+LLM에 적합한 깨끗한 구조화 마크다운.
+
+### HTML
+
+서식이 보존된 원시 HTML.
+
+### Text
+
+최소 서식의 일반 텍스트.
+
+### Screenshot
+
+페이지의 시각적 스크린샷.
+
+### Screenshot@fullPage
+
+폴드 아래까지 포함한 전체 페이지 스크린샷.
+
+### Raw HTML
+
+가공하지 않은 HTML.
+
+### JSON
+
+사용자 정의 스키마로 구조화 데이터 추출.
+
+## 엔진
+
+### Auto(기본)
+
+- 지능형 엔진 선택
+- URL마다 최적 엔진 자동 선택
+- 범용 스크래핑에 적합
+
+### Cheerio
+
+- 빠르고 가벼움
+- 정적 콘텐츠에 적합
+- 서버 사이드 렌더링
+
+### Playwright
+
+- 전체 브라우저 자동화
+- JavaScript 렌더링
+- 동적 콘텐츠에 적합
+
+### Puppeteer
+
+- Chrome/Chromium 자동화
+- 기능과 성능의 균형
+
+## 오류 처리
+
+서버는 다음을 포함한 포괄적 오류 처리를 제공합니다.
+
+- **유효성 검사 오류**: 잘못된 파라미터 또는 필수 필드 누락
+- **API 오류**: 상세 메시지가 있는 AnyCrawl API 오류
+- **네트워크 오류**: 연결 및 타임아웃 문제
+
+## 로깅
+
+서버는 상세 로그를 포함합니다.
+
+- **Debug**: 상세 동작 정보
+- **Info**: 일반 동작 상태
+- **Warn**: 치명적이지 않은 문제
+- **Error**: 심각한 오류 및 실패
+
+환경 변수로 로그 레벨 설정:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## 개발
+
+### 사전 요구사항
+
+- Node.js 18+
+- npm
+
+### 설정
+
+```bash
+git clone https://github.com/any4ai/anycrawl-mcp-server.git
+cd anycrawl-mcp-server
+npm ci
+```
+
+### 빌드
+
+```bash
+npm run build
+```
+
+### 테스트
+
+```bash
+npm test
+```
+
+### 린트
+
+```bash
+npm run lint
+```
+
+### 포맷
+
+```bash
+npm run format
+```
+
+## 기여
+
+1. 저장소를 포크합니다
+2. 기능 브랜치를 만듭니다
+3. 테스트 실행: `npm test`
+4. Pull Request를 제출합니다
+
+## 라이선스
+
+MIT 라이선스 — 자세한 내용은 LICENSE 파일 참고
+
+## 지원
+
+- GitHub Issues: [버그 신고·기능 요청](https://github.com/any4ai/anycrawl-mcp-server/issues)
+- 문서: [AnyCrawl API 문서](https://docs.anycrawl.dev)
+- 이메일: help@anycrawl.dev
+
+## AnyCrawl 소개
+
+AnyCrawl은 웹사이트를 LLM에 맞는 데이터로 바꾸고 Google/Bing/Baidu 등에서 구조화된 SERP 결과를 추출하는 강력한 Node.js/TypeScript 크롤러입니다. 대량 처리를 위한 네이티브 멀티스레딩과 다양한 출력 형식을 지원합니다.
+
+- **웹사이트**: https://anycrawl.dev
+- **GitHub**: https://github.com/any4ai/anycrawl
+- **API**: https://api.anycrawl.dev

@@ -1,0 +1,361 @@
+---
+title: Map（站点地图）
+description: 通过站点地图、搜索引擎和页面链接分析，提取网站的所有 URL。
+icon: Map
+---
+
+## 简介
+
+AnyCrawl Map API 通过组合多种发现来源来提取网站 URL：站点地图解析、搜索引擎结果和 HTML 链接提取。这为站点映射、内容索引和爬取规划提供了全面的 URL 发现能力。
+
+**核心特点**：API **即时同步返回数据**——无需轮询或 Webhook。它结合三种 URL 来源以实现最大覆盖率。
+
+### 核心功能
+
+- **多来源发现**：结合站点地图解析、搜索引擎结果和页面链接提取
+- **站点地图支持**：解析 robots.txt 和 sitemap.xml（包括站点地图索引和 gzip 压缩）
+- **搜索引擎集成**：自动使用搜索引擎的 `site:` 运算符发现 URL
+- **链接提取**：从目标页面提取所有 `<a href>` 链接
+- **域名过滤**：按精确域名过滤或包含子域名
+- **即时响应**：**同步 API**——无需轮询即可立即获得结果
+
+## API 端点
+
+```
+POST https://api.anycrawl.dev/v1/map
+```
+
+## 使用示例
+
+### cURL
+
+#### 基础 URL 映射
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data); // Array of URLs with metadata
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### 包含子域名
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "include_subdomains": true,
+    "limit": 1000
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        include_subdomains: true,
+        limit: 1000,
+    }),
+});
+const result = await response.json();
+// Includes URLs from blog.example.com, docs.example.com, etc.
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'include_subdomains': True,
+        'limit': 1000
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### 跳过站点地图解析
+
+当只需要页面链接和搜索结果时，可获得更快的响应：
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "ignore_sitemap": true
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        ignore_sitemap: true,
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'ignore_sitemap': True
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## 请求参数
+
+| 参数 | 类型 | 必填 | 默认值 | 描述 |
+| --------- | ---- | -------- | ------- | ----------- |
+| `url` | string | 是 | - | 要映射的目标 URL，必须是有效的 HTTP/HTTPS 地址 |
+| `limit` | number | 否 | `5000` | 返回的最大 URL 数量（1-50000） |
+| `include_subdomains` | boolean | 否 | `false` | 包含子域名的 URL（例如 blog.example.com） |
+| `ignore_sitemap` | boolean | 否 | `false` | 跳过站点地图解析，仅使用搜索引擎和页面链接 |
+| `max_age` | number | 否 | - | 缓存最大有效期（毫秒）。使用 `0` 跳过缓存读取；省略则使用服务器默认值 |
+| `use_index` | boolean | 否 | `true` | 是否使用页面缓存索引（`page_cache`）作为额外的 URL 来源 |
+
+### 缓存行为
+
+- `max_age` 控制 Map 缓存的读取。`0` 强制刷新。
+- `use_index=false` 禁用页面缓存索引来源（需要页面缓存已启用才有效果）。
+- `/v1/map` 的响应中不返回 `fromCache`（缓存使用为内部行为）。
+
+### URL 发现来源
+
+Map API 结合三种来源发现 URL：
+
+#### 1. 站点地图解析
+
+- 解析 `robots.txt` 以查找站点地图位置
+- 尝试常见站点地图路径：`/sitemap.xml`、`/sitemap.xml.gz`
+- 支持站点地图索引（包含其他站点地图的站点地图）
+- 支持 gzip 压缩的站点地图
+
+#### 2. 搜索引擎结果
+
+- 自动使用 `site:domain.com` 运算符发现已索引的页面
+- 为发现的 URL 提供标题和描述元数据
+
+#### 3. 页面链接提取
+
+- 从目标页面 HTML 中提取所有 `<a href>` 链接
+- 将链接文本捕获为标题元数据
+- 将 `title` 属性和 `aria-label` 捕获为描述
+
+### 元数据来源
+
+| 来源 | 标题 | 描述 |
+| ------ | ----- | ----------- |
+| Sitemap | - | - |
+| 搜索引擎 | 搜索结果标题 | 搜索结果摘要 |
+| 页面链接 | 链接文本或 title 属性 | aria-label 属性 |
+
+## 响应格式
+
+### 成功响应（HTTP 200）
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "url": "https://example.com/page1",
+            "title": "Page Title",
+            "description": "Page description from search results"
+        },
+        {
+            "url": "https://example.com/page2",
+            "title": "Another Page"
+        },
+        {
+            "url": "https://example.com/page3"
+        }
+    ]
+}
+```
+
+### 错误响应
+
+#### 400 - 验证错误
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid url",
+    "details": {
+        "issues": [
+            {
+                "field": "url",
+                "message": "Invalid url",
+                "code": "invalid_string"
+            }
+        ]
+    }
+}
+```
+
+#### 402 - 积分不足
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits",
+    "message": "Estimated credits required (1) exceeds available credits (0).",
+    "details": {
+        "estimated_total": 1,
+        "available_credits": 0
+    }
+}
+```
+
+#### 500 - 内部服务器错误
+
+```json
+{
+    "success": false,
+    "error": "Internal server error",
+    "message": "Error message details"
+}
+```
+
+## 最佳实践
+
+### 使用场景
+
+1. **爬取规划**：在开始完整爬取之前，使用 Map 发现所有 URL
+2. **内容索引**：构建网站页面的完整索引
+3. **站点审计**：查找所有页面以进行 SEO 或无障碍审计
+4. **链接分析**：分析内部链接结构
+
+### 性能技巧
+
+- 当不需要站点地图时，使用 `ignore_sitemap: true` 获取更快的结果
+- 设置合适的 `limit` 以避免处理不必要的 URL
+- 除非需要跨子域名发现，否则使用 `include_subdomains: false`（默认值）
+
+### 结合 Crawl 使用
+
+Map 非常适合规划爬取操作：
+
+```javascript
+// Step 1: Discover URLs with Map
+const mapResponse = await fetch("/v1/map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        limit: 100,
+    }),
+});
+const { data: urls } = await mapResponse.json();
+
+// Step 2: Use discovered URLs to plan crawl
+const crawlResponse = await fetch("/v1/crawl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        include_paths: urls.map((u) => new URL(u.url).pathname),
+        limit: 100,
+    }),
+});
+```
+
+## 积分
+
+| 操作 | 积分 |
+| --------- | ------- |
+| Map 操作 | 1 |
+
+**总计**：每次请求 1 积分。
+
+## 常见问题
+
+### 问：Map 和 Crawl 有什么区别？
+
+答：**Map** 发现 URL 但不获取页面内容——快速且轻量。**Crawl** 获取并处理每个页面的实际内容。使用 Map 进行 URL 发现和规划，使用 Crawl 进行内容提取。
+
+### 问：为什么结果中缺少某些 URL？
+
+答：可能的原因：
+- URL 位于不同的域名/子域名上（使用 `include_subdomains: true`）
+- 网站没有站点地图
+- URL 由 JavaScript 动态生成
+- URL 超过了 `limit` 参数
+
+### 问：搜索引擎发现是如何工作的？
+
+答：Map API 自动使用 `site:domain.com` 查询搜索引擎以发现已索引的页面。这有助于找到可能不在站点地图中或未从主页链接的 URL。
+
+### 问：Map 会跟踪重定向吗？
+
+答：Map 按站点地图和页面链接中的原样提取 URL。它不会跟踪重定向来发现额外的 URL。
+
+### 问：有速率限制吗？
+
+答：没有，API **原生支持高并发**。你可以同时发起多个请求，无需担心速率限制。

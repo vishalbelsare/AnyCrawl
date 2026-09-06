@@ -1,0 +1,756 @@
+---
+title: 搜尋
+description: 搜尋引擎結果頁（SERP）API，用於查詢搜尋引擎並取得結構化結果。
+icon: Search
+---
+
+## 簡介
+
+AnyCrawl 搜尋 API 允許你以程式化方式從多個搜尋引擎取得搜尋結果。它專為大型語言模型（LLM）打造，回傳乾淨的結構化資料，經過 AI 處理和分析最佳化。
+
+該 API **即時同步回傳資料**——無需輪詢或 Webhook。它支援**多個搜尋引擎**和**多頁結果檢索**，可滿足全面的資料收集需求。
+
+### 核心功能
+
+- **多引擎支援**：目前支援 Google 搜尋，計劃支援更多引擎
+- **面向 LLM 最佳化**：回傳非常適合 AI 處理的結構化 JSON 資料
+- **多語言支援**：支援不同語言和地區的搜尋
+- **多頁結果**：在單次請求中檢索多頁搜尋結果
+- **高效能**：**原生高併發支援**，搭配非同步處理
+- **即時回應**：**同步 API**——無需輪詢即可立即取得結果
+- **全面的結果**：同時回傳搜尋結果和搜尋建議
+
+## API 端點
+
+```
+POST https://api.anycrawl.dev/v1/search
+```
+
+## 使用範例
+
+#### 基礎搜尋（預設 Google 引擎）
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "OpenAI ChatGPT"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "OpenAI ChatGPT",
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "OpenAI ChatGPT"
+    }
+)
+print(response.json())
+```
+
+#### 多頁搜尋
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "machine learning tutorials",
+    "pages": 3,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "machine learning tutorials",
+        pages: 3,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "machine learning tutorials",
+        "pages": 3,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### 指定語言/地區搜尋
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "AnyCrawl",
+    "lang": "zh",
+    "pages": 2
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "AnyCrawl",
+        lang: "zh",
+        pages: 2,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "AnyCrawl",
+        "lang": "zh",
+        "pages": 2
+    }
+)
+print(response.json())
+```
+
+#### 分頁搜尋
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "web scraping tools",
+    "offset": 20,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "web scraping tools",
+        offset: 20,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "web scraping tools",
+        "offset": 20,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### 安全搜尋
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "educational content",
+    "safe_search": 0
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "educational content",
+        safe_search: 0,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "educational content",
+        "safe_search": 0
+    }
+)
+print(response.json())
+```
+
+## 請求參數
+
+| 參數 | 類型 | 必填 | 預設值 | 描述 |
+| --------------- | -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`         | string         | 是      | -        | 要執行的搜尋查詢字串 |
+| `template_id`   | string         | 否       | -        | 用於本次搜尋的範本 ID |
+| `variables`     | object         | 否       | -        | 範本變數（僅在提供 `template_id` 時使用） |
+| `engine`        | enum           | 否       | `google` | 使用的搜尋引擎。目前支援：`google` |
+| `limit`         | number         | 否       | 10       | 每頁最大結果數 |
+| `offset`        | number         | 否       | 0        | 跳過的結果數量（用於分頁） |
+| `pages`         | number         | 否       | 1        | 要檢索的搜尋結果頁數（最小：1，最大：20） |
+| `lang`          | string         | 否       | `en`     | 搜尋結果的語言區域設定（例如 'en'、'zh'、'es'、'fr'） |
+| `country`       | string         | 否       | -        | 搜尋結果的國家/地區設定（例如 'US'、'GB'、'CN'） |
+| `timeRange`     | enum           | 否       | -        | 時間範圍篩選器：`day`、`week`、`month`、`year` |
+| `sources`       | enum           | 否       | -        | 搜尋來源：`web`、`images`、`news`（SearXNG） |
+| `safe_search`   | number \| null | 否       | null     | Google 安全搜尋過濾等級：`0`（關閉）、`1`（中等）、`2`（嚴格），或 null（預設）。僅適用於 Google 搜尋引擎。 |
+
+### 可選：用於結果 URL 的 `scrape_options`
+
+提供後，每個搜尋結果 URL 都可使用給定選項進行抓取（欄位與 `/v1/scrape` 相同，不含頂層 `url`）。注意：非瀏覽器抓取時會忽略僅瀏覽器選項。
+
+| 欄位               | 類型                     | 預設值        | 說明                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine`            | enum                     | -              | 結果 URL 的抓取引擎：`auto`、`cheerio`、`playwright`、`puppeteer`                                                                 |
+| `formats`           | array of enum            | `["markdown"]` | 輸出格式：`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`、`summary`、`links`                                          |
+| `timeout`           | number                   | `60000`        | 單次請求逾時時間（毫秒）                                                                                                                    |
+| `wait_for`          | number                   | -              | 擷取前的延遲時間（毫秒）；僅限瀏覽器引擎；優先順序低於 `wait_for_selector`                                                 |
+| `wait_until`        | enum                     | -              | 瀏覽器引擎的導覽等待條件：`load`、`domcontentloaded`、`networkidle`、`commit`                                           |
+| `wait_for_selector` | string, object, or array | -              | 等待一個或多個選擇器（僅限瀏覽器引擎）。接受 CSS 選擇器字串、物件 `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }` 或混合字串/物件的陣列。每個項目依序等待。優先順序高於 `wait_for`。 |
+| `include_tags`      | array of string          | -              | 僅包含符合 CSS 選擇器的元素                                                                                              |
+| `exclude_tags`      | array of string          | -              | 排除符合 CSS 選擇器的元素                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | 僅擷取主要內容，移除頁首、頁尾、導覽列等（`include_tags` 優先順序更高）                                  |
+| `proxy`             | string (URI)             | -              | 可選的代理 URL                                                                                                                          |
+| `json_options`      | object                   | -              | 結構化 JSON 擷取選項（schema、user_prompt、schema_name、schema_description）                                               |
+| `extract_source`    | enum                     | `markdown`     | JSON 擷取的來源：`markdown`（預設）或 `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | 啟用僅針對 Markdown 圖片的 OCR 增強。影響 Markdown 產生，不影響 `html`/`rawHtml`。                                         |
+| `max_age`           | number                   | -              | 快取最大有效期（毫秒）。使用 `0` 跳過快取讀取；省略則使用伺服器預設值                                                                    |
+| `store_in_cache`    | boolean                  | `true`         | 是否為每個結果的抓取寫入頁面快取                                                                                           |
+| `template_id`       | string                   | -              | 用於跟抓的 **scrape** 模板 ID（與 `/v1/scrape` 相同）。不在 `allowedDomains` 內的 URL 會略過。 |
+| `variables`         | object                   | -              | 該 scrape 模板的變數（與 `template_id` 並用時）。 |
+
+### 支援的搜尋引擎
+
+#### `google`（預設）
+
+- **適用場景**：通用網路搜尋，取得全面的結果
+- **優勢**：最全面的搜尋結果，支援多語言和多地區
+- **功能**：同時回傳搜尋結果和搜尋建議。支援安全搜尋過濾（關閉/中等/嚴格）
+- **推薦用於**：通用網路搜尋、研究、內容探索
+- **安全搜尋**：支援 `safe_search` 參數，值為 0（關閉）、1（中等）、2（嚴格）或 null（預設）
+
+## 回應格式
+
+### 成功回應（HTTP 200）
+
+#### 搜尋成功
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "title": "AlsoAsked: People Also Ask keyword research tool",
+            "url": "https://alsoasked.com/",
+            "description": "Find the questions people also ask. Enter a question, brand or search query. e.g. 'keyword research'.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "OpenAI ChatGPT Features and Benefits",
+            "url": "https://openai.com/chatgpt",
+            "description": "ChatGPT is an AI assistant that can help with writing, research, and problem-solving.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "Keyword tool",
+            "source": "Google Suggestions"
+        }
+    ]
+}
+```
+
+#### 搜尋結果類型
+
+API 回傳兩種類型的結果：
+
+1. **搜尋結果**：包含標題、URL、描述和來源的完整結果
+2. **搜尋建議**：搜尋引擎提供的相關查詢建議
+
+### 錯誤回應
+
+#### 400 - 驗證錯誤
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'google', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": ["Invalid enum value. Expected 'google', received 'invalid'"]
+    }
+}
+```
+
+#### 401 - 認證錯誤
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+#### 402 - 需要付費
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits. Please upgrade your plan or purchase more credits."
+}
+```
+
+## 最佳實踐
+
+### 搜尋引擎選擇指南
+
+1. **通用網路搜尋** → 使用 `google`（目前唯一支援的引擎）
+2. **多語言搜尋** → 指定合適的 `lang` 參數
+3. **全面研究** → 使用多頁取得更多結果
+
+### 效能最佳化
+
+- **批次請求**：使用 `pages` 參數在單次請求中取得多頁，而非發起多次單獨請求
+- **語言定向**：指定語言以取得特定地區和在地化結果
+- **查詢最佳化**：使用具體的關鍵字和片語以提升結果品質
+
+### 錯誤處理
+
+```javascript
+try {
+    const response = await fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            query: "artificial intelligence",
+            pages: 2,
+        }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+        // Handle successful result
+        console.log("Found results:", result.data.length);
+
+        // Separate search results from suggestions
+        const searchResults = result.data.filter((item) => item.url);
+        const suggestions = result.data.filter((item) => !item.url);
+
+        console.log("Search Results:", searchResults.length);
+        console.log("Suggestions:", suggestions.length);
+    } else {
+        // Handle search failure
+        console.error("Search failed:", result.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## 高併發使用
+
+該 API **原生支援高併發**。你可以同時發起多個搜尋請求，無需擔心速率限制：
+
+```javascript
+// Concurrent searching example
+const queries = ["machine learning", "artificial intelligence", "data science"];
+
+const searchPromises = queries.map((query) =>
+    fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, engine: "google", pages: 2 }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(searchPromises);
+console.log(`Completed ${results.length} searches simultaneously`);
+```
+
+## 速率限制與點數
+
+- **併發請求無速率限制**——API 原生支援高併發。
+- 請透過回應標頭與 `BillingChargeDetails` 核對用量。
+
+### 點數模型（搜尋 + 可選的結果跟抓）
+
+1. **`search_pages`** — 對應 **`pages`**（預設多為每頁 1 點）。
+2. **`template_per_call`** — 若請求帶頂層 **`template_id`**（**search** 模板），依 `pricing.perCall` 每請求收一次。
+3. 若提供 **`scrape_options`** 且跟抓成功：
+   - **`search_result_scrape`** — `completed_scrape_count ×` 引擎單價（`calculateScrapeCredits`）。
+   - **`search_result_scrape_template`** — 若有 **`scrape_options.template_id`**，每成功跟抓再收該 scrape 模板的 **`pricing.perCall`**。**僅 search 模板：** 若在 **search** 模板 **`metadata`** 設 **`charge_scrape_template_credits: false`**，則不收本行（**`search_result_scrape` 引擎費仍收**）。
+
+完整規格：倉庫 **`docs/api/search-scrape-credits-and-templates.md`**。
+
+## 常見問題
+
+### 問：何時應使用不同的語言設定？
+
+答：
+
+- **英語（`en`）**：用於全球搜尋結果和國際內容
+- **中文（`zh`）**：用於中文內容和面向中國的結果
+- **地區變體**（例如 `en-GB`、`fr-CA`）：用於特定國家的結果和在地化內容
+
+### 問：為什麼某些搜尋回傳的結果少於預期？
+
+答：可能的原因包括：
+
+- 搜尋查詢過於具體或使用了不常見的術語
+- 查詢語言與 `lang` 參數不符
+- 搜尋引擎對某些主題或地區的限制
+- 網路連線問題
+
+### 問：如何處理需要特定地區的搜尋？
+
+答：目前 API 會根據 `lang` 參數自動選擇合適的地區。建議：
+
+- 使用與目標地區相符的語言代碼（例如使用 `en-GB` 取得英國結果）
+- 需要時在搜尋查詢中加入特定地區的術語
+
+### 問：搜尋結果和搜尋建議有什麼區別？
+
+答：
+
+- **搜尋結果**：包含標題、URL、描述和來源的完整條目
+- **搜尋建議**：不含 URL 的相關查詢建議，適用於查詢擴展
+
+### 問：併發搜尋請求有速率限制嗎？
+
+答：沒有，API **原生支援高併發**。你可以同時發起多個搜尋請求，無需擔心速率限制，所有請求都會立即回傳資料。
+
+## 語言和地區支援
+
+搜尋 API 透過 `lang` 參數支援多種語言和地區。以下是所有支援的區域設定：
+
+### 主要語言
+
+- `all` - 所有語言
+
+#### **英語** 🌐
+
+- `en` - 全球英語
+- `en-AU` - 英語（澳洲）🇦🇺
+- `en-CA` - 英語（加拿大）🇨🇦
+- `en-GB` - 英語（英國）🇬🇧
+- `en-IE` - 英語（愛爾蘭）🇮🇪
+- `en-IN` - 英語（印度）🇮🇳
+- `en-NZ` - 英語（紐西蘭）🇳🇿
+- `en-PH` - 英語（菲律賓）🇵🇭
+- `en-PK` - 英語（巴基斯坦）🇵🇰
+- `en-SG` - 英語（新加坡）🇸🇬
+- `en-US` - 英語（美國）🇺🇸
+- `en-ZA` - 英語（南非）🇿🇦
+
+#### **中文** 🌐
+
+- `zh` - 全球中文
+- `zh-CN` - 中文（中國）🇨🇳
+- `zh-HK` - 中文（香港）🇭🇰
+- `zh-TW` - 中文（台灣）🇹🇼
+
+#### **西班牙語** 🌐
+
+- `es` - 全球西班牙語
+- `es-AR` - 西班牙語（阿根廷）🇦🇷
+- `es-CL` - 西班牙語（智利）🇨🇱
+- `es-CO` - 西班牙語（哥倫比亞）🇨🇴
+- `es-ES` - 西班牙語（西班牙）🇪🇸
+- `es-MX` - 西班牙語（墨西哥）🇲🇽
+- `es-PE` - 西班牙語（秘魯）🇵🇪
+
+#### **法語** 🌐
+
+- `fr` - 全球法語
+- `fr-BE` - 法語（比利時）🇧🇪
+- `fr-CA` - 法語（加拿大）🇨🇦
+- `fr-CH` - 法語（瑞士）🇨🇭
+- `fr-FR` - 法語（法國）🇫🇷
+
+#### **德語** 🌐
+
+- `de` - 全球德語
+- `de-AT` - 德語（奧地利）🇦🇹
+- `de-BE` - 德語（比利時）🇧🇪
+- `de-CH` - 德語（瑞士）🇨🇭
+- `de-DE` - 德語（德國）🇩🇪
+
+#### **葡萄牙語** 🌐
+
+- `pt` - 全球葡萄牙語
+- `pt-BR` - 葡萄牙語（巴西）🇧🇷
+- `pt-PT` - 葡萄牙語（葡萄牙）🇵🇹
+
+#### **義大利語** 🌐
+
+- `it` - 全球義大利語
+- `it-CH` - 義大利語（瑞士）🇨🇭
+- `it-IT` - 義大利語（義大利）🇮🇹
+
+#### **日語** 🌐
+
+- `ja` - 全球日語
+- `ja-JP` - 日語（日本）🇯🇵
+
+#### **韓語** 🌐
+
+- `ko` - 全球韓語
+- `ko-KR` - 韓語（南韓）🇰🇷
+
+#### **俄語** 🌐
+
+- `ru` - 全球俄語
+- `ru-RU` - 俄語（俄羅斯）🇷🇺
+
+### 歐洲語言
+
+#### **荷蘭語** 🌐
+
+- `nl` - 全球荷蘭語
+- `nl-BE` - 荷蘭語（比利時）🇧🇪
+- `nl-NL` - 荷蘭語（荷蘭）🇳🇱
+
+#### **波蘭語** 🌐
+
+- `pl` - 全球波蘭語
+- `pl-PL` - 波蘭語（波蘭）🇵🇱
+
+#### **捷克語** 🌐
+
+- `cs` - 全球捷克語
+- `cs-CZ` - 捷克語（捷克共和國）🇨🇿
+
+#### **匈牙利語** 🌐
+
+- `hu` - 全球匈牙利語
+- `hu-HU` - 匈牙利語（匈牙利）🇭🇺
+
+#### **羅馬尼亞語** 🌐
+
+- `ro` - 全球羅馬尼亞語
+- `ro-RO` - 羅馬尼亞語（羅馬尼亞）🇷🇴
+
+#### **希臘語** 🌐
+
+- `el` - 全球希臘語
+- `el-GR` - 希臘語（希臘）🇬🇷
+
+#### **保加利亞語** 🌐
+
+- `bg` - 全球保加利亞語
+- `bg-BG` - 保加利亞語（保加利亞）🇧🇬
+
+#### **克羅埃西亞語** 🌐
+
+- `hr` - 全球克羅埃西亞語
+
+#### **斯洛伐克語** 🌐
+
+- `sk` - 全球斯洛伐克語
+
+#### **斯洛維尼亞語** 🌐
+
+- `sl` - 全球斯洛維尼亞語
+
+#### **愛沙尼亞語** 🌐
+
+- `et` - 全球愛沙尼亞語
+- `et-EE` - 愛沙尼亞語（愛沙尼亞）🇪🇪
+
+#### **拉脫維亞語** 🌐
+
+- `lv` - 全球拉脫維亞語
+
+#### **立陶宛語** 🌐
+
+- `lt` - 全球立陶宛語
+
+#### **芬蘭語** 🌐
+
+- `fi` - 全球芬蘭語
+- `fi-FI` - 芬蘭語（芬蘭）🇫🇮
+
+#### **瑞典語** 🌐
+
+- `sv` - 全球瑞典語
+- `sv-SE` - 瑞典語（瑞典）🇸🇪
+
+#### **挪威語** 🌐
+
+- `nb` - 挪威語（書面語）
+- `nb-NO` - 挪威語（書面語，挪威）🇳🇴
+
+#### **丹麥語** 🌐
+
+- `da` - 全球丹麥語
+- `da-DK` - 丹麥語（丹麥）🇩🇰
+
+#### **冰島語** 🌐
+
+- `is` - 全球冰島語
+
+### 其他語言
+
+#### **阿拉伯語** 🌐
+
+- `ar` - 全球阿拉伯語
+- `ar-SA` - 阿拉伯語（沙烏地阿拉伯）🇸🇦
+
+#### **希伯來語** 🇮🇱
+
+- `he` - 希伯來語
+
+#### **土耳其語** 🌐
+
+- `tr` - 全球土耳其語
+- `tr-TR` - 土耳其語（土耳其）🇹🇷
+
+#### **波斯語** 🌐
+
+- `fa` - 波斯語
+
+#### **印地語** 🌐
+
+- `hi` - 印地語
+
+#### **烏爾都語** 🌐
+
+- `ur` - 烏爾都語
+
+#### **泰語** 🌐
+
+- `th` - 全球泰語
+- `th-TH` - 泰語（泰國）🇹🇭
+
+#### **越南語** 🌐
+
+- `vi` - 全球越南語
+- `vi-VN` - 越南語（越南）🇻🇳
+
+#### **印尼語** 🌐
+
+- `id` - 全球印尼語
+- `id-ID` - 印尼語（印尼）🇮🇩
+
+#### **印度語言**
+
+- `kn` - 坎那達語 🌐
+- `ml` - 馬拉雅拉姆語 🌐
+- `mr` - 馬拉地語 🌐
+- `ta` - 坦米爾語 🌐
+- `te` - 泰盧固語 🌐
+
+#### **其他歐洲語言**
+
+- `af` - 南非荷蘭語 🌐
+- `be` - 白俄羅斯語 🌐
+- `ca` - 加泰隆尼亞語 🌐
+- `cy` - 威爾斯語 🌐
+- `eu` - 巴斯克語 🌐
+- `ga` - 愛爾蘭語 🌐
+- `gd` - 蘇格蘭蓋爾語 🌐
+- `gl` - 加利西亞語 🌐
+- `sq` - 阿爾巴尼亞語 🌐
+- `uk` - 烏克蘭語 🌐
+
+### 使用說明
+
+- **全球代碼**（例如 `en`、`zh`、`es`）提供更廣泛的搜尋結果，不受國家限制
+- **特定國家代碼**（例如 `en-US`、`zh-CN`、`es-MX`）回傳特定地區的在地化結果
+- API 會根據你的區域設定自動選擇合適的 Google 網域和語言設定
+- 為取得最佳結果，請將 `lang` 參數與搜尋查詢的語言相符

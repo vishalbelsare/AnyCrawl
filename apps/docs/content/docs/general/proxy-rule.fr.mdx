@@ -1,0 +1,284 @@
+---
+title: Configuration du proxy
+description: Configurer le routage par URL des proxies pour AnyCrawl
+icon: Waypoints
+---
+
+# Configuration du proxy
+
+AnyCrawl prend en charge un routage flexible des proxies selon des motifs d’URL. Vous pouvez configurer des proxies différents pour différents sites web ou points de terminaison d’API.
+
+## Modes proxy
+
+AnyCrawl prend en charge quatre modes proxy pouvant être indiqués dans les requêtes API :
+
+| Mode | Description |
+|------|-------------|
+| `auto` | Choisit automatiquement entre le proxy de base et le proxy furtif. Commence par le proxy de base s’il est disponible ; s’il est indisponible ou en cas de nouvelles tentatives/échecs, bascule vers le mode furtif. |
+| `base` | Utilise le proxy configuré dans `ANYCRAWL_PROXY_URL` (par défaut) |
+| `stealth` | Utilise le proxy configuré dans `ANYCRAWL_PROXY_STEALTH_URL` (généralement résidentiel ou premium) |
+| URL personnalisée | Chaîne d’URL de proxy complète (par ex. `http://user:pass@proxy:8080`), renvoyée comme `custom` dans les réponses |
+
+### Exemple d’utilisation
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "auto"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "stealth"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://custom-proxy:8080"
+}
+```
+
+## Comportement du délai d’attente (API Scrape)
+
+- Le `timeout` au niveau de la requête a toujours la priorité.
+- Si `proxy` vaut `stealth` ou `auto` et que `timeout` n’est pas fourni, AnyCrawl utilise `ANYCRAWL_STEALTH_TIMEOUT_MS` (par défaut : `120000`).
+- Pour le mode `base` ou les URL de proxy personnalisées sans `timeout` explicite, AnyCrawl utilise `60000`.
+
+## Méthodes de configuration
+
+### Méthode 1 : configuration proxy simple (`ANYCRAWL_PROXY_URL`)
+
+Pour les cas simples où vous souhaitez le même proxy pour toutes les requêtes, définissez la variable d’environnement `ANYCRAWL_PROXY_URL` :
+
+```bash
+# Proxy unique
+export ANYCRAWL_PROXY_URL=http://username:password@proxy.example.com:8080
+
+# Plusieurs proxies (mode à niveaux)
+export ANYCRAWL_PROXY_URL=http://proxy1:8080,http://proxy2:8080,http://proxy3:8080
+```
+
+Lorsque plusieurs proxies sont fournis (séparés par des virgules), AnyCrawl utilise une stratégie de **proxy à niveaux** :
+
+- Toutes les requêtes commencent par le premier proxy (niveau 0)
+- Si un proxy échoue pour un domaine, AnyCrawl bascule automatiquement vers le niveau suivant pour ce domaine
+- Cela permet un basculement intelligent et une utilisation optimale des proxies
+
+C’est la méthode la plus simple lorsque vous n’avez pas besoin de routage par URL.
+
+### Méthode 2 : fichier de configuration avancé (`ANYCRAWL_PROXY_CONFIG`)
+
+Pour le routage par URL, créez un fichier JSON de configuration (par ex. `proxy-config.json`) et définissez la variable d’environnement `ANYCRAWL_PROXY_CONFIG` sur son chemin :
+
+```bash
+ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+**Remarque** : si `ANYCRAWL_PROXY_URL` et `ANYCRAWL_PROXY_CONFIG` sont tous deux définis, les règles du fichier de configuration priment, et `ANYCRAWL_PROXY_URL` sert de repli pour les URL qui ne correspondent à aucune règle.
+
+## Types de règles
+
+AnyCrawl prend en charge trois types de règles proxy, appliquées par ordre de priorité :
+
+### 1. Règles d’URL (priorité la plus haute)
+
+Correspondance exacte d’URL. À utiliser lorsqu’un point de terminaison précis nécessite un proxy dédié.
+
+```json
+{
+    "url": "https://api.example.com/v1/data",
+    "proxy": "http://username:password@proxy1.example.com:8080"
+}
+```
+
+### 2. Règles de motif (priorité moyenne)
+
+Correspondance de motif d’URL complète avec jokers. Utile pour des chemins ou protocoles spécifiques.
+
+```json
+{
+    "pattern": "https://*.github.com/api/*",
+    "proxy": "http://username:password@proxy2.example.com:8080"
+}
+```
+
+### 3. Règles de domaine (priorité la plus basse)
+
+Correspondance uniquement sur le domaine. Route toutes les requêtes vers un domaine via un proxy donné.
+
+```json
+{
+    "domain": "*.gov.au",
+    "proxy": "http://username:password@proxy3.example.com:8080"
+}
+```
+
+## Motifs avec jokers
+
+- `*` — correspond à un nombre quelconque de caractères
+- `?` — correspond exactement à un caractère
+- Les motifs ne sont pas sensibles à la casse
+
+### Exemples
+
+- `*.example.com` — correspond à `api.example.com`, `www.example.com`, `test.example.com`
+- `api-?.example.com` — correspond à `api-1.example.com`, `api-2.example.com`, mais pas `api-10.example.com`
+- `https://*.example.com/api/*` — correspond à toute URL HTTPS sur un sous-domaine de example.com avec le chemin `/api/`
+
+## Exemple de configuration complète
+
+```json
+{
+    "rules": [
+        {
+            "url": "https://api.example.com/v1/users",
+            "proxy": "http://premium-proxy.example.com:8080"
+        },
+        {
+            "pattern": "https://api.github.com/*",
+            "proxy": "http://github-proxy.example.com:8080"
+        },
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-proxy.example.com:8080"
+        }
+    ]
+}
+```
+
+## Formats d’URL de proxy
+
+AnyCrawl prend en charge divers formats d’URL de proxy :
+
+- HTTP : `http://username:password@proxy.example.com:8080`
+- HTTPS : `https://username:password@proxy.example.com:8443`
+
+## Débogage
+
+Vous verrez des messages du type :
+
+```
+Using proxy from request userData: http://custom-proxy:8080
+Found proxy for URL https://example.com: http://proxy.example.com:8080 By matching a rule.
+Proxy matched by domain pattern: *.gov.au → http://proxy.example.com:8080
+Using tiered proxy: http://default-proxy:8080
+```
+
+## Exemple de priorité
+
+Pour l’URL `https://api.github.com/repos/owner/repo`, les règles suivantes seraient vérifiées dans cet ordre :
+
+1. **Correspondance URL** : `"url": "https://api.github.com/repos/owner/repo"`
+2. **Correspondance motif** : `"pattern": "https://api.github.com/*"`
+3. **Correspondance domaine** : `"domain": "*.github.com"`
+
+La première règle qui correspond l’emporte.
+
+## Bonnes pratiques
+
+1. **Utilisez les règles de domaine** pour des besoins larges (par ex. tous les sites gouvernementaux d’un pays)
+2. **Utilisez les règles de motif** lorsque vous devez faire correspondre des chemins ou protocoles précis
+3. **Utilisez les règles d’URL** pour les points de terminaison exacts nécessitant un traitement particulier
+4. **L’ordre dans le fichier n’a pas d’importance** — la priorité est déterminée par le type de règle
+5. **Testez vos motifs** avec les journaux de débogage pour vérifier qu’ils correspondent comme prévu
+
+## Système de proxy à niveaux
+
+Lorsque vous utilisez plusieurs proxies avec `ANYCRAWL_PROXY_URL`, AnyCrawl applique un système de proxy à niveaux intelligent :
+
+### Fonctionnement
+
+1. **État initial** : tous les domaines commencent avec le premier proxy (niveau 0)
+2. **Détection d’erreur** : lorsqu’un proxy échoue pour un domaine donné, ce domaine passe au niveau suivant
+3. **Par domaine** : chaque domaine conserve son propre niveau indépendamment
+
+### Scénario d’exemple
+
+```bash
+export ANYCRAWL_PROXY_URL=http://fast-proxy:8080,http://stable-proxy:8080,http://backup-proxy:8080
+```
+
+- Requêtes initiales vers `example.com` → `fast-proxy:8080` (niveau 0)
+- Si `fast-proxy` échoue pour `example.com` → passage à `stable-proxy:8080` (niveau 1)
+- Entre-temps, `github.com` peut encore utiliser `fast-proxy:8080` s’il fonctionne
+- Le système retente périodiquement `fast-proxy` pour `example.com` pour vérifier s’il a récupéré
+
+### Avantages
+
+- **Basculement automatique** : pas d’intervention manuelle en cas d’échec des proxies
+- **Optimisation par domaine** : chaque domaine utilise le meilleur proxy disponible
+- **Efficacité** : les proxies en échec ne sont pas totalement abandonnés
+- **Auto-réparation** : retour automatique aux proxies optimaux lorsqu’ils récupèrent
+
+## Exemple complet : combiner les deux méthodes
+
+Exemple utilisant les deux méthodes de configuration :
+
+```bash
+# Proxy par défaut pour l’usage général
+export ANYCRAWL_PROXY_URL=http://default-proxy:8080
+
+# Routage par URL pour des sites spécifiques
+export ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+Avec ce `proxy-config.json` :
+
+```json
+{
+    "rules": [
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-residential-proxy:8080"
+        },
+        {
+            "pattern": "https://api.*.com/*",
+            "proxy": "http://api-optimized-proxy:3128"
+        }
+    ]
+}
+```
+
+Résultat :
+
+- `https://www.homeaffairs.gov.au/` → utilise `au-residential-proxy:8080` (règle domaine)
+- `https://api.github.com/repos` → utilise `api-optimized-proxy:3128` (règle motif)
+- `https://example.com/` → utilise `default-proxy:8080` (repli sur `ANYCRAWL_PROXY_URL`)
+
+## Récapitulatif des variables d’environnement
+
+| Variable                      | Rôle                                         | Exemple                                                |
+| ----------------------------- | -------------------------------------------- | ------------------------------------------------------ |
+| `ANYCRAWL_PROXY_URL`          | Proxy de base (un ou plusieurs)              | `http://proxy:8080` ou `http://p1:8080,http://p2:8080` |
+| `ANYCRAWL_PROXY_STEALTH_URL`  | Proxy furtif / premium (résidentiel)         | `http://residential-proxy:8080`                        |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | Crédits supplémentaires si proxy furtif   | `5`                                                  |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS` | Délai par défaut pour `proxy=stealth` et `proxy=auto` si `timeout` absent dans la requête | `120000` |
+| `ANYCRAWL_PROXY_CONFIG`       | Chemin du fichier JSON pour le routage par URL | `/path/to/proxy-config.json`                           |
+
+### Ordre de priorité
+
+1. **Le plus haut** : mode proxy ou URL personnalisée dans les options de requête
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "playwright",
+        "proxy": "stealth"
+    }
+    ```
+    Ou avec une URL personnalisée :
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "proxy": "http://custom-proxy:8080"
+    }
+    ```
+2. **Élevé** : règles basées sur l’URL depuis `ANYCRAWL_PROXY_CONFIG`
+3. **Faible** : proxies à niveaux depuis `ANYCRAWL_PROXY_URL` (repli)

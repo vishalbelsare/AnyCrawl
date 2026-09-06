@@ -5,8 +5,11 @@ import { baseSchema } from "./BaseSchema.js";
 
 const scrapeOptionsInputSchema = baseSchema
     .pick({
+        template_id: true,
+        variables: true,
         engine: true,
         proxy: true,
+        humanize: true,
         formats: true,
         timeout: true,
         wait_until: true,
@@ -14,6 +17,7 @@ const scrapeOptionsInputSchema = baseSchema
         wait_for_selector: true,
         include_tags: true,
         exclude_tags: true,
+        only_main_content: true,
         json_options: true,
         extract_source: true,
         ocr_options: true,

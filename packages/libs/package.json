@@ -1,6 +1,6 @@
 {
     "name": "@anycrawl/libs",
-    "version": "1.0.0-beta.15",
+    "version": "1.0.0-beta.26",
     "type": "module",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -29,6 +29,11 @@
         "./types/template-config": {
             "import": "./dist/types/template-config.js",
             "default": "./dist/types/template-config.js"
+        },
+        "./template/validate-contract": {
+            "types": "./dist/template/validate-contract.d.ts",
+            "import": "./dist/template/validate-contract.js",
+            "default": "./dist/template/validate-contract.js"
         },
         "./types/BaseSchema": {
             "import": "./dist/types/BaseSchema.js",

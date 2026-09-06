@@ -1,0 +1,84 @@
+---
+title: Inicio rápido
+description: Aprende a usar la API de rastreo y extracción web de AnyCrawl para obtener datos listos para LLM desde cualquier sitio
+icon: Album
+---
+
+## Introducción
+
+Creado para LLMs. Un rastreador y extractor multihilo y de alto rendimiento, listo para usar. Con una OpenAPI pensada para desarrolladores, devuelve datos limpios y estructurados, optimizados para LLMs.
+
+AnyCrawl incluye las siguientes características:
+
+<Cards>
+
+<Card icon={<CpuIcon className="text-purple-300" />} title="Alto rendimiento">
+    Alto rendimiento, multihilo.
+</Card>
+
+<Card icon={<GithubIcon className="text-blue-300" />} title="Totalmente open source">
+    Código abierto, disponible en GitHub.
+</Card>
+
+<Card icon={<OpenAIIcon />} title='Compatible con LLM'>
+Datos limpios y estructurados para LLMs.
+</Card>
+<Card icon={<OpenAPIIcon />} title='OpenAPI'>
+Compatible con OpenAPI.
+
+</Card>
+
+</Cards>
+
+## Convenciones de la API
+
+### Nombres de parámetros
+
+La API de AnyCrawl sigue convenciones coherentes:
+
+- **Parámetros de petición**: principalmente `snake_case`
+  - Ejemplos habituales: `webhook_url`, `event_types`, `cron_expression`, `max_retries`
+  - Nota: algunos campos específicos del endpoint usan nombres camelCase existentes (por ejemplo, `timeRange` en Search).
+
+- **Campos de respuesta**: formato `snake_case`
+  - Ejemplo: `task_id`, `webhook_id`, `next_execution_at`, `task_type`, `cron_expression`, `is_active`
+
+Para los cuerpos de petición, usa la tabla de parámetros de cada endpoint y OpenAPI como fuente de verdad.
+
+### Formato de respuesta
+
+Todas las respuestas de la API siguen una estructura estándar:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Optional message"
+}
+```
+
+- `success`: booleano que indica si la petición tuvo éxito
+- `data`: carga útil de la respuesta (objeto o array)
+- `message`: mensaje legible opcional
+
+### Respuestas de error
+
+Las respuestas de error incluyen información detallada:
+
+```json
+{
+  "success": false,
+  "error": "Error type",
+  "message": "Human-readable error message",
+  "details": { ... }
+}
+```
+
+Códigos HTTP habituales:
+- `200` - Éxito
+- `400` - Solicitud incorrecta (errores de validación)
+- `401` - No autorizado (clave API no válida)
+- `402` - Pago requerido (créditos insuficientes)
+- `404` - No encontrado
+- `429` - Demasiadas solicitudes (límite de velocidad superado)
+- `500` - Error interno del servidor

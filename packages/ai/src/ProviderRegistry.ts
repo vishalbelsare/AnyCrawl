@@ -7,6 +7,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 type ProviderRegistry = ReturnType<typeof createProviderRegistry>;
 
 const separator = '/';
+const atlasCloudBaseURL = 'https://api.atlascloud.ai/v1';
 let providerRegistry: ProviderRegistry;
 
 // Extra headers for providers that support custom headers (e.g., OpenRouter)
@@ -33,7 +34,9 @@ if (aiConfig) {
         }
 
         const apiKey = typedProvider.apiKey ?? (typedProvider.apiKeyEnv ? process.env[typedProvider.apiKeyEnv] : null);
-        const baseURL = typedProvider.baseURL ?? (typedProvider.baseURLEnv ? process.env[typedProvider.baseURLEnv] : null);
+        const baseURL = typedProvider.baseURL
+            ?? (typedProvider.baseURLEnv ? process.env[typedProvider.baseURLEnv] : null)
+            ?? (key === 'atlascloud' ? atlasCloudBaseURL : null);
 
         if (apiKey && baseURL) {
             if (key === 'openai') {
@@ -73,6 +76,13 @@ if (aiConfig) {
             baseURL: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
             apiKey: process.env.OPENROUTER_API_KEY,
             headers: extraHeaders,
+        });
+    }
+    if (process.env.ATLASCLOUD_API_KEY) {
+        providerInstances['atlascloud'] = createOpenAICompatible({
+            name: 'atlascloud',
+            baseURL: process.env.ATLASCLOUD_BASE_URL ?? atlasCloudBaseURL,
+            apiKey: process.env.ATLASCLOUD_API_KEY,
         });
     }
     if (process.env.CUSTOM_API_KEY && process.env.CUSTOM_BASE_URL) {

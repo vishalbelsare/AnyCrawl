@@ -1,0 +1,61 @@
+---
+title: Bộ nhớ đệm (Cache)
+description: Hành vi cache cho API Scrape, Crawl và Map.
+icon: Database
+---
+
+## Tổng quan
+
+AnyCrawl dùng hai lớp cache:
+
+- **Page Cache**: Dùng cho `/v1/scrape` và xử lý theo trang trong `/v1/crawl`
+- **Map Cache**: Dùng cho `/v1/map` cho kết quả khám phá URL
+
+## Tham số chung
+
+### `max_age` (ms)
+
+- Điều khiển hành vi **đọc** cache.
+- `0`: buộc làm mới (bỏ qua đọc cache)
+- `> 0`: cho phép dữ liệu cache trong khoảng thời gian đó
+- bỏ trống: dùng mặc định của server
+
+### `store_in_cache`
+
+- Áp dụng cho kết quả trang của scrape/crawl.
+- `true` (mặc định): ghi cache
+- `false`: bỏ qua ghi cache
+
+### `use_index` (chỉ Map)
+
+- `true` (mặc định): cho phép Map dùng chỉ mục Page Cache làm nguồn bổ sung
+- `false`: tắt nguồn đó
+
+## Hành vi theo endpoint
+
+### `/v1/scrape`
+
+- Có thể đọc Page Cache trước khi xếp job mới.
+- Khi trúng cache, response kèm metadata cache (ví dụ `cachedAt` / `maxAge`).
+
+### `/v1/crawl`
+
+- Hiện **không** đọc Page Cache cho toàn bộ request crawl.
+- Vẫn hỗ trợ điều khiển ghi/đọc cache trong tùy chọn scrape theo trang.
+
+### `/v1/map`
+
+- Có thể đọc Map Cache.
+- Response không có trường công khai `fromCache` (việc dùng cache là nội bộ).
+
+## Gợi ý thực tế
+
+- Dùng `max_age: 0` khi cần dữ liệu mới ngay.
+- Dùng `store_in_cache: false` cho trang thay đổi mạnh để tránh ghi snapshot không ổn định.
+- Với Map, tắt `use_index` nếu muốn khám phá chỉ dựa vào sitemap/tìm kiếm/liên kết trang.
+
+## Tài liệu liên quan
+
+- [API Scrape](./scrape)
+- [API Crawl](./crawl)
+- [API Map](./map)

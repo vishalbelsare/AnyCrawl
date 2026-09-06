@@ -6,12 +6,68 @@ import type {
     TemplateExecutionResult,
     TemplateFilters,
     TemplateListResponse,
+    SandboxContext,
 } from "@anycrawl/libs";
 import { TemplateNotFoundError, TemplateExecutionError } from "../errors/index.js";
 import { TemplateCache } from "../cache/index.js";
 import { QuickJSSandbox } from "../sandbox/index.js";
 import { TemplateCodeValidator } from "../validator/index.js";
 import { DomainValidator, type DomainValidationResult } from "../validator/domainValidator.js";
+
+// ---------------------------------------------------------------------------
+// L3 orchestrated handler-execution layer: seed + page entrypoints.
+// These reuse the same sandbox + validator + trust model as executeTemplate,
+// but intentionally SKIP billing/recordExecution (orchestrated runs bill
+// per-run, not per handler call).
+// ---------------------------------------------------------------------------
+
+/** A single seed emitted by an orchestrated template's seedHandler. */
+export interface OrchestratedSeed {
+    seedKey: string;
+    url: string;
+    metadata?: any;
+}
+
+export interface RunSeedHandlerParams {
+    templateConfig: TemplateConfig;
+    variables: Record<string, any>;
+}
+
+export interface RunSeedHandlerResult {
+    seeds: OrchestratedSeed[];
+    warnings?: any[];
+}
+
+/** Per-page orchestration context threaded into `run` alongside `requestType`. */
+export interface OrchestratedPageContext {
+    runId?: string;
+    templateRevisionId?: string;
+    seedKey?: string;
+    pageIndex?: number;
+    attempt?: number;
+}
+
+export interface RunPageHandlerParams {
+    templateConfig: TemplateConfig;
+    variables: Record<string, any>;
+    requestType: string;
+    /** Scrape output for this page; carries HTML so `resolveFullHtml` works with no live page. */
+    scrapeResult: {
+        url: string;
+        rawHtml?: string;
+        html?: string;
+        markdown?: string;
+        [key: string]: any;
+    };
+    context?: OrchestratedPageContext;
+}
+
+export interface RunPageHandlerResult {
+    items?: any[];
+    nextUrl?: string | null;
+    detailRequests?: any[];
+    warnings?: any[];
+}
 
 /**
  * Template Client - Main class for template management and execution
@@ -134,6 +190,7 @@ export class TemplateClient {
 
             // 4. Execute template
             let result;
+            let logs: any[] = [];
 
             // If custom handler is enabled, execute it and return only template enhancements
             if (template.customHandlers?.requestHandler?.enabled) {
@@ -150,7 +207,7 @@ export class TemplateClient {
                     sandboxContext
                 );
 
-                // Return only the custom handler result (template enhancements)
+                logs = customResult?.logs || [];
                 result = customResult || {};
             } else {
                 // If no custom handler, return basic template info
@@ -170,6 +227,7 @@ export class TemplateClient {
             return {
                 success: true,
                 data: result,
+                logs,
                 executionTime,
                 creditsCharged: template.pricing.perCall,
             };
@@ -182,12 +240,103 @@ export class TemplateClient {
                 await this.recordExecution(template, context, executionTime, false, error as Error);
             }
 
+            // Logs are only available when the error originated inside the sandbox
+            // (SandboxError carries .logs). Errors from validation or other layers
+            // produce an empty array, which is correct since no handler code ran.
+            const errorLogs = (error as any)?.logs || [];
             const errorMessage = error instanceof Error ? error.message : String(error);
-            throw new TemplateExecutionError(
+            const execError = new TemplateExecutionError(
                 `Template execution failed: ${errorMessage}`,
                 error as Error
             );
+            (execError as any).logs = errorLogs;
+            throw execError;
         }
+    }
+
+    /**
+     * L3 orchestrated: execute a template's `seedHandler` to build the initial
+     * seed list. Reuses the same sandbox + validator + trust model as
+     * {@link executeTemplate}, but SKIPS billing/recordExecution (orchestrated
+     * runs bill per-run, not per handler call).
+     *
+     * @returns the raw author return value (expected `{ seeds, warnings? }`).
+     * @throws TemplateExecutionError if the seedHandler is missing or disabled.
+     */
+    async runSeedHandler(params: RunSeedHandlerParams): Promise<RunSeedHandlerResult> {
+        const { templateConfig, variables } = params;
+
+        const seedHandler = templateConfig.customHandlers?.seedHandler;
+        if (!seedHandler?.enabled || !seedHandler.code?.source) {
+            throw new TemplateExecutionError(
+                `Template ${templateConfig.templateId} has no enabled seedHandler`
+            );
+        }
+        const source = seedHandler.code.source;
+
+        // Validate handler code first (same security/trust gate as executeTemplate).
+        await this.validator.validateCode(source, templateConfig);
+
+        const sandboxContext: SandboxContext = {
+            template: templateConfig,
+            executionContext: {
+                templateId: templateConfig.templateId,
+                variables,
+                request: { url: "" },
+                scrapeResult: undefined,
+                run: { requestType: "seed" },
+            } as unknown as TemplateExecutionContext,
+            variables,
+            page: undefined,
+        };
+
+        // executeCode returns { success, result, logs, ... }; author return is at .result.
+        const wrapper = await this.sandbox.executeCode(source, sandboxContext);
+        return wrapper?.result as RunSeedHandlerResult;
+    }
+
+    /**
+     * L3 orchestrated: execute a template's page handler (the `requestHandler`,
+     * per the design) against an already-fetched scrape result. Reuses the same
+     * sandbox + validator + trust model as {@link executeTemplate}, but SKIPS
+     * billing/recordExecution (orchestrated runs bill per-run).
+     *
+     * `scrapeResult` carries `{ url, rawHtml?, html?, markdown? }` so the sandbox's
+     * `resolveFullHtml` can supply `html` without a live page object.
+     *
+     * @returns the raw author return value (expected `{ items?, nextUrl?, detailRequests?, warnings? }`).
+     * @throws TemplateExecutionError if the requestHandler is missing or disabled.
+     */
+    async runPageHandler(params: RunPageHandlerParams): Promise<RunPageHandlerResult> {
+        const { templateConfig, variables, requestType, scrapeResult, context } = params;
+
+        const requestHandler = templateConfig.customHandlers?.requestHandler;
+        if (!requestHandler?.enabled || !requestHandler.code?.source) {
+            throw new TemplateExecutionError(
+                `Template ${templateConfig.templateId} has no enabled requestHandler (page handler)`
+            );
+        }
+        const source = requestHandler.code.source;
+
+        // Validate handler code first (same security/trust gate as executeTemplate).
+        await this.validator.validateCode(source, templateConfig);
+
+        const sandboxContext: SandboxContext = {
+            template: templateConfig,
+            executionContext: {
+                templateId: templateConfig.templateId,
+                variables,
+                request: { url: scrapeResult?.url ?? "" },
+                scrapeResult,
+                run: { requestType, ...(context ?? {}) },
+            } as unknown as TemplateExecutionContext,
+            variables,
+            page: undefined,
+        };
+
+        // executeCode returns { success, result, logs, ... }; author return is at .result.
+        const wrapper = await this.sandbox.executeCode(source, sandboxContext);
+        return wrapper?.result as RunPageHandlerResult;
     }
 
     /**

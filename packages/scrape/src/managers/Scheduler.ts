@@ -1,10 +1,20 @@
-import { log } from "crawlee";
-import { getDB, schemas, eq, sql, completedJob, failedJob, Billing } from "@anycrawl/db";
+import { getDB, schemas, eq, sql, completedJob, failedJob, Billing, withDatabaseTransaction, type DatabaseSteps, createMonitorCheckSteps, MonitorBusyError, gte, lte, lt } from "@anycrawl/db";
 import { QueueManager } from "./Queue.js";
 import { randomUUID } from "crypto";
-import { Job, Queue } from "bullmq";
-import IORedis from "ioredis";
-import { WebhookEventType, estimateTaskCredits, isScheduledTasksLimitEnabled, getScheduledTasksLimit, buildAutoPauseReason, CreditCalculator } from "@anycrawl/libs";
+import { Job, Queue, DelayedError } from "bullmq";
+import type IORedis from "ioredis";
+import {
+    WebhookEventType,
+    estimateTaskCredits,
+    isScheduledTasksLimitEnabled,
+    getScheduledTasksLimit,
+    buildAutoPauseReason,
+    CreditCalculator,
+    log,
+    appConfig,
+    config,
+} from "@anycrawl/libs";
+import { Utils } from "../Utils.js";
 import { CronExpressionParser } from "cron-parser";
 import { finalizeExecution } from "./ExecutionLifecycle.js";
 
@@ -12,6 +22,31 @@ type TriggerJobResult = {
     jobUuid: string;
     dispatchCommitted: boolean;
 };
+
+export function resolveScheduledFor(
+    nextExecutionAt: unknown,
+    fallback: Date = new Date()
+): Date {
+    if (nextExecutionAt instanceof Date && !Number.isNaN(nextExecutionAt.getTime())) {
+        return nextExecutionAt;
+    }
+
+    if (typeof nextExecutionAt === "string" || typeof nextExecutionAt === "number") {
+        const parsed = new Date(nextExecutionAt);
+        if (!Number.isNaN(parsed.getTime())) {
+            return parsed;
+        }
+    }
+
+    return fallback;
+}
+
+export function buildScheduledExecutionIdempotencyKey(
+    taskUuid: string,
+    scheduledFor: Date
+): string {
+    return `${taskUuid}-${scheduledFor.toISOString()}`;
+}
 
 export function resolveDispatchStateFromError(
     executionDispatched: boolean,
@@ -24,7 +59,11 @@ export function resolveDispatchStateFromError(
 
     if (!nextDispatched && errorWithDispatch?.dispatchCommitted === true) {
         nextDispatched = true;
-        if (!nextJobUuid && typeof errorWithDispatch.jobUuid === "string" && errorWithDispatch.jobUuid.length > 0) {
+        if (
+            !nextJobUuid &&
+            typeof errorWithDispatch.jobUuid === "string" &&
+            errorWithDispatch.jobUuid.length > 0
+        ) {
             nextJobUuid = errorWithDispatch.jobUuid;
         }
     }
@@ -57,7 +96,7 @@ export class SchedulerManager {
 
     private constructor() {
         // Default to 10 seconds, configurable via environment variable
-        this.SYNC_INTERVAL_MS = parseInt(process.env.ANYCRAWL_SCHEDULER_SYNC_INTERVAL_MS || "10000");
+        this.SYNC_INTERVAL_MS = config.scheduler.syncIntervalMs;
     }
 
     public static getInstance(): SchedulerManager {
@@ -76,10 +115,7 @@ export class SchedulerManager {
         this.isRunning = true;
         log.info("[SCHEDULER] 🕒 Starting Scheduler Manager (BullMQ)...");
 
-        // Initialize shared Redis connection for distributed locking
-        this.redis = new IORedis.default(process.env.ANYCRAWL_REDIS_URL!, {
-            maxRetriesPerRequest: null,
-        });
+        this.redis = Utils.getInstance().getRedisConnection();
 
         // Get or create the scheduler queue
         const queueManager = QueueManager.getInstance();
@@ -92,7 +128,9 @@ export class SchedulerManager {
         // Start periodic polling to detect new/updated tasks
         this.startPolling();
 
-        log.info(`[SCHEDULER] ✅ Scheduler Manager started successfully (polling every ${this.SYNC_INTERVAL_MS / 1000}s)`);
+        log.info(
+            `[SCHEDULER] ✅ Scheduler Manager started successfully (polling every ${this.SYNC_INTERVAL_MS / 1000}s)`
+        );
     }
 
     /**
@@ -107,7 +145,9 @@ export class SchedulerManager {
             const activeTasks = await db
                 .select()
                 .from(schemas.scheduledTasks)
-                .where(sql`${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`);
+                .where(
+                    sql`${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`
+                );
 
             log.info(`[SCHEDULER] Syncing ${activeTasks.length} active tasks to BullMQ`);
 
@@ -157,35 +197,80 @@ export class SchedulerManager {
     }
 
     /**
+     * True when at least one worker is consuming the shared "scheduler" queue —
+     * in-process or in a separate scheduler image connected to the same Redis.
+     * Unlike isSchedulerRunning() (a per-process flag), this answers the question
+     * that actually matters before enqueueing: will anyone run this job?
+     * Bounded by a timeout so a Redis outage degrades to "no consumer" instead of
+     * hanging the caller (ioredis buffers commands indefinitely while offline).
+     */
+    public async hasSchedulerConsumer(timeoutMs = 3000): Promise<boolean> {
+        try {
+            const queue = this.schedulerQueue ?? QueueManager.getInstance().getQueue(this.SCHEDULER_QUEUE_NAME);
+            let timer: NodeJS.Timeout | undefined;
+            try {
+                const workers = await Promise.race([
+                    queue.getWorkers(),
+                    new Promise<never>((_, reject) => {
+                        timer = setTimeout(() => reject(new Error("scheduler consumer probe timed out")), timeoutMs);
+                        timer.unref?.();
+                    }),
+                ]);
+                return Array.isArray(workers) && workers.length > 0;
+            } finally {
+                if (timer) clearTimeout(timer);
+            }
+        } catch (error) {
+            // Timeout → Redis unreachable → honestly report "no consumer" (503).
+            // Any OTHER error (e.g. an ACL-restricted Redis rejecting CLIENT LIST
+            // with NOPERM) means we cannot tell — fail OPEN so a healthy scheduler
+            // behind a restricted Redis isn't wrongly reported unavailable; the
+            // enqueue itself is still bounded by triggerTaskNow's timeout.
+            const timedOut = error instanceof Error && error.message.includes("probe timed out");
+            log.warning(`[SCHEDULER] Consumer probe ${timedOut ? "timed out" : "errored"}: ${error}`);
+            return !timedOut;
+        }
+    }
+
+    /**
      * Add or update a scheduled task as a BullMQ repeatable job
      */
     public async addScheduledTask(task: any): Promise<void> {
         if (!this.schedulerQueue) {
-            throw new Error("Scheduler queue not initialized. Make sure to call start() first or set ANYCRAWL_SCHEDULER_ENABLED=true");
+            throw new Error(
+                "Scheduler queue not initialized. Make sure to call start() first or set ANYCRAWL_SCHEDULER_ENABLED=true"
+            );
         }
 
         try {
-            // Add as repeatable job
-            await this.schedulerQueue.add(
-                'scheduled-task',
+            // Upsert a job scheduler keyed by the task uuid. Using the uuid as the
+            // scheduler key lets removeScheduledTask() address it directly via
+            // removeJobScheduler(taskUuid) — the old add(..., { repeat }) path
+            // auto-generated an opaque key, which made targeted removal impossible.
+            await this.schedulerQueue.upsertJobScheduler(
+                task.uuid,
                 {
-                    taskUuid: task.uuid,
-                    taskName: task.name,
-                    taskType: task.taskType,
-                    taskPayload: task.taskPayload,
+                    pattern: task.cronExpression,
+                    tz: task.timezone || "UTC",
                 },
                 {
-                    jobId: `scheduled:${task.uuid}`,
-                    repeat: {
-                        pattern: task.cronExpression,
-                        tz: task.timezone || "UTC",
+                    name: "scheduled-task",
+                    data: {
+                        taskUuid: task.uuid,
+                        taskName: task.name,
+                        taskType: task.taskType,
+                        taskPayload: task.taskPayload,
                     },
-                    removeOnComplete: 100, // Keep last 100 completed jobs for debugging
-                    removeOnFail: 100,
+                    opts: {
+                        removeOnComplete: 100, // Keep last 100 completed jobs for debugging
+                        removeOnFail: 100,
+                    },
                 }
             );
 
-            log.info(`[SCHEDULER] 📅 Scheduled task: ${task.name} (${task.cronExpression}) [${task.timezone}]`);
+            log.info(
+                `[SCHEDULER] 📅 Scheduled task: ${task.name} (${task.cronExpression}) [${task.timezone}]`
+            );
         } catch (error) {
             log.error(`[SCHEDULER] Failed to add scheduled task ${task.name}: ${error}`);
             throw error;
@@ -193,29 +278,74 @@ export class SchedulerManager {
     }
 
     /**
-     * Remove a scheduled task from BullMQ repeatable jobs
+     * Trigger a one-off (non-repeatable) execution of a scheduled task immediately.
+     * Reuses the same processScheduledTaskJob path as cron-triggered runs.
+     * Used by the monitor on-demand /check endpoint.
+     */
+    public async triggerTaskNow(task: any): Promise<void> {
+        // Enqueue onto the shared Redis "scheduler" queue. This must work from the
+        // API process too, which never calls start() (the scheduler runs as a
+        // separate worker image), so fall back to QueueManager when this instance
+        // has no started scheduler queue of its own. The separate scheduler worker
+        // consumes the job regardless of which process enqueued it.
+        const queue = this.schedulerQueue ?? QueueManager.getInstance().getQueue(this.SCHEDULER_QUEUE_NAME);
+
+        // Bound the enqueue with a timeout: when Redis is down, ioredis buffers
+        // commands indefinitely, which would hang the caller forever. Callers
+        // already try/catch, so a clear rejection is the right degradation.
+        let timer: NodeJS.Timeout | undefined;
+        try {
+            await Promise.race([
+                queue.add(
+                    "scheduled-task",
+                    {
+                        taskUuid: task.uuid,
+                        taskName: task.name,
+                        taskType: task.taskType,
+                        taskPayload: task.taskPayload,
+                        triggeredBy: "manual",
+                    },
+                    {
+                        // Keep one queued manual request per task until dispatch.
+                        // Afterwards the execution/check rows provide single-flight.
+                        jobId: `manual-${task.uuid}`,
+                        removeOnComplete: true,
+                        removeOnFail: true,
+                    }
+                ),
+                new Promise<never>((_, reject) => {
+                    timer = setTimeout(
+                        () => reject(new Error("scheduler enqueue timed out — Redis unreachable?")),
+                        5000
+                    );
+                    timer.unref?.();
+                }),
+            ]);
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+
+        log.info(`[SCHEDULER] ▶️ Manual trigger for task: ${task.name}`);
+    }
+
+    /**
+     * Remove a scheduled task from BullMQ job schedulers.
+     * Schedulers are keyed by the task uuid (see addScheduledTask), so removal is a
+     * direct removeJobScheduler(taskUuid) — no iteration or job-id reconstruction.
+     * Works from the API process too (which never calls start()) by falling back to
+     * QueueManager for the shared Redis "scheduler" queue, same as triggerTaskNow.
      * Note: This is a best-effort removal. Full cleanup happens in syncScheduledTasks.
      */
     public async removeScheduledTask(taskUuid: string): Promise<void> {
-        if (!this.schedulerQueue) {
-            return;
-        }
+        const queue = this.schedulerQueue ?? QueueManager.getInstance().getQueue(this.SCHEDULER_QUEUE_NAME);
 
         try {
-            // Get all job schedulers and find the one for this task
-            const jobSchedulers = await this.schedulerQueue.getJobSchedulers();
-
-            for (const scheduler of jobSchedulers) {
-                // Get the next job for this scheduler to check its data
-                const nextJob = await this.schedulerQueue.getJob(`repeat:${scheduler.key}`);
-                if (nextJob?.data?.taskUuid === taskUuid) {
-                    await this.schedulerQueue.removeJobScheduler(scheduler.key);
-                    log.debug(`[SCHEDULER] Removed job scheduler for task ${taskUuid}`);
-                    return;
-                }
+            const removed = await queue.removeJobScheduler(taskUuid);
+            if (removed) {
+                log.debug(`[SCHEDULER] Removed job scheduler for task ${taskUuid}`);
+            } else {
+                log.debug(`[SCHEDULER] No scheduler found for task: ${taskUuid}`);
             }
-
-            log.debug(`[SCHEDULER] No scheduler found for task: ${taskUuid}`);
         } catch (error) {
             log.error(`[SCHEDULER] Failed to remove scheduled task ${taskUuid}: ${error}`);
         }
@@ -247,7 +377,9 @@ export class SchedulerManager {
      * }
      * ```
      */
-    public async cancelExecution(executionUuid: string): Promise<{ success: boolean; message: string }> {
+    public async cancelExecution(
+        executionUuid: string
+    ): Promise<{ success: boolean; message: string }> {
         try {
             const db = await getDB();
 
@@ -327,7 +459,10 @@ export class SchedulerManager {
      * This is where the actual scheduling logic happens
      */
     public async processScheduledTaskJob(job: Job): Promise<void> {
-        const { taskUuid } = job.data;
+        const { taskUuid, triggeredBy: jobTriggeredBy } = job.data;
+        // Manual (on-demand) triggers must not collide with the cron slot's idempotency
+        // key, must bypass the concurrency-skip guard, and must not disturb nextExecutionAt.
+        const isManual = jobTriggeredBy === "manual";
         const db = await getDB();
         let executionUuid: string | undefined;
         let executionNumber: number | undefined;
@@ -363,18 +498,20 @@ export class SchedulerManager {
                 return;
             }
 
-            // Check credits using dynamic estimation
-            // Only check if ANYCRAWL_API_CREDITS_ENABLED is true
-            const creditsEnabled = process.env.ANYCRAWL_API_CREDITS_ENABLED === "true";
-            if (creditsEnabled) {
+            if (appConfig.creditsEnabled) {
                 // Dynamically calculate required credits, use the larger of stored value and real-time estimate
                 let estimatedCredits = 0;
 
-                // If task has a template, fetch it for accurate credit estimation
-                if (task.taskPayload?.template_id) {
+                // If task has a template, fetch it for accurate credit estimation.
+                // Accept both template_id (business key) and template_uuid (primary key).
+                const taskTemplateRef =
+                    task.taskPayload?.template_id || task.taskPayload?.template_uuid;
+                if (taskTemplateRef) {
                     try {
-                        const { getTemplate } = await import("@anycrawl/db");
-                        const template = await getTemplate(task.taskPayload.template_id);
+                        const { getTemplate, getTemplateByUuid } = await import("@anycrawl/db");
+                        const template = task.taskPayload?.template_id
+                            ? await getTemplate(task.taskPayload.template_id)
+                            : await getTemplateByUuid(task.taskPayload.template_uuid);
                         if (template) {
                             estimatedCredits = estimateTaskCredits(
                                 template.templateType || task.taskType,
@@ -385,7 +522,9 @@ export class SchedulerManager {
                             estimatedCredits = estimateTaskCredits(task.taskType, task.taskPayload);
                         }
                     } catch (e) {
-                        log.warning(`[SCHEDULER] Failed to fetch template for credit estimation: ${e}`);
+                        log.warning(
+                            `[SCHEDULER] Failed to fetch template for credit estimation: ${e}`
+                        );
                         estimatedCredits = estimateTaskCredits(task.taskType, task.taskPayload);
                     }
                 } else {
@@ -399,7 +538,10 @@ export class SchedulerManager {
                     if (creditCheck.success === false) {
                         log.warning(`[SCHEDULER] ${creditCheck.message}`);
 
-                        if (creditCheck.reason === "no_apikey" || creditCheck.reason === "apikey_not_found") {
+                        if (
+                            creditCheck.reason === "no_apikey" ||
+                            creditCheck.reason === "apikey_not_found"
+                        ) {
                             // Critical error: stop the entire task (not just pause)
                             await db
                                 .update(schemas.scheduledTasks)
@@ -411,7 +553,9 @@ export class SchedulerManager {
                                 })
                                 .where(eq(schemas.scheduledTasks.uuid, task.uuid));
 
-                            log.error(`[SCHEDULER] Task ${task.name} stopped due to missing apiKey`);
+                            log.error(
+                                `[SCHEDULER] Task ${task.name} stopped due to missing apiKey`
+                            );
                         } else {
                             // Insufficient credits or error: just pause the task
                             await db
@@ -435,7 +579,7 @@ export class SchedulerManager {
                 }
             }
 
-            // Check concurrency mode
+            // Manual and cron checks share the same concurrency boundary.
             if (task.concurrencyMode === "skip") {
                 const runningExecution = await db
                     .select()
@@ -447,13 +591,15 @@ export class SchedulerManager {
                     .limit(1);
 
                 if (runningExecution.length > 0) {
-                    log.info(`[SCHEDULER] Task ${task.name} is already running, skipping (concurrency: skip)`);
+                    log.info(
+                        `[SCHEDULER] Task ${task.name} is already running, skipping (concurrency: skip)`
+                    );
                     // Still update nextExecutionAt even when skipping
-                    await this.updateNextExecutionTime(task);
+                    if (!isManual) await this.updateNextExecutionTime(task);
                     return;
                 }
             }
-            // For "queue" mode, we don't skip - let it queue up
+            // Monitor queue mode is serialized by the active-check unique index.
 
             // Check daily execution limit
             if (task.maxExecutionsPerDay && task.maxExecutionsPerDay > 0) {
@@ -465,7 +611,7 @@ export class SchedulerManager {
                     .from(schemas.taskExecutions)
                     .where(
                         sql`${schemas.taskExecutions.scheduledTaskUuid} = ${task.uuid}
-                            AND ${schemas.taskExecutions.createdAt} >= ${today}`
+                            AND ${gte(schemas.taskExecutions.createdAt, today)}`
                     );
 
                 const count = todayExecutions[0]?.count || 0;
@@ -473,49 +619,84 @@ export class SchedulerManager {
                     log.warning(
                         `[SCHEDULER] Task ${task.name} reached daily execution limit (${task.maxExecutionsPerDay})`
                     );
-                    // Still update nextExecutionAt even when limit reached
-                    await this.updateNextExecutionTime(task);
+                    // Still update nextExecutionAt even when limit reached — but never
+                    // for manual (on-demand) triggers, which must not shift the cron slot.
+                    if (!isManual) {
+                        await this.updateNextExecutionTime(task);
+                    }
                     return;
                 }
             }
 
-            // Generate idempotency key
-            idempotencyKey = `${task.uuid}-${Date.now()}`;
             const executionCreatedAt = new Date();
+            // Manual triggers use their creation instant (+ job id) so they never collide
+            // with the cron-slot key; scheduled runs use the deterministic slot key for dedup.
+            const scheduledFor = isManual
+                ? executionCreatedAt
+                : resolveScheduledFor(job.data.scheduledFor ?? task.nextExecutionAt, executionCreatedAt);
+            if (!isManual && !job.data.scheduledFor && typeof job.updateData === "function") {
+                await job.updateData({ ...job.data, scheduledFor: scheduledFor.toISOString() });
+            }
+            idempotencyKey = isManual
+                ? `${task.uuid}-manual-${job.id ?? "manual"}-${job.timestamp ?? executionCreatedAt.getTime()}`
+                : buildScheduledExecutionIdempotencyKey(task.uuid, scheduledFor);
+            const existingExecution = await db
+                .select({ uuid: schemas.taskExecutions.uuid })
+                .from(schemas.taskExecutions)
+                .where(eq(schemas.taskExecutions.idempotencyKey, idempotencyKey))
+                .limit(1);
+
+            if (existingExecution.length > 0) {
+                log.info(
+                    `[SCHEDULER] Execution already exists for task ${task.uuid} at ${scheduledFor.toISOString()}, skipping duplicate`
+                );
+                // Manual triggers must not shift the cron slot on a dedup no-op.
+                if (!isManual) {
+                    await this.updateNextExecutionTime(task);
+                }
+                return;
+            }
 
             // Persist execution attempt first (no external side effects in this transaction)
             // This guarantees every attempt has a durable execution record.
-            await db.transaction(async (tx: any) => {
-                // Increment totalExecutions for every attempt and use it as execution number
-                const updatedTask = await tx
-                    .update(schemas.scheduledTasks)
-                    .set({
-                        totalExecutions: sql`${schemas.scheduledTasks.totalExecutions} + 1`,
-                        lastExecutionAt: executionCreatedAt,
-                        updatedAt: executionCreatedAt,
-                    })
-                    .where(eq(schemas.scheduledTasks.uuid, task.uuid))
-                    .returning({ totalExecutions: schemas.scheduledTasks.totalExecutions });
-
-                if (updatedTask.length === 0) {
-                    throw new Error(`Scheduled task ${task.uuid} not found while creating execution`);
+            const admitted = await withDatabaseTransaction(db, function* (tx: any): DatabaseSteps<boolean> {
+                // Lock before reading monitor state, matching configuration/commit
+                // lock order. Legacy orphan tasks must not keep billing invisibly.
+                const [lockedTask] = yield tx.update(schemas.scheduledTasks)
+                    .set({ updatedAt: sql`${schemas.scheduledTasks.updatedAt}` })
+                    .where(sql`${schemas.scheduledTasks.uuid} = ${task.uuid} AND ${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`)
+                    .returning();
+                if (!lockedTask) return false;
+                task = lockedTask;
+                const [monitor] = yield tx.select().from(schemas.monitors)
+                    .where(eq(schemas.monitors.scheduledTaskUuid, task.uuid)).limit(1);
+                if ((task.metadata?.monitorManaged === true && !monitor) || (monitor && !monitor.isActive)) {
+                    task = { ...task, isPaused: true, pauseReason: monitor ? "Paused with inactive monitor" : "Auto-paused: monitor record is missing" };
+                    yield tx.update(schemas.scheduledTasks).set({ isPaused: true, pauseReason: task.pauseReason, updatedAt: executionCreatedAt })
+                        .where(eq(schemas.scheduledTasks.uuid, task.uuid));
+                    return false;
                 }
-
-                executionNumber = updatedTask[0].totalExecutions;
-
-                // Create execution record
+                const [updatedTask] = yield tx.update(schemas.scheduledTasks).set({
+                    totalExecutions: sql`${schemas.scheduledTasks.totalExecutions} + 1`,
+                    lastExecutionAt: executionCreatedAt, updatedAt: executionCreatedAt,
+                }).where(eq(schemas.scheduledTasks.uuid, task.uuid)).returning();
+                task = updatedTask;
+                executionNumber = task.totalExecutions;
                 executionUuid = randomUUID();
-                await tx.insert(schemas.taskExecutions).values({
-                    uuid: executionUuid,
-                    scheduledTaskUuid: task.uuid,
-                    executionNumber: executionNumber!,
-                    idempotencyKey: idempotencyKey!,
-                    status: "pending",
-                    scheduledFor: new Date(),
-                    triggeredBy: "scheduler",
-                    createdAt: new Date(),
+                yield tx.insert(schemas.taskExecutions).values({
+                    uuid: executionUuid, scheduledTaskUuid: task.uuid, executionNumber: executionNumber!,
+                    idempotencyKey: idempotencyKey!, status: "pending", scheduledFor,
+                    triggeredBy: isManual ? "manual" : "scheduler", createdAt: executionCreatedAt,
                 });
+                if (monitor) yield* createMonitorCheckSteps(tx, { monitor, executionUuid: executionUuid!, sequenceNumber: executionNumber!, now: executionCreatedAt });
+                return true;
             });
+            if (!admitted) {
+                // Periodic sync reconciles the latest database state, so a stale
+                // admission attempt cannot remove a just-resumed cron entry.
+                log.warning(`[SCHEDULER] Task ${task.uuid} was paused, removed, or has no active monitor; dispatch skipped`);
+                return;
+            }
 
             if (!executionUuid) {
                 throw new Error(`Failed to create execution record for task ${task.uuid}`);
@@ -529,53 +710,59 @@ export class SchedulerManager {
             jobUuid = triggerResult.jobUuid;
             executionDispatched = triggerResult.dispatchCommitted;
 
-            // Best effort: for async jobs, move pending -> running and attach job UUID.
-            // For sync search/map tasks, execution may already be completed/failed, so this can no-op.
+            // Attach the job UUID unconditionally, then move pending -> running as a
+            // separate guarded step. A fast scrape can finalize the execution before
+            // this code runs — if jobUuid rode on the guarded update it would be lost,
+            // and the monitor post-processor (which resolves job results via
+            // task_executions.jobUuid) would silently skip the snapshot.
             try {
+                if (jobUuid) {
+                    await db
+                        .update(schemas.taskExecutions)
+                        .set({ jobUuid: jobUuid })
+                        .where(eq(schemas.taskExecutions.uuid, executionUuid));
+                }
+                // Status transition stays guarded: sync search/map tasks may already
+                // be completed/failed, and a terminal state must never regress.
                 await db
                     .update(schemas.taskExecutions)
-                    .set({
-                        jobUuid: jobUuid,
-                        status: "running",
-                    })
+                    .set({ status: "running" })
                     .where(
                         sql`${schemas.taskExecutions.uuid} = ${executionUuid}
                             AND ${schemas.taskExecutions.status} = 'pending'`
                     );
             } catch (updateError) {
-                log.error(`[SCHEDULER] Failed to mark execution ${executionUuid} as running: ${updateError}`);
+                log.error(
+                    `[SCHEDULER] Failed to mark execution ${executionUuid} as running: ${updateError}`
+                );
             }
 
-            // Calculate next execution time
-            let nextExecutionAt: Date | null = null;
-            try {
-                const interval = CronExpressionParser.parse(task.cronExpression, {
-                    tz: task.timezone || "UTC",
-                    currentDate: new Date(),
-                });
-                nextExecutionAt = interval.next().toDate();
-            } catch (error) {
-                log.error(`[SCHEDULER] Failed to calculate next execution for task ${task.name}: ${error}`);
-            }
+            // Recompute next execution time only for cron-triggered runs.
+            // Manual on-demand checks must not shift the cron schedule.
+            if (!isManual) {
+                const nextExecutionAt = await this.calculateNextExecutionOrPause(task);
 
-            // Update task statistics
-            try {
-                await db
-                    .update(schemas.scheduledTasks)
-                    .set({
-                        nextExecutionAt: nextExecutionAt,
-                        updatedAt: new Date(),
-                    })
-                    .where(eq(schemas.scheduledTasks.uuid, task.uuid));
-            } catch (taskUpdateError) {
-                log.error(`[SCHEDULER] Failed to update nextExecutionAt after dispatch for task ${task.uuid}: ${taskUpdateError}`);
+                // Update task statistics
+                try {
+                    await db
+                        .update(schemas.scheduledTasks)
+                        .set({
+                            nextExecutionAt: nextExecutionAt,
+                            updatedAt: new Date(),
+                        })
+                        .where(eq(schemas.scheduledTasks.uuid, task.uuid));
+                } catch (taskUpdateError) {
+                    log.error(
+                        `[SCHEDULER] Failed to update nextExecutionAt after dispatch for task ${task.uuid}: ${taskUpdateError}`
+                    );
+                }
             }
 
             log.info(`[SCHEDULER] ✅ Task ${task.name} triggered job ${jobUuid}`);
 
             // Trigger webhook for task execution
             try {
-                if (process.env.ANYCRAWL_WEBHOOKS_ENABLED === "true") {
+                if (config.webhooks.enabled) {
                     const { WebhookManager } = await import("./Webhook.js");
                     await WebhookManager.getInstance().triggerEvent(
                         WebhookEventType.TASK_EXECUTED,
@@ -590,21 +777,35 @@ export class SchedulerManager {
                         },
                         "task",
                         task.uuid,
-                        task.userId ?? undefined
+                        { userId: task.userId ?? undefined, apiKeyId: task.apiKey ?? undefined }
                     );
                 }
             } catch (e) {
                 log.warning(`[SCHEDULER] Failed to trigger webhook for task execution: ${e}`);
             }
         } catch (error) {
-            const dispatchState = resolveDispatchStateFromError(executionDispatched, jobUuid, error);
+            if (error instanceof MonitorBusyError) {
+                if (task?.concurrencyMode === "queue" && typeof job.moveToDelayed === "function") {
+                    await job.moveToDelayed(Date.now() + 1000, job.token);
+                    throw new DelayedError();
+                }
+                if (!isManual && task?.concurrencyMode !== "queue") await this.updateNextExecutionTime(task);
+                return;
+            }
+            if (error instanceof DelayedError) throw error;
+            const dispatchState = resolveDispatchStateFromError(
+                executionDispatched,
+                jobUuid,
+                error
+            );
             executionDispatched = dispatchState.executionDispatched;
             jobUuid = dispatchState.jobUuid;
 
             log.error(`[SCHEDULER] Task ${taskUuid} execution failed: ${error}`);
 
             const executionErrorMessage = error instanceof Error ? error.message : String(error);
-            const executionErrorCode = error instanceof Error ? (error.name || "SCHEDULER_ERROR") : "SCHEDULER_ERROR";
+            const executionErrorCode =
+                error instanceof Error ? error.name || "SCHEDULER_ERROR" : "SCHEDULER_ERROR";
             const executionErrorDetails = {
                 name: error instanceof Error ? error.name : "Error",
                 message: executionErrorMessage,
@@ -634,12 +835,14 @@ export class SchedulerManager {
                         );
                     }
                 } catch (updateError) {
-                    log.error(`[SCHEDULER] Failed to update execution record to failed: ${updateError}`);
+                    log.error(
+                        `[SCHEDULER] Failed to update execution record to failed: ${updateError}`
+                    );
                 }
 
                 // Trigger webhook for task failure
                 try {
-                    if (process.env.ANYCRAWL_WEBHOOKS_ENABLED === "true") {
+                    if (config.webhooks.enabled) {
                         const failedTask = await db
                             .select()
                             .from(schemas.scheduledTasks)
@@ -659,7 +862,7 @@ export class SchedulerManager {
                                 },
                                 "task",
                                 taskUuid,
-                                failedTask[0].userId ?? undefined
+                                { userId: failedTask[0].userId ?? undefined, apiKeyId: failedTask[0].apiKey ?? undefined }
                             );
                         }
                     }
@@ -669,24 +872,14 @@ export class SchedulerManager {
 
                 // Update failure statistics and next execution time
                 // Always update nextExecutionAt regardless of success/failure
-                let nextExecutionAt: Date | null = null;
-                try {
-                    const taskForCron = await db
-                        .select()
-                        .from(schemas.scheduledTasks)
-                        .where(eq(schemas.scheduledTasks.uuid, taskUuid))
-                        .limit(1);
-
-                    if (taskForCron[0]) {
-                        const interval = CronExpressionParser.parse(taskForCron[0].cronExpression, {
-                            tz: taskForCron[0].timezone || "UTC",
-                            currentDate: new Date(),
-                        });
-                        nextExecutionAt = interval.next().toDate();
-                    }
-                } catch (cronError) {
-                    log.error(`[SCHEDULER] Failed to calculate next execution for failed task ${taskUuid}: ${cronError}`);
-                }
+                const taskForCron = await db
+                    .select()
+                    .from(schemas.scheduledTasks)
+                    .where(eq(schemas.scheduledTasks.uuid, taskUuid))
+                    .limit(1);
+                const nextExecutionAt = taskForCron[0]
+                    ? await this.calculateNextExecutionOrPause(taskForCron[0])
+                    : null;
 
                 await db
                     .update(schemas.scheduledTasks)
@@ -724,7 +917,7 @@ export class SchedulerManager {
             if (executionDispatched) {
                 log.warning(
                     `[SCHEDULER] Task ${taskUuid} encountered post-dispatch error; preserving execution lifecycle state ` +
-                    `(executionUuid=${executionUuid || "N/A"}, jobUuid=${jobUuid || "N/A"}): ${executionErrorMessage}`
+                        `(executionUuid=${executionUuid || "N/A"}, jobUuid=${jobUuid || "N/A"}): ${executionErrorMessage}`
                 );
                 return;
             }
@@ -740,11 +933,7 @@ export class SchedulerManager {
     private async updateNextExecutionTime(task: any): Promise<void> {
         try {
             const db = await getDB();
-            const interval = CronExpressionParser.parse(task.cronExpression, {
-                tz: task.timezone || "UTC",
-                currentDate: new Date(),
-            });
-            const nextExecutionAt = interval.next().toDate();
+            const nextExecutionAt = await this.calculateNextExecutionOrPause(task);
 
             await db
                 .update(schemas.scheduledTasks)
@@ -754,42 +943,89 @@ export class SchedulerManager {
                 })
                 .where(eq(schemas.scheduledTasks.uuid, task.uuid));
 
-            log.debug(`[SCHEDULER] Updated next execution time for ${task.name}: ${nextExecutionAt}`);
+            log.debug(
+                `[SCHEDULER] Updated next execution time for ${task.name}: ${nextExecutionAt}`
+            );
         } catch (error) {
-            log.error(`[SCHEDULER] Failed to update next execution time for task ${task.name}: ${error}`);
+            log.error(
+                `[SCHEDULER] Failed to update next execution time for task ${task.name}: ${error}`
+            );
         }
     }
 
-    private async triggerJob(task: any, executionUuid: string, dbOrTx?: any): Promise<TriggerJobResult> {
+    private async calculateNextExecutionOrPause(task: any): Promise<Date | null> {
+        try {
+            const interval = CronExpressionParser.parse(task.cronExpression, {
+                tz: task.timezone || "UTC",
+                currentDate: new Date(),
+            });
+            return interval.next().toDate();
+        } catch (error) {
+            const db = await getDB();
+            const pauseReason = `Auto-paused: Failed to calculate next execution (${error instanceof Error ? error.message : String(error)})`;
+
+            log.error(
+                `[SCHEDULER] Failed to calculate next execution for task ${task.name}: ${error}`
+            );
+
+            await db
+                .update(schemas.scheduledTasks)
+                .set({
+                    isPaused: true,
+                    pauseReason,
+                    nextExecutionAt: null,
+                    updatedAt: new Date(),
+                })
+                .where(eq(schemas.scheduledTasks.uuid, task.uuid));
+
+            await this.removeScheduledTask(task.uuid);
+            return null;
+        }
+    }
+
+    private async triggerJob(
+        task: any,
+        executionUuid: string,
+        dbOrTx?: any
+    ): Promise<TriggerJobResult> {
         const queueManager = QueueManager.getInstance();
         const payload = task.taskPayload;
-        const db = dbOrTx || await getDB();
+        const db = dbOrTx || (await getDB());
 
         let actualTaskType = task.taskType;
         let engine = payload.engine || "cheerio";
         let templatePerCallCredits = 0;
+        // Holds the canonical templateId after resolving via template_id or template_uuid.
+        // Used to normalise jobData so downstream engines always see template_id.
+        let resolvedTemplateId: string | undefined;
 
         // Handle template task type
         if (task.taskType === "template") {
-            // For template tasks, we need to fetch the template to determine the actual type
-            const templateId = payload.template_id;
-            if (!templateId) {
-                throw new Error("Template task requires template_id in payload");
+            // For template tasks, we need to fetch the template to determine the actual type.
+            // Accept both template_id (business key) and template_uuid (primary key).
+            const rawTemplateRef = payload.template_id || payload.template_uuid;
+            if (!rawTemplateRef) {
+                throw new Error("Template task requires template_id or template_uuid in payload");
             }
 
             try {
-                const { getTemplate } = await import("@anycrawl/db");
-                const template = await getTemplate(templateId);
+                const { getTemplate, getTemplateByUuid } = await import("@anycrawl/db");
+                const template = payload.template_id
+                    ? await getTemplate(payload.template_id)
+                    : await getTemplateByUuid(payload.template_uuid);
 
                 if (!template) {
                     // Template deleted - deactivate the scheduled task
-                    log.error(`[SCHEDULER] Template ${templateId} not found, deactivating task ${task.uuid}`);
+                    log.error(
+                        `[SCHEDULER] Template ${rawTemplateRef} not found, deactivating task ${task.uuid}`
+                    );
 
-                    await db.update(schemas.scheduledTasks)
+                    await db
+                        .update(schemas.scheduledTasks)
                         .set({
                             isActive: false,
                             isPaused: true,
-                            pauseReason: `Auto-stopped: Template ${templateId} no longer exists`,
+                            pauseReason: `Auto-stopped: Template ${rawTemplateRef} no longer exists`,
                             updatedAt: new Date(),
                         })
                         .where(eq(schemas.scheduledTasks.uuid, task.uuid));
@@ -797,23 +1033,50 @@ export class SchedulerManager {
                     // Remove from BullMQ scheduler
                     await this.removeScheduledTask(task.uuid);
 
-                    throw new Error(`Template ${templateId} not found - task deactivated`);
+                    throw new Error(`Template ${rawTemplateRef} not found - task deactivated`);
                 }
 
                 // Use the template's type as the actual task type
                 actualTaskType = template.templateType;
                 const rawTemplatePrice = Number(template.pricing?.perCall || 0);
-                templatePerCallCredits = Number.isFinite(rawTemplatePrice) && rawTemplatePrice > 0
-                    ? rawTemplatePrice
-                    : 0;
+                templatePerCallCredits =
+                    Number.isFinite(rawTemplatePrice) && rawTemplatePrice > 0
+                        ? rawTemplatePrice
+                        : 0;
 
                 // If engine is not specified in payload, use template's engine if available
                 if (!payload.engine && template.reqOptions?.engine) {
                     engine = template.reqOptions.engine;
                 }
+
+                // Normalise: capture canonical templateId so jobData always carries template_id
+                // even when the original payload only contained template_uuid.
+                resolvedTemplateId = template.templateId;
             } catch (error) {
-                log.error(`[SCHEDULER] Failed to fetch template ${templateId}: ${error}`);
+                log.error(`[SCHEDULER] Failed to fetch template ${rawTemplateRef}: ${error}`);
                 throw error;
+            }
+        }
+
+        // Resolve the virtual "auto" engine to a concrete engine BEFORE building the
+        // queue name. The live scrape/crawl controllers call resolveAutoEngine before
+        // enqueue; the scheduler previously did not, so scheduled tasks with engine
+        // "auto" were dispatched to a "<type>-auto" queue that has no worker. The job
+        // was never consumed and the execution was later reaped as a failure — this is
+        // why monitors (which default to "auto") produced failed runs and empty detail.
+        if (engine === "auto" && (actualTaskType === "scrape" || actualTaskType === "crawl") && payload.url) {
+            try {
+                const { resolveAutoEngine } = await import("../utils/autoEngine.js");
+                // Crawl payloads carry the proxy under options.scrape_options; scrape
+                // payloads carry it under options directly. Check both.
+                engine = await resolveAutoEngine(
+                    payload.url,
+                    payload.options?.proxy ?? payload.options?.scrape_options?.proxy
+                );
+                log.info(`[SCHEDULER] Resolved auto engine for ${payload.url} -> ${engine}`);
+            } catch (error) {
+                engine = "playwright";
+                log.warning(`[SCHEDULER] Auto engine resolution failed for ${payload.url}, falling back to ${engine}: ${error}`);
             }
         }
 
@@ -828,7 +1091,7 @@ export class SchedulerManager {
         if (payload.url) {
             url = payload.url;
             // Ensure URL has protocol
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 url = `https://${url}`;
             }
         } else if (payload.query) {
@@ -836,7 +1099,7 @@ export class SchedulerManager {
         } else if (actualTaskType === "map" && payload.url) {
             url = payload.url;
             // Ensure URL has protocol
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 url = `https://${url}`;
             }
         }
@@ -863,12 +1126,20 @@ export class SchedulerManager {
         // Prepare job data - also fix URL in payload
         const jobData = {
             ...payload,
-            url: payload.url && !payload.url.startsWith('http://') && !payload.url.startsWith('https://')
-                ? `https://${payload.url}`
-                : payload.url,
+            // When the payload only carried template_uuid, inject the canonical template_id
+            // so downstream engine workers (Base.ts options?.template_id) can resolve it.
+            ...(resolvedTemplateId && !payload.template_id
+                ? { template_id: resolvedTemplateId }
+                : {}),
+            url:
+                payload.url &&
+                !payload.url.startsWith("http://") &&
+                !payload.url.startsWith("https://")
+                    ? `https://${payload.url}`
+                    : payload.url,
             type: actualTaskType,
             engine: engine,
-            queueName: queueName,  // Add queueName field
+            queueName: queueName, // Add queueName field
             scheduled_task_id: task.uuid,
             scheduled_execution_id: executionUuid,
             scheduled_template_credits: templatePerCallCredits,
@@ -889,29 +1160,39 @@ export class SchedulerManager {
         try {
             // Create job record before queue dispatch so post-dispatch failures
             // never leave an execution without an associated persisted job row.
-            const insertedJob = await db.insert(schemas.jobs).values({
-                jobId: jobId,
-                jobType: actualTaskType,
-                jobQueueName: queueName,
-                jobExpireAt: new Date(Date.now() + 3 * 60 * 60 * 1000), // 3 hours default
-                url: url,
-                payload: payload,
-                status: "pending",
-                apiKey: task.apiKey,
-                userId: task.userId,
-                origin: "scheduled-task", // Origin is "scheduled-task" not "scheduler"
-                isSuccess: false,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            }).returning({ uuid: schemas.jobs.uuid });
+            const insertedJob = await db
+                .insert(schemas.jobs)
+                .values({
+                    jobId: jobId,
+                    jobType: actualTaskType,
+                    jobQueueName: queueName,
+                    jobExpireAt: new Date(Date.now() + 3 * 60 * 60 * 1000), // 3 hours default
+                    url: url,
+                    payload: payload,
+                    status: "pending",
+                    apiKey: task.apiKey,
+                    userId: task.userId,
+                    origin: "scheduled-task", // Origin is "scheduled-task" not "scheduler"
+                    isSuccess: false,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                })
+                .returning({ uuid: schemas.jobs.uuid });
 
             persistedJobUuid = insertedJob[0]?.uuid;
             if (!persistedJobUuid) {
                 throw new Error(`Failed to persist scheduled job record for task ${task.uuid}`);
             }
 
+            await withDatabaseTransaction(db, function* (tx): DatabaseSteps<void> {
+                yield tx.update(schemas.taskExecutions).set({ jobUuid: persistedJobUuid })
+                    .where(eq(schemas.taskExecutions.uuid, executionUuid));
+                yield tx.update(schemas.monitorChecks).set({ jobUuid: persistedJobUuid })
+                    .where(eq(schemas.monitorChecks.uuid, executionUuid));
+            });
+
             await queueManager.getQueue(queueName).add(
-                queueName,  // Use queueName as job name
+                queueName, // Use queueName as job name
                 jobData,
                 {
                     jobId: jobId,
@@ -928,20 +1209,18 @@ export class SchedulerManager {
 
             // Align scheduled crawl billing with API-triggered crawl semantics:
             // charge initial crawl credits at dispatch time.
-            if (
-                actualTaskType === "crawl"
-                && process.env.ANYCRAWL_API_CREDITS_ENABLED === "true"
-                && task.apiKey
-            ) {
+            if (actualTaskType === "crawl" && appConfig.creditsEnabled && task.apiKey) {
                 try {
-                    const scrapeOptions = payload?.options?.scrape_options
-                        || payload?.scrape_options
-                        || {};
-                    const initialChargeDetails = CreditCalculator.buildCrawlInitialChargeDetails({
-                        scrape_options: scrapeOptions,
-                    }, {
-                        templateCredits: templatePerCallCredits,
-                    });
+                    const scrapeOptions =
+                        payload?.options?.scrape_options || payload?.scrape_options || {};
+                    const initialChargeDetails = CreditCalculator.buildCrawlInitialChargeDetails(
+                        {
+                            scrape_options: scrapeOptions,
+                        },
+                        {
+                            templateCredits: templatePerCallCredits,
+                        }
+                    );
                     const initialCredits = initialChargeDetails.total;
 
                     if (initialCredits > 0) {
@@ -953,7 +1232,9 @@ export class SchedulerManager {
                             chargeDetails: initialChargeDetails,
                         });
 
-                        log.info(`[SCHEDULER] Deducted initial ${initialCredits} credits for crawl task`);
+                        log.info(
+                            `[SCHEDULER] Deducted initial ${initialCredits} credits for crawl task`
+                        );
                     }
                 } catch (creditError) {
                     log.error(`[SCHEDULER] Failed to deduct initial crawl credits: ${creditError}`);
@@ -987,7 +1268,9 @@ export class SchedulerManager {
                         })
                         .where(eq(schemas.jobs.uuid, persistedJobUuid));
                 } catch (jobUpdateError) {
-                    log.warning(`[SCHEDULER] Failed to mark queued job ${persistedJobUuid} as failed: ${jobUpdateError}`);
+                    log.warning(
+                        `[SCHEDULER] Failed to mark queued job ${persistedJobUuid} as failed: ${jobUpdateError}`
+                    );
                 }
             }
             throw error;
@@ -1022,21 +1305,24 @@ export class SchedulerManager {
         log.info(`[SCHEDULER]   URL: ${url}`);
 
         // Create job record first
-        const insertedJob = await db.insert(schemas.jobs).values({
-            jobId: jobId,
-            jobType: taskType,
-            jobQueueName: `${taskType}-sync`,
-            jobExpireAt: new Date(Date.now() + 1 * 60 * 60 * 1000), // 1 hour for sync tasks
-            url: url,
-            payload: payload,
-            status: "pending",
-            apiKey: task.apiKey,
-            userId: task.userId,
-            origin: "scheduled-task",
-            isSuccess: false,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        }).returning({ uuid: schemas.jobs.uuid });
+        const insertedJob = await db
+            .insert(schemas.jobs)
+            .values({
+                jobId: jobId,
+                jobType: taskType,
+                jobQueueName: `${taskType}-sync`,
+                jobExpireAt: new Date(Date.now() + 1 * 60 * 60 * 1000), // 1 hour for sync tasks
+                url: url,
+                payload: payload,
+                status: "pending",
+                apiKey: task.apiKey,
+                userId: task.userId,
+                origin: "scheduled-task",
+                isSuccess: false,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            })
+            .returning({ uuid: schemas.jobs.uuid });
 
         const jobUuid = insertedJob[0].uuid;
 
@@ -1044,13 +1330,8 @@ export class SchedulerManager {
             if (taskType === "search") {
                 // Execute search task
                 // @ts-ignore - Dynamic import to avoid circular dependency
-                const { SearchService } = await import("@anycrawl/search");
-                const searchService = new SearchService({
-                    defaultEngine: process.env.ANYCRAWL_SEARCH_DEFAULT_ENGINE,
-                    enabledEngines: process.env.ANYCRAWL_SEARCH_ENABLED_ENGINES?.split(',').map(e => e.trim()),
-                    searxngUrl: process.env.ANYCRAWL_SEARXNG_URL,
-                    acEngineUrl: process.env.ANYCRAWL_AC_ENGINE_URL,
-                });
+                const { SearchService, getSearchConfig } = await import("@anycrawl/search");
+                const searchService = new SearchService(getSearchConfig());
 
                 const results = await searchService.search(payload.engine, {
                     query: payload.query,
@@ -1064,33 +1345,31 @@ export class SchedulerManager {
                 });
 
                 resultData = results;
-                chargeDetails = CreditCalculator.buildSearchChargeDetails({
-                    pages: payload.pages,
-                }, {
-                    templateCredits: templatePerCallCredits,
-                });
+                chargeDetails = CreditCalculator.buildSearchChargeDetails(
+                    {
+                        pages: payload.pages,
+                    },
+                    {
+                        templateCredits: templatePerCallCredits,
+                    }
+                );
                 creditsUsed = chargeDetails.total;
                 isSuccess = true;
 
                 log.info(`[SCHEDULER] Search completed: ${results.length} results`);
-
             } else if (taskType === "map") {
                 // Execute map task
                 const { MapService } = await import("../services/MapService.js");
                 // @ts-ignore - Dynamic import to avoid circular dependency
-                const { SearchService } = await import("@anycrawl/search");
+                const { SearchService, getSearchConfig } = await import("@anycrawl/search");
 
                 const mapService = new MapService();
-                const searchService = new SearchService({
-                    defaultEngine: process.env.ANYCRAWL_SEARCH_DEFAULT_ENGINE,
-                    enabledEngines: process.env.ANYCRAWL_SEARCH_ENABLED_ENGINES?.split(',').map(e => e.trim()),
-                    searxngUrl: process.env.ANYCRAWL_SEARXNG_URL,
-                    acEngineUrl: process.env.ANYCRAWL_AC_ENGINE_URL,
-                });
+                const searchService = new SearchService(getSearchConfig());
 
-                const mapUrl = payload.url?.startsWith('http://') || payload.url?.startsWith('https://')
-                    ? payload.url
-                    : `https://${payload.url}`;
+                const mapUrl =
+                    payload.url?.startsWith("http://") || payload.url?.startsWith("https://")
+                        ? payload.url
+                        : `https://${payload.url}`;
 
                 const result = await mapService.map(mapUrl, {
                     limit: payload.limit,
@@ -1115,16 +1394,16 @@ export class SchedulerManager {
                 completed: Array.isArray(resultData) ? resultData.length : 1,
                 failed: 0,
             });
-
         } catch (error) {
             errorMessage = error instanceof Error ? error.message : String(error);
-            errorCode = error instanceof Error ? (error.name || 'SYNC_TASK_ERROR') : 'SYNC_TASK_ERROR';
+            errorCode =
+                error instanceof Error ? error.name || "SYNC_TASK_ERROR" : "SYNC_TASK_ERROR";
             errorDetails = {
-                name: error instanceof Error ? error.name : 'Error',
+                name: error instanceof Error ? error.name : "Error",
                 message: error instanceof Error ? error.message : String(error),
                 stack: error instanceof Error ? error.stack : undefined,
                 timestamp: new Date().toISOString(),
-                source: 'scheduler',
+                source: "scheduler",
                 taskType: taskType,
             };
             log.error(`[SCHEDULER] ${taskType} task failed: ${errorMessage}`);
@@ -1134,7 +1413,7 @@ export class SchedulerManager {
         }
 
         // Deduct credits if successful and credits are enabled
-        if (isSuccess && creditsUsed > 0 && process.env.ANYCRAWL_API_CREDITS_ENABLED === 'true' && task.apiKey) {
+        if (isSuccess && creditsUsed > 0 && appConfig.creditsEnabled && task.apiKey) {
             try {
                 await Billing.chargeToUsedByJobId({
                     jobId,
@@ -1182,7 +1461,11 @@ export class SchedulerManager {
         requiredCredits: number
     ): Promise<
         | { success: true }
-        | { success: false; reason: "no_apikey" | "apikey_not_found" | "insufficient_credits" | "error"; message: string }
+        | {
+              success: false;
+              reason: "no_apikey" | "apikey_not_found" | "insufficient_credits" | "error";
+              message: string;
+          }
     > {
         try {
             const db = await getDB();
@@ -1244,7 +1527,9 @@ export class SchedulerManager {
             return;
         }
 
-        log.info(`[SCHEDULER] Starting periodic task sync (every ${this.SYNC_INTERVAL_MS / 1000}s)`);
+        log.info(
+            `[SCHEDULER] Starting periodic task sync (every ${this.SYNC_INTERVAL_MS / 1000}s)`
+        );
 
         this.syncInterval = setInterval(async () => {
             try {
@@ -1319,7 +1604,7 @@ export class SchedulerManager {
      */
     private async pollDatabaseChanges(): Promise<void> {
         // Try to acquire distributed lock - skip if another instance is polling
-        if (!await this.acquirePollLock()) {
+        if (!(await this.acquirePollLock())) {
             log.debug("[SCHEDULER] Another instance is polling, skipping this cycle");
             return;
         }
@@ -1337,11 +1622,13 @@ export class SchedulerManager {
                 .from(schemas.scheduledTasks)
                 .where(
                     sql`${schemas.scheduledTasks.isActive} = true
-                        AND ${schemas.scheduledTasks.updatedAt} >= ${this.lastSyncTime}`
+                        AND ${gte(schemas.scheduledTasks.updatedAt, this.lastSyncTime)}`
                 );
 
             if (updatedTasks.length > 0) {
-                log.info(`[SCHEDULER] 📋 Detected ${updatedTasks.length} new/updated tasks, syncing to BullMQ...`);
+                log.info(
+                    `[SCHEDULER] 📋 Detected ${updatedTasks.length} new/updated tasks, syncing to BullMQ...`
+                );
 
                 for (const task of updatedTasks) {
                     if (task.isPaused) {
@@ -1360,6 +1647,12 @@ export class SchedulerManager {
                 log.debug("[SCHEDULER] No new tasks detected since last sync");
             }
 
+            // BullMQ repeatable jobs can miss a persisted nextExecutionAt after downtime
+            // or scheduler restarts. Treat due database rows as the source of truth and
+            // trigger one catch-up execution; processScheduledTaskJob advances the next
+            // execution time after dispatch.
+            await this.processOverdueTasks(db, queryTime);
+
             // Cleanup stale pending executions (stuck for more than 5 minutes without starting)
             await this.cleanupStaleExecutions(db);
 
@@ -1373,6 +1666,57 @@ export class SchedulerManager {
         } finally {
             // Always release the lock after polling completes
             await this.releasePollLock();
+        }
+    }
+
+    private async processOverdueTasks(
+        db: Awaited<ReturnType<typeof getDB>>,
+        now: Date
+    ): Promise<void> {
+        const overdueTasks = await db
+            .select({
+                uuid: schemas.scheduledTasks.uuid,
+                name: schemas.scheduledTasks.name,
+                cronExpression: schemas.scheduledTasks.cronExpression,
+                timezone: schemas.scheduledTasks.timezone,
+                nextExecutionAt: schemas.scheduledTasks.nextExecutionAt,
+            })
+            .from(schemas.scheduledTasks)
+            .where(
+                sql`${schemas.scheduledTasks.isActive} = true
+                    AND ${schemas.scheduledTasks.isPaused} = false
+                    AND ${schemas.scheduledTasks.nextExecutionAt} IS NOT NULL
+                    AND ${lte(schemas.scheduledTasks.nextExecutionAt, now)}`
+            );
+
+        if (overdueTasks.length === 0) {
+            return;
+        }
+
+        log.info(
+            `[SCHEDULER] ⏰ Found ${overdueTasks.length} overdue scheduled task(s), catching up once`
+        );
+
+        for (const task of overdueTasks) {
+            const scheduledFor = resolveScheduledFor(task.nextExecutionAt, now);
+            const idempotencyKey = buildScheduledExecutionIdempotencyKey(task.uuid, scheduledFor);
+            const existingExecution = await db
+                .select({ uuid: schemas.taskExecutions.uuid })
+                .from(schemas.taskExecutions)
+                .where(eq(schemas.taskExecutions.idempotencyKey, idempotencyKey))
+                .limit(1);
+
+            if (existingExecution.length > 0) {
+                log.debug(
+                    `[SCHEDULER] Overdue execution already exists for task ${task.uuid} at ${scheduledFor.toISOString()}`
+                );
+                await this.updateNextExecutionTime(task);
+                continue;
+            }
+
+            await this.processScheduledTaskJob({
+                data: { taskUuid: task.uuid },
+            } as Job);
         }
     }
 
@@ -1392,7 +1736,7 @@ export class SchedulerManager {
                 .where(
                     sql`${schemas.taskExecutions.status} = 'pending'
                         AND ${schemas.taskExecutions.startedAt} IS NULL
-                        AND ${schemas.taskExecutions.createdAt} < ${staleThreshold}`
+                        AND ${lt(schemas.taskExecutions.createdAt, staleThreshold)}`
                 );
 
             let cleanedNeverStarted = 0;
@@ -1402,7 +1746,8 @@ export class SchedulerManager {
                     executionUuid: execution.uuid,
                     status: "failed",
                     completedAt: now,
-                    errorMessage: "Auto-failed: Execution stuck in pending state (possible process crash or timeout)",
+                    errorMessage:
+                        "Auto-failed: Execution stuck in pending state (possible process crash or timeout)",
                     errorCode: "STALE_PENDING_TIMEOUT",
                     errorDetails: {
                         reason: "pending_timeout",
@@ -1418,7 +1763,9 @@ export class SchedulerManager {
             }
 
             if (cleanedNeverStarted > 0) {
-                log.warning(`[SCHEDULER] 🧹 Cleaned up ${cleanedNeverStarted} stale pending execution(s) (never started)`);
+                log.warning(
+                    `[SCHEDULER] 🧹 Cleaned up ${cleanedNeverStarted} stale pending execution(s) (never started)`
+                );
             }
 
             // Case 2: Pending executions that have startedAt but status never changed to running
@@ -1429,7 +1776,7 @@ export class SchedulerManager {
                 .where(
                     sql`${schemas.taskExecutions.status} = 'pending'
                         AND ${schemas.taskExecutions.startedAt} IS NOT NULL
-                        AND ${schemas.taskExecutions.startedAt} < ${staleThreshold}`
+                        AND ${lt(schemas.taskExecutions.startedAt, staleThreshold)}`
                 );
 
             let cleanedStartedButPending = 0;
@@ -1439,7 +1786,8 @@ export class SchedulerManager {
                     executionUuid: execution.uuid,
                     status: "failed",
                     completedAt: now,
-                    errorMessage: "Auto-failed: Execution stuck in pending state with startedAt set (worker crash)",
+                    errorMessage:
+                        "Auto-failed: Execution stuck in pending state with startedAt set (worker crash)",
                     errorCode: "STALE_PENDING_STARTED",
                     errorDetails: {
                         reason: "pending_started_timeout",
@@ -1455,7 +1803,9 @@ export class SchedulerManager {
             }
 
             if (cleanedStartedButPending > 0) {
-                log.warning(`[SCHEDULER] 🧹 Cleaned up ${cleanedStartedButPending} stale pending execution(s) (started but stuck)`);
+                log.warning(
+                    `[SCHEDULER] 🧹 Cleaned up ${cleanedStartedButPending} stale pending execution(s) (started but stuck)`
+                );
             }
 
             // Also cleanup stale running executions based on task type
@@ -1474,12 +1824,14 @@ export class SchedulerManager {
      * - crawl: 1 hour since last job activity (checks jobs table for recent updates)
      * - template: resolved to actual type from jobs.jobType
      */
-    private async cleanupStaleRunningExecutions(db: Awaited<ReturnType<typeof getDB>>): Promise<void> {
+    private async cleanupStaleRunningExecutions(
+        db: Awaited<ReturnType<typeof getDB>>
+    ): Promise<void> {
         try {
             // Timeout thresholds in milliseconds
-            const SCRAPE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes
-            const SEARCH_TIMEOUT_MS = 60 * 60 * 1000;  // 1 hour (searches + scrapes multiple pages)
-            const MAP_TIMEOUT_MS = 30 * 60 * 1000;     // 30 minutes
+            const SCRAPE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+            const SEARCH_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour (searches + scrapes multiple pages)
+            const MAP_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
             const CRAWL_INACTIVITY_MS = 60 * 60 * 1000; // 1 hour of inactivity
             const RUNNING_NO_START_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes for running without startedAt
 
@@ -1494,7 +1846,7 @@ export class SchedulerManager {
                 .where(
                     sql`${schemas.taskExecutions.status} = 'running'
                         AND ${schemas.taskExecutions.startedAt} IS NULL
-                        AND ${schemas.taskExecutions.createdAt} < ${runningNoStartThreshold}`
+                        AND ${lt(schemas.taskExecutions.createdAt, runningNoStartThreshold)}`
                 );
 
             let cleanedNeverStarted = 0;
@@ -1504,7 +1856,8 @@ export class SchedulerManager {
                     executionUuid: execution.uuid,
                     status: "failed",
                     completedAt: now,
-                    errorMessage: "Auto-failed: Execution stuck in running state without startedAt (Worker never started processing)",
+                    errorMessage:
+                        "Auto-failed: Execution stuck in running state without startedAt (Worker never started processing)",
                     errorCode: "RUNNING_NO_START_TIMEOUT",
                     errorDetails: {
                         reason: "running_no_start",
@@ -1520,7 +1873,9 @@ export class SchedulerManager {
             }
 
             if (cleanedNeverStarted > 0) {
-                log.warning(`[SCHEDULER] 🧹 Cleaned up ${cleanedNeverStarted} stale running execution(s) (never started)`);
+                log.warning(
+                    `[SCHEDULER] 🧹 Cleaned up ${cleanedNeverStarted} stale running execution(s) (never started)`
+                );
             }
 
             // Get all running executions with their task info and job type
@@ -1540,10 +1895,7 @@ export class SchedulerManager {
                     schemas.scheduledTasks,
                     eq(schemas.taskExecutions.scheduledTaskUuid, schemas.scheduledTasks.uuid)
                 )
-                .leftJoin(
-                    schemas.jobs,
-                    eq(schemas.taskExecutions.jobUuid, schemas.jobs.uuid)
-                )
+                .leftJoin(schemas.jobs, eq(schemas.taskExecutions.jobUuid, schemas.jobs.uuid))
                 .where(eq(schemas.taskExecutions.status, "running"));
 
             let cleanedCount = 0;
@@ -1561,9 +1913,10 @@ export class SchedulerManager {
                 // - For template tasks, use jobType from jobs table (the actual executed type)
                 // - Otherwise use taskType from scheduled_tasks
                 const scheduledTaskType = execution.taskType?.toLowerCase() || "scrape";
-                const actualTaskType = scheduledTaskType === "template"
-                    ? (execution.jobType?.toLowerCase() || "scrape")
-                    : scheduledTaskType;
+                const actualTaskType =
+                    scheduledTaskType === "template"
+                        ? execution.jobType?.toLowerCase() || "scrape"
+                        : scheduledTaskType;
 
                 if (actualTaskType === "crawl") {
                     // For crawl tasks, check if there's been recent activity on the job
@@ -1639,8 +1992,8 @@ export class SchedulerManager {
                         cleanedCount++;
                         log.warning(
                             `[SCHEDULER] 🧹 Timed out execution ${execution.executionUuid} ` +
-                            `(type: ${actualTaskType}${scheduledTaskType === "template" ? " (template)" : ""}, ` +
-                            `reason: ${timeoutReason}, running: ${Math.round(runningTime / 60000)}min)`
+                                `(type: ${actualTaskType}${scheduledTaskType === "template" ? " (template)" : ""}, ` +
+                                `reason: ${timeoutReason}, running: ${Math.round(runningTime / 60000)}min)`
                         );
                     } else {
                         log.debug(
@@ -1664,62 +2017,31 @@ export class SchedulerManager {
      */
     private async enforceSubscriptionLimits(db: Awaited<ReturnType<typeof getDB>>): Promise<void> {
         if (!isScheduledTasksLimitEnabled()) return;
-
-        try {
-            // Single JOIN query: get user task counts with subscription tier
-            const userStats = await db
-                .select({
-                    userId: schemas.scheduledTasks.userId,
-                    apiKey: schemas.scheduledTasks.apiKey,
-                    subscriptionTier: schemas.apiKey.subscriptionTier,
-                    taskCount: sql<number>`count(*)`,
-                })
-                .from(schemas.scheduledTasks)
-                .leftJoin(schemas.apiKey, eq(schemas.scheduledTasks.apiKey, schemas.apiKey.uuid))
-                .where(sql`${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`)
-                .groupBy(
-                    schemas.scheduledTasks.userId,
-                    schemas.scheduledTasks.apiKey,
-                    schemas.apiKey.subscriptionTier
-                );
-
-            for (const userStat of userStats) {
-                const tier = userStat.subscriptionTier || "free";
-                const limit = getScheduledTasksLimit(tier);
-                const count = Number(userStat.taskCount);
-
-                if (count > limit) {
-                    // Get tasks to pause (keep oldest, pause newest)
-                    const tasksToCheck = await db
-                        .select({ uuid: schemas.scheduledTasks.uuid, name: schemas.scheduledTasks.name })
-                        .from(schemas.scheduledTasks)
-                        .where(
-                            sql`${schemas.scheduledTasks.userId} = ${userStat.userId}
-                                AND ${schemas.scheduledTasks.isActive} = true
-                                AND ${schemas.scheduledTasks.isPaused} = false`
-                        )
-                        .orderBy(sql`${schemas.scheduledTasks.createdAt} ASC`);
-
-                    // Pause tasks beyond the limit
-                    const tasksToPause = tasksToCheck.slice(limit);
-
-                    for (const task of tasksToPause) {
-                        await db
-                            .update(schemas.scheduledTasks)
-                            .set({
-                                isPaused: true,
-                                pauseReason: buildAutoPauseReason(limit),
-                                updatedAt: new Date(),
-                            })
-                            .where(eq(schemas.scheduledTasks.uuid, task.uuid));
-
-                        await this.removeScheduledTask(task.uuid);
-                        log.warning(`[SCHEDULER] Auto-paused task ${task.name} due to subscription limit`);
-                    }
-                }
+        const tasks = await db.select({
+            uuid: schemas.scheduledTasks.uuid, userId: schemas.scheduledTasks.userId,
+            apiKey: schemas.scheduledTasks.apiKey, metadata: schemas.scheduledTasks.metadata,
+            createdAt: schemas.scheduledTasks.createdAt, tier: schemas.apiKey.subscriptionTier,
+        }).from(schemas.scheduledTasks)
+            .leftJoin(schemas.apiKey, eq(schemas.scheduledTasks.apiKey, schemas.apiKey.uuid))
+            .where(sql`${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`);
+        const owners = new Map<string, { tasks: any[]; limit: number }>();
+        for (const task of tasks) {
+            if (task.metadata?.monitorManaged === true) continue;
+            const key = task.userId ? `user:${task.userId}` : `key:${task.apiKey ?? "single-tenant"}`;
+            const limit = getScheduledTasksLimit(task.tier || "free");
+            const owner = owners.get(key) ?? { tasks: [], limit };
+            owner.tasks.push(task);
+            owner.limit = Math.max(owner.limit, limit);
+            owners.set(key, owner);
+        }
+        for (const owner of owners.values()) {
+            owner.tasks.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || a.uuid.localeCompare(b.uuid));
+            for (const task of owner.tasks.slice(owner.limit)) {
+                await db.update(schemas.scheduledTasks).set({
+                    isPaused: true, pauseReason: buildAutoPauseReason(owner.limit), updatedAt: new Date(),
+                }).where(eq(schemas.scheduledTasks.uuid, task.uuid));
+                await this.removeScheduledTask(task.uuid);
             }
-        } catch (error) {
-            log.error(`[SCHEDULER] Error enforcing subscription limits: ${error}`);
         }
     }
 

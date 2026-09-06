@@ -1,0 +1,458 @@
+---
+title: Servidor MCP
+description: Integre o web scraping do AnyCrawl ao Cursor, Claude e VS Code com o Model Context Protocol (MCP)
+icon: Zap
+---
+
+**AnyCrawl MCP Server** — Web scraping e crawling poderosos para Cursor, Claude e outros clientes LLM via Model Context Protocol (MCP).
+
+## Recursos
+
+- Web scraping, crawling e extração de conteúdo
+- Busca e descoberta
+- Processamento em lote e concorrência
+- Suporte à nuvem e auto-hospedagem
+- Acompanhamento de progresso em tempo real
+- Suporte a SSE
+
+## Instalação
+
+### Execução com npx
+
+```bash
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### Usando a API hospedada
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/mcp"
+        }
+    }
+}
+```
+
+### Instalação manual
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
+```
+
+## Execução no Cursor
+
+Adicione o servidor MCP AnyCrawl ao Cursor:
+
+1. Abra as configurações do Cursor
+2. Vá em Features > MCP Servers
+3. Clique em "+ Add new global MCP server"
+4. Insira a seguinte configuração:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl-mcp": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+            }
+        }
+    }
+}
+```
+
+## Execução no VS Code
+
+Adicione o bloco JSON abaixo ao arquivo de configurações do usuário (JSON) do VS Code:
+
+```json
+{
+    "mcp": {
+        "inputs": [
+            {
+                "type": "promptString",
+                "id": "apiKey",
+                "description": "AnyCrawl API Key",
+                "password": true
+            }
+        ],
+        "servers": {
+            "anycrawl": {
+                "command": "npx",
+                "args": ["-y", "anycrawl-mcp"],
+                "env": {
+                    "ANYCRAWL_API_KEY": "${input:apiKey}"
+                }
+            }
+        }
+    }
+}
+```
+
+## Execução no Claude Desktop
+
+Adicione ao arquivo de configuração do Claude:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/sse"
+        }
+    }
+}
+```
+
+## Configuração
+
+### Variáveis de ambiente
+
+#### Obrigatório para a API na nuvem
+
+- `ANYCRAWL_API_KEY`: sua chave de API do AnyCrawl
+    - Obrigatória ao usar a API na nuvem (padrão)
+    - Opcional em instância auto-hospedada
+- `ANYCRAWL_BASE_URL`: URL base da API AnyCrawl
+    - Opcional
+    - Obrigatória para instâncias auto-hospedadas
+
+### Exemplos de configuração
+
+#### Nuvem básica
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key-here"
+npx -y anycrawl-mcp
+```
+
+#### Auto-hospedagem
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key"
+export ANYCRAWL_BASE_URL="https://your-instance.com"
+npx -y anycrawl-mcp
+```
+
+## Ferramentas disponíveis
+
+### 1. Ferramenta Scrape (`anycrawl_scrape`)
+
+Faz scraping de uma única URL e extrai conteúdo em vários formatos.
+
+**Ideal para:**
+
+- Extrair conteúdo de uma página
+- Extração rápida de dados
+- Testar URLs específicas
+
+**Parâmetros:**
+
+- `url` (obrigatório): URL a ser raspada
+- `engine` (opcional): motor de scraping (`auto`, `playwright`, `cheerio`, `puppeteer`). Padrão: `auto`
+- `formats` (opcional): formatos de saída (`markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`)
+- `timeout` (opcional): tempo limite em milissegundos (padrão: 300000)
+- `wait_for` (opcional): tempo de espera para o carregamento da página
+- `include_tags` (opcional): tags HTML a incluir
+- `exclude_tags` (opcional): tags HTML a excluir
+- `json_options` (opcional): opções para extração JSON
+- `ocr_options` (opcional): ativa OCR apenas para imagens em markdown; não altera `html`/`rawHtml`
+
+**Exemplo:**
+
+```json
+{
+    "name": "anycrawl_scrape",
+    "arguments": {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "formats": ["markdown", "html"],
+        "timeout": 30000
+    }
+}
+```
+
+### 2. Ferramenta Crawl (`anycrawl_crawl`)
+
+Inicia um job de crawl para raspar várias páginas de um site. Por padrão aguarda a conclusão e retorna resultados agregados com o SDK `client.crawl` (padrões: polling a cada 3 segundos, timeout após 60 segundos).
+
+**Ideal para:**
+
+- Extrair conteúdo de várias páginas relacionadas
+- Análise abrangente de sites
+- Coleta de dados em massa
+
+**Parâmetros:**
+
+- `url` (obrigatório): URL base do crawl
+- `engine` (opcional): motor (`auto`, `playwright`, `cheerio`, `puppeteer`). Padrão: `auto`
+- `max_depth` (opcional): profundidade máxima (padrão: 10)
+- `limit` (opcional): número máximo de páginas (padrão: 100)
+- `strategy` (opcional): escopo (`all`, `same-domain`, `same-hostname`, `same-origin`)
+- `exclude_paths` (opcional): padrões de URL a excluir
+- `include_paths` (opcional): padrões de URL a incluir
+- `scrape_options` (opcional): opções por página
+- `poll_seconds` (opcional): intervalo de polling em segundos (padrão: 3)
+- `timeout_ms` (opcional): tempo limite total em ms para espera (padrão: 60000)
+
+**Exemplo:**
+
+```json
+{
+    "name": "anycrawl_crawl",
+    "arguments": {
+        "url": "https://example.com/blog",
+        "engine": "playwright",
+        "max_depth": 2,
+        "limit": 50,
+        "strategy": "same-domain",
+        "poll_seconds": 3,
+        "timeout_ms": 60000
+    }
+}
+```
+
+Retorno: `{ "job_id": "...", "status": "completed", "total": N, "completed": N, "credits_used": N, "data": [...] }`.
+
+### 3. Status do crawl (`anycrawl_crawl_status`)
+
+Verifica o status de um job de crawl.
+
+**Parâmetros:**
+
+- `job_id` (obrigatório): ID do job
+
+**Exemplo:**
+
+```json
+{
+    "name": "anycrawl_crawl_status",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 4. Resultados do crawl (`anycrawl_crawl_results`)
+
+Obtém resultados de um job de crawl.
+
+**Parâmetros:**
+
+- `job_id` (obrigatório): ID do job
+- `skip` (opcional): quantidade de resultados a pular (paginação)
+
+**Exemplo:**
+
+```json
+{
+    "name": "anycrawl_crawl_results",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "skip": 0
+    }
+}
+```
+
+### 5. Cancelar crawl (`anycrawl_cancel_crawl`)
+
+Cancela um job de crawl pendente.
+
+**Parâmetros:**
+
+- `job_id` (obrigatório): ID do job a cancelar
+
+**Exemplo:**
+
+```json
+{
+    "name": "anycrawl_cancel_crawl",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 6. Busca (`anycrawl_search`)
+
+Busca na web com o mecanismo de busca do AnyCrawl.
+
+**Ideal para:**
+
+- Encontrar informações em vários sites
+- Pesquisa e descoberta
+- Quando você não sabe qual site tem a informação
+
+**Parâmetros:**
+
+- `query` (obrigatório): consulta de busca
+- `engine` (opcional): motor de busca (`google`)
+- `limit` (opcional): número máximo de resultados (padrão: 5)
+- `offset` (opcional): resultados a pular (padrão: 0)
+- `pages` (opcional): número de páginas de resultados
+- `lang` (opcional): código de idioma
+- `country` (opcional): código de país
+- `scrape_options` (opcional): opções para raspar os resultados
+- `safeSearch` (opcional): nível de busca segura (0=desligado, 1=moderado, 2=strict)
+
+**Exemplo:**
+
+```json
+{
+    "name": "anycrawl_search",
+    "arguments": {
+        "query": "latest AI research papers 2024",
+        "engine": "google",
+        "limit": 5,
+        "scrape_options": {
+            "engine": "cheerio",
+            "formats": ["markdown"]
+        }
+    }
+}
+```
+
+## Formatos de saída
+
+### Markdown
+
+Markdown limpo e estruturado, ideal para consumo por LLMs.
+
+### HTML
+
+HTML bruto com formatação preservada.
+
+### Text
+
+Texto simples com formatação mínima.
+
+### Screenshot
+
+Captura visual da página.
+
+### Screenshot@fullPage
+
+Captura de página inteira, incluindo conteúdo abaixo da dobra.
+
+### Raw HTML
+
+HTML não processado.
+
+### JSON
+
+Extração estruturada com schemas personalizados.
+
+## Motores
+
+### Auto (padrão)
+
+- Seleção inteligente de motor
+- Escolhe o motor ideal por URL
+- Melhor para scraping genérico
+
+### Cheerio
+
+- Rápido e leve
+- Bom para conteúdo estático
+- Renderização no servidor
+
+### Playwright
+
+- Automação completa de navegador
+- Renderização JavaScript
+- Melhor para conteúdo dinâmico
+
+### Puppeteer
+
+- Automação Chrome/Chromium
+- Bom equilíbrio entre recursos e desempenho
+
+## Tratamento de erros
+
+O servidor oferece tratamento abrangente:
+
+- **Erros de validação**: parâmetros inválidos ou campos obrigatórios ausentes
+- **Erros de API**: erros do AnyCrawl com mensagens detalhadas
+- **Erros de rede**: conexão e timeouts
+
+## Logs
+
+Logs detalhados:
+
+- **Debug**: informações detalhadas da operação
+- **Info**: status geral
+- **Warn**: problemas não críticos
+- **Error**: falhas críticas
+
+Defina o nível com variável de ambiente:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## Desenvolvimento
+
+### Pré-requisitos
+
+- Node.js 18+
+- npm
+
+### Configuração
+
+```bash
+git clone https://github.com/any4ai/anycrawl-mcp-server.git
+cd anycrawl-mcp-server
+npm ci
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+### Testes
+
+```bash
+npm test
+```
+
+### Lint
+
+```bash
+npm run lint
+```
+
+### Formatação
+
+```bash
+npm run format
+```
+
+## Contribuição
+
+1. Faça fork do repositório
+2. Crie sua branch de feature
+3. Execute os testes: `npm test`
+4. Abra um pull request
+
+## Licença
+
+Licença MIT — veja o arquivo LICENSE
+
+## Suporte
+
+- GitHub Issues: [reportar bugs ou solicitar recursos](https://github.com/any4ai/anycrawl-mcp-server/issues)
+- Documentação: [docs da API AnyCrawl](https://docs.anycrawl.dev)
+- E-mail: help@anycrawl.dev
+
+## Sobre o AnyCrawl
+
+AnyCrawl é um crawler Node.js/TypeScript que transforma sites em dados prontos para LLM e extrai resultados SERP estruturados de Google/Bing/Baidu etc. Processamento multithread nativo para volume e vários formatos de saída.
+
+- **Site**: https://anycrawl.dev
+- **GitHub**: https://github.com/any4ai/anycrawl
+- **API**: https://api.anycrawl.dev

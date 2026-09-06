@@ -1,6 +1,6 @@
 import { Response, NextFunction } from "express";
 import { Billing } from "@anycrawl/db";
-import { RequestWithAuth, type BillingChargeDetailsV1, type BillingMode } from "@anycrawl/libs";
+import { RequestWithAuth, type BillingChargeDetailsV1, type BillingMode, sleep, appConfig } from "@anycrawl/libs";
 import { log } from "@anycrawl/libs/log";
 
 // Routes that should not trigger credit deduction
@@ -21,8 +21,7 @@ export const deductCreditsMiddleware = async (
     res: Response,
     next: NextFunction
 ): Promise<void> => {
-    // Skip if auth is disabled or credits deduction is disabled
-    if (process.env.ANYCRAWL_API_AUTH_ENABLED !== "true" || process.env.ANYCRAWL_API_CREDITS_ENABLED !== "true") {
+    if (!appConfig.authEnabled || !appConfig.creditsEnabled) {
         next();
         return;
     }
@@ -35,13 +34,29 @@ export const deductCreditsMiddleware = async (
 
         // Only deduct credits for successful requests with positive credit usage
         if (res.statusCode >= 200 && res.statusCode < 400 && req.creditsUsed && req.creditsUsed > 0) {
+            // Fail-closed invariant: a chargeable request MUST have passed the route-level credit
+            // gate (req.checkCredits). If not, a billing route is missing `checkCreditsMiddleware`
+            // at its definition — a config error. Flag it loudly (CI/monitoring), but still deduct:
+            // skipping the charge would grant free execution, which is worse than a late charge.
+            if (req.checkCredits !== true) {
+                const message = `[BILLING-INVARIANT] chargeable request without credit gate: ${req.method} ${req.path} (job=${req.jobId}). Attach checkCreditsMiddleware to this route.`;
+                log.error(message);
+                // Fail loudly in CI/non-production so a route missing checkCreditsMiddleware is
+                // caught before it ships. Production does not depend on this invariant (the
+                // gate is already bound to the job-creation boundary), so it must stay log-only
+                // there to avoid turning a would-be logging anomaly into a hard outage.
+                if (process.env.NODE_ENV !== "production") {
+                    throw new Error(message);
+                }
+            }
+
             const jobId = req.jobId;
             if (!jobId) {
                 log.warning(`[${req.method}] [${req.path}] Skip deduction: missing jobId`);
                 return;
             }
 
-            const mode: BillingMode = isCrawlCreateRequest(req.method, req.path, req.route?.path) ? "delta" : "target";
+            const mode: BillingMode = isCrawlCreateRequest(req) ? "delta" : "target";
             log.info(`[${req.method}] [${req.path}] [${jobId}] Deducting ${req.creditsUsed} credits (mode=${mode})`);
             deductCreditsWithRetry(jobId, req.creditsUsed, mode, req.billingChargeDetails).catch(error => {
                 log.error(`[${req.method}] [${req.path}] [${jobId}] Final deduction failure: ${error}`);
@@ -51,13 +66,6 @@ export const deductCreditsMiddleware = async (
 
     next();
 };
-
-/**
- * Sleep utility for retry delays
- */
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
 
 /**
  * Deduct credits with automatic retry on failure
@@ -150,14 +158,20 @@ async function deductCreditsAsync(
     }
 }
 
-function isCrawlCreateRequest(method: string, path: string, routePath?: string): boolean {
+function isCrawlCreateRequest(req: RequestWithAuth): boolean {
+    // Template dedicated endpoints dispatch to the real action; trust the dispatcher's signal
+    // instead of sniffing the parametric path (/v1/template/:ref/execute).
+    if (req.resolvedTemplateType) {
+        return req.resolvedTemplateType === "crawl";
+    }
+
     const normalize = (value: string | undefined): string => {
         if (!value) return "";
         return value.length > 1 && value.endsWith("/") ? value.slice(0, -1) : value;
     };
 
-    const normalizedPath = normalize(path);
-    const normalizedRoutePath = normalize(routePath);
-    return method === CRAWL_CREATE_ROUTE.method
+    const normalizedPath = normalize(req.path);
+    const normalizedRoutePath = normalize(req.route?.path);
+    return req.method === CRAWL_CREATE_ROUTE.method
         && (normalizedPath === CRAWL_CREATE_ROUTE.path || normalizedRoutePath === CRAWL_CREATE_ROUTE.path);
 }

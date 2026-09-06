@@ -1,5 +1,5 @@
 import { log } from "@anycrawl/libs/log";
-import { WebhookEventType } from "@anycrawl/libs";
+import { WebhookEventType, config } from "@anycrawl/libs";
 import { getJob } from "@anycrawl/db";
 import { WebhookManager } from "@anycrawl/scrape";
 
@@ -11,9 +11,9 @@ export async function triggerWebhookEvent(
     eventType: WebhookEventType,
     jobId: string,
     payload: Record<string, unknown>,
-    resourceType: "scrape" | "crawl" | "search" | "task" | "map"
+    resourceType: "scrape" | "crawl" | "search" | "task" | "map" | "batch_scrape"
 ): Promise<void> {
-    if (process.env.ANYCRAWL_WEBHOOKS_ENABLED !== "true") {
+    if (!config.webhooks.enabled) {
         return;
     }
 
@@ -28,7 +28,7 @@ export async function triggerWebhookEvent(
                 },
                 resourceType,
                 jobId,
-                dbJob.userId ?? undefined
+                { userId: dbJob.userId ?? undefined, apiKeyId: dbJob.apiKey ?? undefined }
             );
         }
     } catch (e) {

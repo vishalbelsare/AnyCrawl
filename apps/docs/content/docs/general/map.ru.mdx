@@ -1,0 +1,360 @@
+---
+title: Карта сайта (Map)
+description: Извлечение всех URL сайта через sitemap, поисковую выдачу и анализ ссылок на странице.
+icon: Map
+---
+
+## Введение
+
+Map API AnyCrawl извлекает URL сайта, объединяя несколько источников: разбор sitemap, результаты поисковой выдачи и ссылки из HTML. Так достигается полное обнаружение URL для карт сайта, индексации и планирования обхода.
+
+**Ключевые возможности**: API **отвечает сразу синхронно** — без опроса и вебхуков. Объединяются три источника URL для максимального охвата.
+
+### Основные возможности
+
+- **Несколько источников**: sitemap, поиск с оператором `site:`, ссылки из HTML
+- **Sitemap**: разбор `robots.txt` и `sitemap.xml` (включая индексы и gzip)
+- **Поиск**: автоматический запрос поисковиков с оператором `site:` для обнаружения URL
+- **Ссылки**: извлечение всех `<a href>` с целевой страницы
+- **Фильтрация домена**: точный домен или включение поддоменов
+- **Синхронный ответ**: результаты сразу, без опроса
+
+## Конечная точка API
+
+```
+POST https://api.anycrawl.dev/v1/map
+```
+
+## Примеры
+
+### cURL
+
+#### Базовое картирование URL
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data); // Array of URLs with metadata
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### Включить поддомены
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "include_subdomains": true,
+    "limit": 1000
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        include_subdomains: true,
+        limit: 1000,
+    }),
+});
+const result = await response.json();
+// Includes URLs from blog.example.com, docs.example.com, etc.
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'include_subdomains': True,
+        'limit': 1000
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### Пропустить разбор sitemap
+
+Быстрее, если нужны только ссылки со страницы и поиск:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "ignore_sitemap": true
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        ignore_sitemap: true,
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'ignore_sitemap': True
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## Параметры запроса
+
+| Parameter | Type | Required | Default | Description |
+| --------- | ---- | -------- | ------- | ----------- |
+| `url` | string | Yes | - | Целевой URL для карты; должен быть HTTP/HTTPS |
+| `limit` | number | No | `5000` | Максимум URL в ответе (1–50000) |
+| `include_subdomains` | boolean | No | `false` | Включать поддомены (например, blog.example.com) |
+| `ignore_sitemap` | boolean | No | `false` | Пропустить sitemap; только поиск и ссылки со страницы |
+| `max_age` | number | No | - | Макс. возраст кэша (мс). `0` — без чтения кэша; не указано — по умолчанию сервера |
+| `use_index` | boolean | No | `true` | Использовать индекс Page Cache (`page_cache`) как дополнительный источник URL |
+
+### Поведение кэша
+
+- `max_age` управляет чтением кэша Map. `0` — принудительное обновление.
+- `use_index=false` отключает источник из индекса Page Cache (имеет смысл, если Page Cache включён).
+- В ответе `/v1/map` нет поля `fromCache` (использование кэша внутреннее).
+
+### Источники обнаружения URL
+
+Map API объединяет три источника:
+
+#### 1. Разбор sitemap
+
+- Читает `robots.txt` для поиска sitemap
+- Пробует типичные пути: `/sitemap.xml`, `/sitemap.xml.gz`
+- Поддерживает индексы sitemap и gzip
+
+#### 2. Поисковая выдача
+
+- Автоматически запрос с оператором `site:domain.com`
+- Заголовок и сниппет как метаданные для найденных URL
+
+#### 3. Ссылки на странице
+
+- Все `<a href>` с HTML целевой страницы
+- Текст ссылки как заголовок
+- Атрибуты `title` и `aria-label` как описание
+
+### Источники метаданных
+
+| Source | Title | Description |
+| ------ | ----- | ----------- |
+| Sitemap | - | - |
+| Search Engine | Search result title | Search result snippet |
+| Page Links | Link text or title attribute | aria-label attribute |
+
+## Формат ответа
+
+### Успех (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "url": "https://example.com/page1",
+            "title": "Page Title",
+            "description": "Page description from search results"
+        },
+        {
+            "url": "https://example.com/page2",
+            "title": "Another Page"
+        },
+        {
+            "url": "https://example.com/page3"
+        }
+    ]
+}
+```
+
+### Ошибки
+
+#### 400 — ошибка валидации
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid url",
+    "details": {
+        "issues": [
+            {
+                "field": "url",
+                "message": "Invalid url",
+                "code": "invalid_string"
+            }
+        ]
+    }
+}
+```
+
+#### 402 — недостаточно кредитов
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits",
+    "message": "Estimated credits required (1) exceeds available credits (0).",
+    "details": {
+        "estimated_total": 1,
+        "available_credits": 0
+    }
+}
+```
+
+#### 500 — внутренняя ошибка
+
+```json
+{
+    "success": false,
+    "error": "Internal server error",
+    "message": "Error message details"
+}
+```
+
+## Рекомендации
+
+### Сценарии
+
+1. **Планирование обхода**: сначала Map для списка URL, затем полный crawl
+2. **Индексация контента**: полный перечень страниц сайта
+3. **Аудит сайта**: SEO, доступность
+4. **Анализ ссылок**: внутренняя перелинковка
+
+### Производительность
+
+- `ignore_sitemap: true` — быстрее, если sitemap не нужен
+- Задавайте разумный `limit`
+- `include_subdomains: false` (по умолчанию), если поддомены не нужны
+
+### Вместе с Crawl
+
+Map удобен для планирования crawl:
+
+```javascript
+// Step 1: Discover URLs with Map
+const mapResponse = await fetch("/v1/map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        limit: 100,
+    }),
+});
+const { data: urls } = await mapResponse.json();
+
+// Step 2: Use discovered URLs to plan crawl
+const crawlResponse = await fetch("/v1/crawl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        include_paths: urls.map((u) => new URL(u.url).pathname),
+        limit: 100,
+    }),
+});
+```
+
+## Кредиты
+
+| Operation | Credits |
+| --------- | ------- |
+| Map operation | 1 |
+
+**Итого**: 1 кредит за запрос.
+
+## Частые вопросы
+
+### В чём разница между Map и Crawl?
+
+**Map** только находит URL, не загружая полное содержимое страниц — быстро и лёгко. **Crawl** загружает и обрабатывает контент каждой страницы. Map — для обнаружения и планирования, Crawl — для извлечения контента.
+
+### Почему часть URL отсутствует?
+
+Возможные причины:
+- другой домен/поддомен (включите `include_subdomains: true`)
+- нет sitemap
+- URL создаются динамически в JavaScript
+- превышен `limit`
+
+### Как работает поисковое обнаружение?
+
+Map API запрашивает поиск с `site:domain.com`, чтобы найти проиндексированные страницы, которых может не быть в sitemap или на главной.
+
+### Map следует редиректам?
+
+URL берутся из sitemap и ссылок как есть; редиректы для обнаружения новых URL не обходятся.
+
+### Есть ли лимит запросов?
+
+Нет, API **поддерживает высокую параллельность**. Можно отправлять несколько запросов одновременно без ограничения по частоте.

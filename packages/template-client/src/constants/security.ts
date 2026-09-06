@@ -42,9 +42,12 @@ export const DANGEROUS_PATTERNS = [
     // Constructor Access (potential escape)
     { pattern: /\.constructor\.constructor/gi, message: "constructor chain is not allowed" },
 
-    // Timer restrictions (use controlled timers instead)
-    // { pattern: /setTimeout\s*\(/g, message: "setTimeout is not allowed (use sandbox-provided timers)" },
-    // { pattern: /setInterval\s*\(/g, message: "setInterval is not allowed" },
+    // Timer restrictions — the sandbox injects no controlled timers, so these reach the
+    // real Node globals. An uncontrolled setInterval keeps firing on the event loop even
+    // after the execution-timeout Promise.race rejects (a resource-leak / DoS vector).
+    // Use page.waitForTimeout for in-page delays instead.
+    { pattern: /setTimeout\s*\(/g, message: "setTimeout is not allowed (use page.waitForTimeout for delays)" },
+    { pattern: /setInterval\s*\(/g, message: "setInterval is not allowed" },
 ] as const;
 
 /**

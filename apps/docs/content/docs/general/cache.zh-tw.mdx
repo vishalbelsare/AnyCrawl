@@ -1,0 +1,61 @@
+---
+title: 快取
+description: Scrape、Crawl 和 Map API 的快取行為。
+icon: Database
+---
+
+## 概述
+
+AnyCrawl 使用兩層快取：
+
+- **頁面快取**：用於 `/v1/scrape` 以及 `/v1/crawl` 中的單頁處理
+- **Map 快取**：用於 `/v1/map` 的 URL 探索結果
+
+## 通用參數
+
+### `max_age`（毫秒）
+
+- 控制快取**讀取**行為。
+- `0`：強制重新整理（跳過快取讀取）
+- `> 0`：允許使用指定時間範圍內的快取資料
+- 省略：使用伺服器預設值
+
+### `store_in_cache`
+
+- 適用於 scrape/crawl 的頁面輸出。
+- `true`（預設）：寫入快取
+- `false`：跳過快取寫入
+
+### `use_index`（僅 Map）
+
+- `true`（預設）：允許 Map 使用頁面快取索引作為額外資料來源
+- `false`：停用該來源
+
+## 端點行為
+
+### `/v1/scrape`
+
+- 可在建立新任務之前讀取頁面快取。
+- 命中快取時，回應中會包含快取中繼資料（例如 `cachedAt` / `maxAge`）。
+
+### `/v1/crawl`
+
+- 目前**不會**為完整爬取請求讀取頁面快取。
+- 仍支援在單頁抓取選項中使用快取相關的寫入控制。
+
+### `/v1/map`
+
+- 可讀取 Map 快取。
+- 回應中不包含公開的 `fromCache` 欄位（快取使用為內部行為）。
+
+## 實用技巧
+
+- 當需要立即取得最新資料時，使用 `max_age: 0`。
+- 對於高度動態的頁面，使用 `store_in_cache: false` 以避免寫入不穩定的快照。
+- 對於 Map，如果希望探索僅依賴 sitemap/搜尋引擎/頁面連結，可停用 `use_index`。
+
+## 相關文件
+
+- [Scrape API](./scrape)
+- [Crawl API](./crawl)
+- [Map API](./map)

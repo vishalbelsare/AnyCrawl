@@ -12,8 +12,10 @@ export interface AIConfig {
     providers: {
         [key: string]: {
             enabled: boolean;
-            apiKey: string;
+            apiKey?: string;
+            apiKeyEnv?: string;
             baseURL?: string;
+            baseURLEnv?: string;
         };
     };
     modelMapping: {

@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: 透過 AnyCrawl MCP 為 Windsurf 新增網頁抓取和搜尋功能
+icon: Wind
+---
+
+# 在 Windsurf 中使用 MCP 網頁搜尋與抓取
+
+透過 AnyCrawl MCP 為 Windsurf 新增網頁抓取和搜尋功能。
+
+## 快速設定
+
+### 1. 取得 API 金鑰
+
+在 [anycrawl.dev](https://anycrawl.dev) 註冊並從控制面板複製您的 API 金鑰。
+
+### 2. 新增到 Windsurf
+
+將以下內容新增到您的 `~/.codeium/windsurf/mcp_config.json`：
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+將 `your-api-key` 替換為您實際的 AnyCrawl API 金鑰。
+
+### 3. 重新啟動 Windsurf
+
+完成！現在 Windsurf 可以搜尋和抓取網頁了。
+
+## 快速示範
+
+在 Windsurf 中嘗試以下操作：
+
+**搜尋網頁：**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**抓取頁面：**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**取得文件：**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**爬取網站：**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Windsurf 的 AI 代理將自動使用 AnyCrawl 工具。
+
+## 疑難排解
+
+### 伺服器無回應
+
+1. 檢查您的 API 金鑰是否有效
+2. 確保已安裝 Node.js 18+
+3. 變更設定後重新啟動 Windsurf
+
+### 權限錯誤
+
+確保 npx 有執行權限。您可能需要全域安裝該套件：
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+然後更新設定以使用全域安裝的套件：
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## 下一步
+
+- 了解更多關於[抓取選項](../scrape)
+- 探索[爬取功能](../crawl)
+- 查看[搜尋功能](../search)
+- 查看完整的 [MCP 伺服器文件](../mcp)

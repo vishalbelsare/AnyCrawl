@@ -1,0 +1,28 @@
+{
+    "title": "ทั่วไป",
+    "description": "เอกสารทั่วไป",
+    "root": true,
+    "icon": "Building2",
+    "pages": [
+        "---เริ่มต้น---",
+        "index",
+        "mcp",
+        "---คุณสมบัติ---",
+        "scrape",
+        "crawl",
+        "cache",
+        "search",
+        "map",
+        "json-mode",
+        "template",
+        "---ระบบอัตโนมัติ---",
+        "scheduled-tasks",
+        "monitors",
+        "webhooks",
+        "---คู่มือสำหรับนักพัฒนา---",
+        "mcp-setup-guides",
+        "---โฮสต์ด้วยตนเอง---",
+        "docker",
+        "proxy-rule"
+    ]
+}

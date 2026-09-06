@@ -8,6 +8,15 @@ export interface SandboxConfig {
     allowedPageMethods?: string[]; // Whitelist of allowed page methods
 }
 
+export interface SandboxLogEntry {
+    level: 'log' | 'warn' | 'error';
+    ts: number;
+    message: string;
+}
+
+const SANDBOX_LOG_MAX_ENTRIES = 200;
+const SANDBOX_LOG_MAX_BYTES = 51200; // 50KB
+
 /**
  * Security monitoring for sandbox execution
  */
@@ -163,9 +172,10 @@ export class QuickJSSandbox {
     }
 
     /**
-     * Create sandboxed console for safe logging
+     * Create sandboxed console for safe logging.
+     * When logBuffer is provided, log entries are captured for return to the caller.
      */
-    private createSandboxConsole(): any {
+    private createSandboxConsole(logBuffer?: SandboxLogEntry[]): any {
         const formatArgs = (args: any[]) => args.map((arg: any) => {
             if (typeof arg === 'string') return arg;
             if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
@@ -176,11 +186,19 @@ export class QuickJSSandbox {
             }
         }).join(' ');
 
+        let totalBytes = 0;
+        const pushLog = (level: SandboxLogEntry['level'], msg: string) => {
+            if (!logBuffer) return;
+            if (logBuffer.length >= SANDBOX_LOG_MAX_ENTRIES) return;
+            if (totalBytes >= SANDBOX_LOG_MAX_BYTES) return;
+            totalBytes += msg.length;
+            logBuffer.push({ level, ts: Date.now(), message: msg });
+        };
+
         return {
-            log: (...args: any[]) => log.info(`[SANDBOX] ${formatArgs(args)}`),
-            error: (...args: any[]) => console.error(`[SANDBOX] ${formatArgs(args)}`),
-            warn: (...args: any[]) => console.warn(`[SANDBOX] ${formatArgs(args)}`),
-            // Block other methods for security
+            log: (...args: any[]) => { const m = formatArgs(args); log.info(`[SANDBOX] ${m}`); pushLog('log', m); },
+            error: (...args: any[]) => { const m = formatArgs(args); console.error(`[SANDBOX] ${m}`); pushLog('error', m); },
+            warn: (...args: any[]) => { const m = formatArgs(args); console.warn(`[SANDBOX] ${m}`); pushLog('warn', m); },
             info: () => { throw new SandboxError('console.info is not allowed'); },
             debug: () => { throw new SandboxError('console.debug is not allowed'); },
             trace: () => { throw new SandboxError('console.trace is not allowed'); },
@@ -256,6 +274,16 @@ export class QuickJSSandbox {
     }
 
     /**
+     * Returns true when sandbox log capture should be active.
+     * Active when NODE_ENV=development (always-on locally) or when the
+     * template sets metadata.debug=true (opt-in per template in production).
+     */
+    private isDebugEnabled(context: SandboxContext): boolean {
+        if (process.env.NODE_ENV === 'development') return true;
+        return context.template?.metadata?.debug === true;
+    }
+
+    /**
      * Execute code in sandbox - choose execution method based on trust level
      * Both methods support page access with concurrent execution guarantees
      * Note: Code safety is already validated by TemplateCodeValidator before execution
@@ -275,11 +303,10 @@ export class QuickJSSandbox {
         }
     }
 
-    /**
-     * Execute code using AsyncFunction with Proxy-based security
-     */
     private async executeWithAsyncFunction(code: string, context: SandboxContext): Promise<any> {
         const templateId = context.template?.templateId || 'unknown';
+        const debugMode = this.isDebugEnabled(context);
+        const logBuffer: SandboxLogEntry[] | undefined = debugMode ? [] : undefined;
         const stats: ExecutionStats = {
             pageMethodCalls: 0,
             startTime: Date.now()
@@ -292,8 +319,8 @@ export class QuickJSSandbox {
         const securePage = context.page ? this.createSecurePageProxy(context.page, stats) : undefined;
         const rawPage = context.page;
 
-        // Create sandboxed console
-        const sandboxConsole = this.createSandboxConsole();
+        // Create sandboxed console (with log capture when debug=true)
+        const sandboxConsole = this.createSandboxConsole(logBuffer);
 
         // Create parameter names and values
         const paramNames = [
@@ -373,6 +400,7 @@ export class QuickJSSandbox {
             return {
                 success: true,
                 result,
+                logs: logBuffer || [],
                 context: context.executionContext,
                 stats: {
                     executionTime,
@@ -380,9 +408,11 @@ export class QuickJSSandbox {
                 }
             };
         } catch (error) {
-            // Enhance error with template info
             const errorMsg = error instanceof Error ? error.message : String(error);
-            throw new SandboxError(`Template ${templateId} execution failed: ${errorMsg}`);
+            logBuffer?.push({ level: 'error', ts: Date.now(), message: `Execution failed: ${errorMsg}` });
+            const sandboxErr = new SandboxError(`Template ${templateId} execution failed: ${errorMsg}`);
+            (sandboxErr as any).logs = logBuffer || [];
+            throw sandboxErr;
         }
     }
 
@@ -392,6 +422,8 @@ export class QuickJSSandbox {
      */
     private async executeWithVM(code: string, context: SandboxContext): Promise<any> {
         const templateId = context.template?.templateId || 'unknown';
+        const debugMode = this.isDebugEnabled(context);
+        const logBuffer: SandboxLogEntry[] | undefined = debugMode ? [] : undefined;
         const startTime = Date.now();
         const rawPage = context.page;
 
@@ -425,7 +457,7 @@ export class QuickJSSandbox {
             template: context.template,
             variables: context.variables,
             page: context.page,
-            console: this.createSandboxConsole(),
+            console: this.createSandboxConsole(logBuffer),
             // Standard JS objects
             JSON,
             Math,
@@ -460,12 +492,15 @@ export class QuickJSSandbox {
             return {
                 success: true,
                 result,
+                logs: logBuffer || [],
                 context: context.executionContext
             };
         } catch (error) {
-            // Enhance error with template info
             const errorMsg = error instanceof Error ? error.message : String(error);
-            throw new SandboxError(`Template ${templateId} execution failed: ${errorMsg}`);
+            logBuffer?.push({ level: 'error', ts: Date.now(), message: `Execution failed: ${errorMsg}` });
+            const sandboxErr = new SandboxError(`Template ${templateId} execution failed: ${errorMsg}`);
+            (sandboxErr as any).logs = logBuffer || [];
+            throw sandboxErr;
         }
     }
 

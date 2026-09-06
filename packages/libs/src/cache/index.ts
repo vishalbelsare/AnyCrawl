@@ -1,24 +1,19 @@
 import { createHash } from "crypto";
 import { s3Cache, getStorageConfig } from "../s3.js";
 import { log } from "../log.js";
+import { config } from "../config.js";
 
 // Default cache max age: 2 days in milliseconds
 export const DEFAULT_MAX_AGE = 2 * 24 * 60 * 60 * 1000;
 
-// Cache configuration from environment
+/** @deprecated Use `config.cache` instead. */
 export function getCacheConfig() {
-    const parseMs = (value: string | undefined, fallback: number): number => {
-        const parsed = Number.parseInt(String(value ?? ''), 10);
-        return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-    };
-    const storageIsS3 = process.env.ANYCRAWL_STORAGE === 's3';
-    const enabledByEnv = process.env.ANYCRAWL_CACHE_ENABLED !== 'false';
     return {
-        enabled: enabledByEnv,
-        pageCacheEnabled: storageIsS3 && enabledByEnv,
-        mapCacheEnabled: enabledByEnv,
-        defaultMaxAge: parseMs(process.env.ANYCRAWL_CACHE_DEFAULT_MAX_AGE, DEFAULT_MAX_AGE),
-        sitemapMaxAge: parseMs(process.env.ANYCRAWL_CACHE_SITEMAP_MAX_AGE, 7 * 24 * 60 * 60 * 1000),
+        enabled: config.cache.enabled,
+        pageCacheEnabled: config.cache.pageCacheEnabled,
+        mapCacheEnabled: config.cache.mapCacheEnabled,
+        defaultMaxAge: config.cache.defaultMaxAgeMs,
+        sitemapMaxAge: config.cache.sitemapMaxAgeMs,
     };
 }
 
@@ -26,6 +21,7 @@ export function getCacheConfig() {
 export interface CacheKeyParams {
     url: string;
     engine?: string;
+    browser_runtime?: string;
     formats?: string[];
     json_options?: object;
     include_tags?: string[];
@@ -189,7 +185,14 @@ export function computeCacheKey(params: CacheKeyParams): { urlHash: string; opti
 
     // Extract cacheable options (sorted for consistency)
     const cacheableOptions = {
-        engine: params.engine || 'cheerio',
+        engine: params.engine === 'auto' ? ((params as any)._autoResolvedEngine || 'cheerio') : (params.engine || 'cheerio'),
+        browser_runtime: (() => {
+            const engine = params.engine === 'auto'
+                ? ((params as any)._autoResolvedEngine || 'cheerio')
+                : (params.engine || 'cheerio');
+            if (engine !== 'playwright' && engine !== 'puppeteer') return undefined;
+            return params.browser_runtime || 'default';
+        })(),
         formats: [...(params.formats || ['markdown'])].sort(),
         json_options: params.json_options ? JSON.stringify(sortKeys(params.json_options)) : null,
         include_tags: params.include_tags ? [...params.include_tags].sort() : undefined,

@@ -1,0 +1,458 @@
+---
+title: MCP 伺服器
+description: 透過 Model Context Protocol (MCP) 將 AnyCrawl 網頁抓取整合到 Cursor、Claude 和 VS Code 中
+icon: Zap
+---
+
+**AnyCrawl MCP Server** — 透過 Model Context Protocol (MCP) 為 Cursor、Claude 及其他 LLM 用戶端提供強大的網頁抓取和爬蟲功能。
+
+## 功能特性
+
+- 網頁抓取、爬蟲和內容擷取
+- 搜尋和探索功能
+- 批次處理和並行支援
+- 雲端和自架支援
+- 即時進度追蹤
+- SSE 支援
+
+## 安裝
+
+### 透過 npx 執行
+
+```bash
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### 使用託管 API
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/mcp"
+        }
+    }
+}
+```
+
+### 手動安裝
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
+```
+
+## 在 Cursor 中執行
+
+將 AnyCrawl MCP 伺服器新增到 Cursor：
+
+1. 開啟 Cursor 設定
+2. 前往 Features > MCP Servers
+3. 點擊 "+ Add new global MCP server"
+4. 輸入以下設定：
+
+```json
+{
+    "mcpServers": {
+        "anycrawl-mcp": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+            }
+        }
+    }
+}
+```
+
+## 在 VS Code 中執行
+
+在 VS Code 的使用者設定 (JSON) 檔案中新增以下 JSON 區塊：
+
+```json
+{
+    "mcp": {
+        "inputs": [
+            {
+                "type": "promptString",
+                "id": "apiKey",
+                "description": "AnyCrawl API Key",
+                "password": true
+            }
+        ],
+        "servers": {
+            "anycrawl": {
+                "command": "npx",
+                "args": ["-y", "anycrawl-mcp"],
+                "env": {
+                    "ANYCRAWL_API_KEY": "${input:apiKey}"
+                }
+            }
+        }
+    }
+}
+```
+
+## 在 Claude Desktop 中執行
+
+將以下內容新增到 Claude 設定檔：
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/sse"
+        }
+    }
+}
+```
+
+## 設定
+
+### 環境變數
+
+#### 雲端 API 必要
+
+- `ANYCRAWL_API_KEY`：您的 AnyCrawl API 金鑰
+    - 使用雲端 API 時必要（預設）
+    - 使用自架執行個體時可選
+- `ANYCRAWL_BASE_URL`：AnyCrawl API 基礎 URL
+    - 可選
+    - 使用自架執行個體時必要
+
+### 設定範例
+
+#### 基礎雲端設定
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key-here"
+npx -y anycrawl-mcp
+```
+
+#### 自架設定
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key"
+export ANYCRAWL_BASE_URL="https://your-instance.com"
+npx -y anycrawl-mcp
+```
+
+## 可用工具
+
+### 1. 抓取工具 (`anycrawl_scrape`)
+
+抓取單一 URL 並以多種格式擷取內容。
+
+**最適用於：**
+
+- 從單一頁面擷取內容
+- 快速資料擷取
+- 測試特定 URL
+
+**參數：**
+
+- `url`（必要）：要抓取的 URL
+- `engine`（可選）：抓取引擎（`auto`、`playwright`、`cheerio`、`puppeteer`），預設為 `auto`
+- `formats`（可選）：輸出格式（`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`）
+- `timeout`（可選）：逾時時間（毫秒），預設：300000
+- `wait_for`（可選）：頁面載入等待時間
+- `include_tags`（可選）：要包含的 HTML 標籤
+- `exclude_tags`（可選）：要排除的 HTML 標籤
+- `json_options`（可選）：JSON 擷取選項
+- `ocr_options`（可選）：僅對 markdown 圖片啟用 OCR 增強；不修改 `html`/`rawHtml`
+
+**範例：**
+
+```json
+{
+    "name": "anycrawl_scrape",
+    "arguments": {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "formats": ["markdown", "html"],
+        "timeout": 30000
+    }
+}
+```
+
+### 2. 爬蟲工具 (`anycrawl_crawl`)
+
+啟動爬蟲任務以抓取網站的多個頁面。預設情況下會等待完成並使用 SDK 的 `client.crawl` 傳回聚合結果（預設值：每 3 秒輪詢一次，60 秒後逾時）。
+
+**最適用於：**
+
+- 從多個相關頁面擷取內容
+- 全面的網站分析
+- 批次資料收集
+
+**參數：**
+
+- `url`（必要）：要爬取的基礎 URL
+- `engine`（可選）：抓取引擎（`auto`、`playwright`、`cheerio`、`puppeteer`），預設為 `auto`
+- `max_depth`（可選）：最大爬取深度（預設：10）
+- `limit`（可選）：最大頁面數（預設：100）
+- `strategy`（可選）：爬取策略（`all`、`same-domain`、`same-hostname`、`same-origin`）
+- `exclude_paths`（可選）：要排除的 URL 模式
+- `include_paths`（可選）：要包含的 URL 模式
+- `scrape_options`（可選）：單頁抓取選項
+- `poll_seconds`（可選）：等待輪詢間隔（秒），預設：3
+- `timeout_ms`（可選）：整體等待逾時（毫秒），預設：60000
+
+**範例：**
+
+```json
+{
+    "name": "anycrawl_crawl",
+    "arguments": {
+        "url": "https://example.com/blog",
+        "engine": "playwright",
+        "max_depth": 2,
+        "limit": 50,
+        "strategy": "same-domain",
+        "poll_seconds": 3,
+        "timeout_ms": 60000
+    }
+}
+```
+
+傳回：`{ "job_id": "...", "status": "completed", "total": N, "completed": N, "credits_used": N, "data": [...] }`。
+
+### 3. 爬蟲狀態工具 (`anycrawl_crawl_status`)
+
+檢查爬蟲任務的狀態。
+
+**參數：**
+
+- `job_id`（必要）：爬蟲任務 ID
+
+**範例：**
+
+```json
+{
+    "name": "anycrawl_crawl_status",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 4. 爬蟲結果工具 (`anycrawl_crawl_results`)
+
+取得爬蟲任務的結果。
+
+**參數：**
+
+- `job_id`（必要）：爬蟲任務 ID
+- `skip`（可選）：略過的結果數量（用於分頁）
+
+**範例：**
+
+```json
+{
+    "name": "anycrawl_crawl_results",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "skip": 0
+    }
+}
+```
+
+### 5. 取消爬蟲工具 (`anycrawl_cancel_crawl`)
+
+取消待處理的爬蟲任務。
+
+**參數：**
+
+- `job_id`（必要）：要取消的爬蟲任務 ID
+
+**範例：**
+
+```json
+{
+    "name": "anycrawl_cancel_crawl",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 6. 搜尋工具 (`anycrawl_search`)
+
+使用 AnyCrawl 搜尋引擎進行網頁搜尋。
+
+**最適用於：**
+
+- 在多個網站中尋找特定資訊
+- 研究和探索
+- 當您不知道哪個網站有所需資訊時
+
+**參數：**
+
+- `query`（必要）：搜尋查詢
+- `engine`（可選）：搜尋引擎（`google`）
+- `limit`（可選）：最大結果數（預設：5）
+- `offset`（可選）：略過的結果數（預設：0）
+- `pages`（可選）：搜尋頁數
+- `lang`（可選）：語言代碼
+- `country`（可選）：國家代碼
+- `scrape_options`（可選）：抓取搜尋結果的選項
+- `safeSearch`（可選）：安全搜尋等級（0=關閉，1=中等，2=嚴格）
+
+**範例：**
+
+```json
+{
+    "name": "anycrawl_search",
+    "arguments": {
+        "query": "latest AI research papers 2024",
+        "engine": "google",
+        "limit": 5,
+        "scrape_options": {
+            "engine": "cheerio",
+            "formats": ["markdown"]
+        }
+    }
+}
+```
+
+## 輸出格式
+
+### Markdown
+
+乾淨、結構化的 Markdown 內容，非常適合 LLM 使用。
+
+### HTML
+
+保留所有格式的原始 HTML 內容。
+
+### Text
+
+最少格式的純文字內容。
+
+### Screenshot
+
+頁面的視覺截圖。
+
+### Screenshot@fullPage
+
+包含摺疊下方內容的全頁截圖。
+
+### Raw HTML
+
+未處理的 HTML 內容。
+
+### JSON
+
+使用自訂 schema 進行結構化資料擷取。
+
+## 引擎
+
+### Auto（預設）
+
+- 智慧引擎選擇
+- 自動為每個 URL 選擇最佳引擎
+- 最適合通用抓取
+
+### Cheerio
+
+- 快速輕量
+- 適合靜態內容
+- 伺服器端渲染
+
+### Playwright
+
+- 完整的瀏覽器自動化
+- JavaScript 渲染
+- 最適合動態內容
+
+### Puppeteer
+
+- Chrome/Chromium 自動化
+- 功能和效能的良好平衡
+
+## 錯誤處理
+
+伺服器提供全面的錯誤處理：
+
+- **驗證錯誤**：無效參數或缺少必要欄位
+- **API 錯誤**：AnyCrawl API 錯誤，附有詳細訊息
+- **網路錯誤**：連線和逾時問題
+
+## 日誌
+
+伺服器包含詳細的日誌記錄：
+
+- **Debug**：詳細的操作資訊
+- **Info**：一般操作狀態
+- **Warn**：非關鍵性問題
+- **Error**：關鍵錯誤和故障
+
+透過環境變數設定日誌等級：
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## 開發
+
+### 前置要求
+
+- Node.js 18+
+- npm
+
+### 設定
+
+```bash
+git clone https://github.com/any4ai/anycrawl-mcp-server.git
+cd anycrawl-mcp-server
+npm ci
+```
+
+### 建置
+
+```bash
+npm run build
+```
+
+### 測試
+
+```bash
+npm test
+```
+
+### 程式碼檢查
+
+```bash
+npm run lint
+```
+
+### 格式化
+
+```bash
+npm run format
+```
+
+## 貢獻
+
+1. Fork 儲存庫
+2. 建立您的功能分支
+3. 執行測試：`npm test`
+4. 提交 Pull Request
+
+## 授權條款
+
+MIT 授權條款 - 詳見 LICENSE 檔案
+
+## 支援
+
+- GitHub Issues：[回報 Bug 或提交功能請求](https://github.com/any4ai/anycrawl-mcp-server/issues)
+- 文件：[AnyCrawl API 文件](https://docs.anycrawl.dev)
+- 電子郵件：help@anycrawl.dev
+
+## 關於 AnyCrawl
+
+AnyCrawl 是一個強大的 Node.js/TypeScript 爬蟲，能將網站轉化為 LLM 就緒資料，並從 Google/Bing/Baidu 等搜尋引擎擷取結構化 SERP 結果。它具有原生多執行緒批次處理功能，並支援多種輸出格式。
+
+- **網站**：https://anycrawl.dev
+- **GitHub**：https://github.com/any4ai/anycrawl
+- **API**：https://api.anycrawl.dev

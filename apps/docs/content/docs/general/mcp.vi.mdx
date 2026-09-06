@@ -1,0 +1,458 @@
+---
+title: Máy chủ MCP
+description: Tích hợp thu thập web AnyCrawl vào Cursor, Claude và VS Code qua Model Context Protocol (MCP)
+icon: Zap
+---
+
+**AnyCrawl MCP Server** — Thu thập và crawl web mạnh mẽ cho Cursor, Claude và các client LLM khác qua Model Context Protocol (MCP).
+
+## Tính năng
+
+- Thu thập web, crawl và trích nội dung
+- Tìm kiếm và khám phá
+- Xử lý batch và đồng thời
+- Hỗ trợ cloud và tự lưu trữ
+- Theo dõi tiến trình thời gian thực
+- Hỗ trợ SSE
+
+## Cài đặt
+
+### Chạy bằng npx
+
+```bash
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### Dùng API được host
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/mcp"
+        }
+    }
+}
+```
+
+### Cài đặt thủ công
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
+```
+
+## Chạy trên Cursor
+
+Thêm máy chủ AnyCrawl MCP vào Cursor:
+
+1. Mở Cursor Settings
+2. Vào Features > MCP Servers
+3. Nhấp "+ Add new global MCP server"
+4. Nhập cấu hình sau:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl-mcp": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+            }
+        }
+    }
+}
+```
+
+## Chạy trên VS Code
+
+Thêm khối JSON sau vào file User Settings (JSON) trong VS Code:
+
+```json
+{
+    "mcp": {
+        "inputs": [
+            {
+                "type": "promptString",
+                "id": "apiKey",
+                "description": "AnyCrawl API Key",
+                "password": true
+            }
+        ],
+        "servers": {
+            "anycrawl": {
+                "command": "npx",
+                "args": ["-y", "anycrawl-mcp"],
+                "env": {
+                    "ANYCRAWL_API_KEY": "${input:apiKey}"
+                }
+            }
+        }
+    }
+}
+```
+
+## Chạy trên Claude Desktop
+
+Thêm vào file cấu hình Claude:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/sse"
+        }
+    }
+}
+```
+
+## Cấu hình
+
+### Biến môi trường
+
+#### Bắt buộc cho Cloud API
+
+- `ANYCRAWL_API_KEY`: API key AnyCrawl của bạn
+    - Bắt buộc khi dùng cloud API (mặc định)
+    - Tùy chọn khi dùng instance tự host
+- `ANYCRAWL_BASE_URL`: URL cơ sở API AnyCrawl.
+    - Tùy chọn
+    - Bắt buộc với instance tự host
+
+### Ví dụ cấu hình
+
+#### Cloud cơ bản
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key-here"
+npx -y anycrawl-mcp
+```
+
+#### Tự host
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key"
+export ANYCRAWL_BASE_URL="https://your-instance.com"
+npx -y anycrawl-mcp
+```
+
+## Công cụ có sẵn
+
+### 1. Công cụ Scrape (`anycrawl_scrape`)
+
+Thu thập một URL và trích nội dung theo nhiều định dạng.
+
+**Phù hợp khi:**
+
+- Trích nội dung từ một trang
+- Trích dữ liệu nhanh
+- Thử URL cụ thể
+
+**Tham số:**
+
+- `url` (bắt buộc): URL cần scrape
+- `engine` (tùy chọn): Engine (`auto`, `playwright`, `cheerio`, `puppeteer`). Mặc định `auto`
+- `formats` (tùy chọn): Định dạng đầu ra (`markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`)
+- `timeout` (tùy chọn): Timeout (ms) (mặc định: 300000)
+- `wait_for` (tùy chọn): Thời gian chờ trang tải
+- `include_tags` (tùy chọn): Thẻ HTML cần gồm
+- `exclude_tags` (tùy chọn): Thẻ HTML cần loại
+- `json_options` (tùy chọn): Tùy chọn trích JSON
+- `ocr_options` (tùy chọn): Bật OCR cho ảnh markdown; không đổi `html`/`rawHtml`
+
+**Ví dụ:**
+
+```json
+{
+    "name": "anycrawl_scrape",
+    "arguments": {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "formats": ["markdown", "html"],
+        "timeout": 30000
+    }
+}
+```
+
+### 2. Công cụ Crawl (`anycrawl_crawl`)
+
+Bắt đầu job crawl để thu thập nhiều trang. Mặc định chờ hoàn thành và trả kết quả gộp qua SDK `client.crawl` (mặc định: poll mỗi 3 giây, timeout sau 60 giây).
+
+**Phù hợp khi:**
+
+- Trích nội dung từ nhiều trang liên quan
+- Phân tích toàn site
+- Thu thập dữ liệu hàng loạt
+
+**Tham số:**
+
+- `url` (bắt buộc): URL gốc để crawl
+- `engine` (tùy chọn): Engine (`auto`, `playwright`, `cheerio`, `puppeteer`). Mặc định `auto`
+- `max_depth` (tùy chọn): Độ sâu tối đa (mặc định: 10)
+- `limit` (tùy chọn): Số trang tối đa (mặc định: 100)
+- `strategy` (tùy chọn): Chiến lược (`all`, `same-domain`, `same-hostname`, `same-origin`)
+- `exclude_paths` (tùy chọn): Mẫu URL loại trừ
+- `include_paths` (tùy chọn): Mẫu URL bao gồm
+- `scrape_options` (tùy chọn): Tùy chọn scrape từng trang
+- `poll_seconds` (tùy chọn): Khoảng poll khi chờ (giây) (mặc định: 3)
+- `timeout_ms` (tùy chọn): Timeout tổng khi chờ (ms) (mặc định: 60000)
+
+**Ví dụ:**
+
+```json
+{
+    "name": "anycrawl_crawl",
+    "arguments": {
+        "url": "https://example.com/blog",
+        "engine": "playwright",
+        "max_depth": 2,
+        "limit": 50,
+        "strategy": "same-domain",
+        "poll_seconds": 3,
+        "timeout_ms": 60000
+    }
+}
+```
+
+Trả về: `{ "job_id": "...", "status": "completed", "total": N, "completed": N, "credits_used": N, "data": [...] }`.
+
+### 3. Công cụ trạng thái crawl (`anycrawl_crawl_status`)
+
+Kiểm tra trạng thái job crawl.
+
+**Tham số:**
+
+- `job_id` (bắt buộc): ID job crawl
+
+**Ví dụ:**
+
+```json
+{
+    "name": "anycrawl_crawl_status",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 4. Công cụ kết quả crawl (`anycrawl_crawl_results`)
+
+Lấy kết quả từ job crawl.
+
+**Tham số:**
+
+- `job_id` (bắt buộc): ID job crawl
+- `skip` (tùy chọn): Số kết quả bỏ qua (phân trang)
+
+**Ví dụ:**
+
+```json
+{
+    "name": "anycrawl_crawl_results",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "skip": 0
+    }
+}
+```
+
+### 5. Công cụ hủy crawl (`anycrawl_cancel_crawl`)
+
+Hủy job crawl đang chờ.
+
+**Tham số:**
+
+- `job_id` (bắt buộc): ID job crawl cần hủy
+
+**Ví dụ:**
+
+```json
+{
+    "name": "anycrawl_cancel_crawl",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 6. Công cụ Search (`anycrawl_search`)
+
+Tìm kiếm web bằng công cụ tìm kiếm AnyCrawl.
+
+**Phù hợp khi:**
+
+- Tìm thông tin cụ thể trên nhiều site
+- Nghiên cứu và khám phá
+- Khi chưa biết site nào có thông tin
+
+**Tham số:**
+
+- `query` (bắt buộc): Truy vấn tìm kiếm
+- `engine` (tùy chọn): Công cụ tìm (`google`)
+- `limit` (tùy chọn): Số kết quả tối đa (mặc định: 5)
+- `offset` (tùy chọn): Số kết quả bỏ qua (mặc định: 0)
+- `pages` (tùy chọn): Số trang tìm kiếm
+- `lang` (tùy chọn): Mã ngôn ngữ
+- `country` (tùy chọn): Mã quốc gia
+- `scrape_options` (tùy chọn): Tùy chọn scrape kết quả tìm kiếm
+- `safeSearch` (tùy chọn): Mức tìm kiếm an toàn (0=tắt, 1=vừa, 2=chặt)
+
+**Ví dụ:**
+
+```json
+{
+    "name": "anycrawl_search",
+    "arguments": {
+        "query": "latest AI research papers 2024",
+        "engine": "google",
+        "limit": 5,
+        "scrape_options": {
+            "engine": "cheerio",
+            "formats": ["markdown"]
+        }
+    }
+}
+```
+
+## Định dạng đầu ra
+
+### Markdown
+
+Markdown sạch, có cấu trúc, phù hợp LLM.
+
+### HTML
+
+HTML thô, giữ định dạng.
+
+### Text
+
+Văn bản thuần, ít định dạng.
+
+### Screenshot
+
+Ảnh chụp vùng nhìn thấy của trang.
+
+### Screenshot@fullPage
+
+Ảnh chụp toàn trang, gồm phần dưới fold.
+
+### Raw HTML
+
+HTML chưa xử lý.
+
+### JSON
+
+Trích dữ liệu có cấu trúc bằng schema tùy chỉnh.
+
+## Engine
+
+### Auto (mặc định)
+
+- Chọn engine thông minh
+- Tự chọn engine tối ưu cho từng URL
+- Phù hợp scrape đa mục đích
+
+### Cheerio
+
+- Nhanh và nhẹ
+- Tốt cho nội dung tĩnh
+- Render phía server
+
+### Playwright
+
+- Tự động hóa trình duyệt đầy đủ
+- Render JavaScript
+- Tốt cho nội dung động
+
+### Puppeteer
+
+- Tự động hóa Chrome/Chromium
+- Cân bằng tính năng và hiệu năng
+
+## Xử lý lỗi
+
+Máy chủ cung cấp xử lý lỗi đầy đủ:
+
+- **Lỗi xác thực**: Tham số không hợp lệ hoặc thiếu trường bắt buộc
+- **Lỗi API**: Lỗi API AnyCrawl kèm thông báo chi tiết
+- **Lỗi mạng**: Kết nối và timeout
+
+## Ghi log
+
+Máy chủ ghi log chi tiết:
+
+- **Debug**: Thông tin thao tác chi tiết
+- **Info**: Trạng thái chung
+- **Warn**: Vấn đề không nghiêm trọng
+- **Error**: Lỗi nghiêm trọng
+
+Đặt mức log bằng biến môi trường:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## Phát triển
+
+### Yêu cầu
+
+- Node.js 18+
+- npm
+
+### Thiết lập
+
+```bash
+git clone https://github.com/any4ai/anycrawl-mcp-server.git
+cd anycrawl-mcp-server
+npm ci
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+### Test
+
+```bash
+npm test
+```
+
+### Lint
+
+```bash
+npm run lint
+```
+
+### Format
+
+```bash
+npm run format
+```
+
+## Đóng góp
+
+1. Fork repository
+2. Tạo nhánh tính năng
+3. Chạy test: `npm test`
+4. Gửi pull request
+
+## Giấy phép
+
+MIT License — xem file LICENSE
+
+## Hỗ trợ
+
+- GitHub Issues: [Báo lỗi hoặc đề xuất tính năng](https://github.com/any4ai/anycrawl-mcp-server/issues)
+- Tài liệu: [AnyCrawl API Docs](https://docs.anycrawl.dev)
+- Email: help@anycrawl.dev
+
+## Về AnyCrawl
+
+AnyCrawl là crawler Node.js/TypeScript mạnh, chuyển website thành dữ liệu sẵn sàng cho LLM và trích kết quả SERP có cấu trúc từ Google/Bing/Baidu/v.v. Hỗ trợ đa luồng gốc cho xử lý hàng loạt và nhiều định dạng đầu ra.
+
+- **Website**: https://anycrawl.dev
+- **GitHub**: https://github.com/any4ai/anycrawl
+- **API**: https://api.anycrawl.dev

@@ -12,7 +12,7 @@ Webhooks allow you to receive real-time HTTP notifications when events occur in 
 
 ### Core Features
 
-- **Event Subscriptions**: Subscribe to scraping, crawling, mapping, search, scheduled task, and system events
+- **Event Subscriptions**: Subscribe to scraping, crawling, mapping, search, scheduled task, monitor, and system events
 - **Secure Delivery**: HMAC-SHA256 signature verification for authenticity
 - **Automatic Retries**: Exponential backoff retry mechanism for failed deliveries
 - **Delivery Tracking**: Complete history of all webhook deliveries
@@ -61,6 +61,17 @@ GET    /v1/webhook-events                        # List supported events
 | `task.failed` | Task failed | Scheduled task fails |
 | `task.paused` | Task paused | Task is paused |
 | `task.resumed` | Task resumed | Task is resumed |
+
+### Monitor Events
+
+| Event | Description | Triggered When |
+|-------|-------------|----------------|
+| `monitor.check.completed` | Check completed | A monitor run finishes (scheduled or on-demand) |
+| `monitor.changed` | Content changed | Webpage monitor detects a meaningful text change |
+| `monitor.price.changed` | Price changed | Price monitor detects a structured field change |
+| `monitor.error` | Monitor error | Monitor check fails |
+
+Monitor payloads include inline `diff_text`, `diff_json`, and optional AI `judgment` so you can act without fetching the changes API. See [Monitors](./monitors) for setup and payload examples.
 
 ### Search Events
 

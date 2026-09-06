@@ -1,0 +1,110 @@
+---
+title: Claude Code
+description: AnyCrawl MCP で Claude Code に Web スクレイピングと検索を追加する
+icon: Terminal
+---
+
+AnyCrawl MCP を使って、Claude Code に Web スクレイピングと検索機能を追加します。
+
+## クイックセットアップ
+
+### 1. API キーを取得する
+
+[anycrawl.dev](https://anycrawl.dev) にサインアップし、ダッシュボードから API キーをコピーします。
+
+### 2. AnyCrawl MCP サーバーを追加する
+
+ターミナルで次のコマンドを実行します。
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+`your-api-key` を実際の AnyCrawl API キーに置き換えてください。
+
+以上です。Claude Code から Web の検索とスクレイピングができるようになります。
+
+## すぐ試せるデモ
+
+Claude Code で次を試してください。
+
+**Web 検索：**
+
+```
+Search for the latest Next.js 15 features
+```
+
+**ページをスクレイプ：**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**ドキュメントを取得：**
+
+```
+Find and scrape the Stripe API docs for payment intents
+```
+
+**サイトをクロール：**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Claude は AnyCrawl の search、scrape、crawl ツールを自動で使って情報を取得します。
+
+## 利用可能なツール
+
+設定後、Claude Code では次のツールが使えます。
+
+- **anycrawl_scrape** - 単一 URL をスクレイプしてコンテンツを抽出
+- **anycrawl_crawl** - サイト内の複数ページをクロール
+- **anycrawl_search** - Web を検索し、必要に応じて結果をスクレイプ
+- **anycrawl_crawl_status** - クロールジョブの状態を確認
+- **anycrawl_crawl_results** - クロールジョブの結果を取得
+- **anycrawl_cancel_crawl** - 実行中のクロールジョブをキャンセル
+
+## インストールの確認
+
+MCP サーバーが正しく設定されているか確認するには：
+
+```bash
+claude mcp list
+```
+
+設定済み MCP サーバーの一覧に `anycrawl` が表示されます。
+
+## トラブルシューティング
+
+### サーバーが応答しない
+
+1. API キーが有効か確認する
+2. Node.js 18 以上が入っているか確認する
+3. サーバーを削除してから追加し直す：
+
+```bash
+claude mcp remove anycrawl
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+### 権限エラー
+
+`npx` が実行できるか確認してください。次が必要な場合があります。
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+グローバルパッケージで設定する例：
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- anycrawl-mcp
+```
+
+## 次のステップ
+
+- [スクレイプのオプション](../scrape)の詳細
+- [クロールの機能](../crawl)を試す
+- [検索の機能](../search)を確認する
+- 完全な [MCP サーバーのドキュメント](../mcp)を読む

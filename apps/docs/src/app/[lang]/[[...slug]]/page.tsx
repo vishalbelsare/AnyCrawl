@@ -13,19 +13,35 @@ export default async function Page(props: { params: Promise<{ lang: string; slug
         redirect(`/${params.lang}/general`);
     }
 
-    const page = source.getPage(params.slug);
+    const page = source.getPage(params.slug, params.lang);
     if (!page) notFound();
 
     const MDXContent = page.data.body;
     const slug = params.slug.join("/");
     const pageUrl = `${baseUrl}/${params.lang}/${slug}`;
+    const langCodeMap: Record<string, string> = {
+        "zh-cn": "zh-Hans",
+        "zh-tw": "zh-Hant",
+        es: "es",
+        vi: "vi",
+        ja: "ja",
+        ko: "ko",
+        "pt-br": "pt-BR",
+        fr: "fr",
+        de: "de",
+        ru: "ru",
+        th: "th",
+    };
+    const langCode = langCodeMap[params.lang] ?? "en";
 
     const jsonLd = {
         "@context": "https://schema.org",
         "@type": "TechArticle",
         headline: page.data.title,
-        description: page.data.description,
+        description: page.data.description || "Turning web into AI with AnyCrawl.",
         url: pageUrl,
+        datePublished: "2025-06-01",
+        dateModified: new Date().toISOString().split("T")[0],
         author: {
             "@type": "Organization",
             name: "AnyCrawl",
@@ -40,8 +56,12 @@ export default async function Page(props: { params: Promise<{ lang: string; slug
                 url: "https://api.anycrawl.dev/v1/public/storage/file/AnyCrawl.jpeg",
             },
         },
+        mainEntityOfPage: {
+            "@type": "WebPage",
+            "@id": pageUrl,
+        },
         image: "https://api.anycrawl.dev/v1/public/storage/file/AnyCrawl.jpeg",
-        inLanguage: params.lang === "zh-cn" ? "zh-Hans" : params.lang === "zh-tw" ? "zh-Hant" : "en",
+        inLanguage: langCode,
     };
 
     return (
@@ -70,6 +90,20 @@ export async function generateStaticParams() {
     return source.generateParams();
 }
 
+const apiDescriptions: Record<string, string> = {
+    scraping: "AnyCrawl Scraping API reference — request/response schemas, parameters, and code examples for the POST /v1/scrape endpoint.",
+    crawl: "AnyCrawl Crawl API reference — start asynchronous site crawl jobs with the POST /v1/crawl endpoint.",
+    map: "AnyCrawl Map API reference — discover and extract all URLs from a website with the POST /v1/map endpoint.",
+    search: "AnyCrawl Search API reference — query search engines and retrieve structured SERP results with the POST /v1/search endpoint.",
+    health: "AnyCrawl Health Check API — verify API server status with the GET /health endpoint.",
+};
+
+function getDescription(title: string, explicitDesc: string | undefined, slug: string): string {
+    if (explicitDesc) return explicitDesc;
+    const lastSegment = slug.split("/").pop() || "";
+    return apiDescriptions[lastSegment] || `${title} — AnyCrawl documentation.`;
+}
+
 export async function generateMetadata(props: {
     params: Promise<{ lang: string; slug?: string[] }>;
 }) {
@@ -79,20 +113,18 @@ export async function generateMetadata(props: {
 
     const slug = params.slug ? params.slug.join("/") : "";
     const pageUrl = `${baseUrl}/${params.lang}${slug ? `/${slug}` : ""}`;
-    const pageDescription = page.data.description || "";
-    const description = pageDescription
-        ? pageDescription.endsWith(".")
-            ? `${pageDescription} Turning web into AI with AnyCrawl.`
-            : `${pageDescription}. Turning web into AI with AnyCrawl.`
-        : "Turning web into AI with AnyCrawl.";
+    const pageDescription = getDescription(page.data.title, page.data.description, slug);
+    const description = pageDescription.endsWith(".")
+        ? `${pageDescription} Turning web into AI with AnyCrawl.`
+        : `${pageDescription}. Turning web into AI with AnyCrawl.`;
     const ogImage = "https://api.anycrawl.dev/v1/public/storage/file/AnyCrawl.jpeg";
 
     return {
         title: `${page.data.title} - AnyCrawl Docs`,
         description,
         openGraph: {
-            title: page.data.title,
-            description: pageDescription || description,
+            title: `${page.data.title} - AnyCrawl`,
+            description,
             type: "article",
             url: pageUrl,
             siteName: "AnyCrawl Docs",
@@ -108,8 +140,8 @@ export async function generateMetadata(props: {
         twitter: {
             card: "summary_large_image",
             site: "@AnyCrawl",
-            title: page.data.title,
-            description: pageDescription || description,
+            title: `${page.data.title} - AnyCrawl`,
+            description,
             images: [ogImage],
         },
         alternates: {
@@ -118,6 +150,15 @@ export async function generateMetadata(props: {
                 en: `${baseUrl}/en${slug ? `/${slug}` : ""}`,
                 "zh-CN": `${baseUrl}/zh-cn${slug ? `/${slug}` : ""}`,
                 "zh-TW": `${baseUrl}/zh-tw${slug ? `/${slug}` : ""}`,
+                es: `${baseUrl}/es${slug ? `/${slug}` : ""}`,
+                vi: `${baseUrl}/vi${slug ? `/${slug}` : ""}`,
+                ja: `${baseUrl}/ja${slug ? `/${slug}` : ""}`,
+                ko: `${baseUrl}/ko${slug ? `/${slug}` : ""}`,
+                "pt-BR": `${baseUrl}/pt-br${slug ? `/${slug}` : ""}`,
+                fr: `${baseUrl}/fr${slug ? `/${slug}` : ""}`,
+                de: `${baseUrl}/de${slug ? `/${slug}` : ""}`,
+                ru: `${baseUrl}/ru${slug ? `/${slug}` : ""}`,
+                th: `${baseUrl}/th${slug ? `/${slug}` : ""}`,
             },
         },
     };

@@ -1,0 +1,84 @@
+---
+title: Démarrage rapide
+description: Apprenez à utiliser l’API de scraping et de crawling AnyCrawl pour extraire des données prêtes pour les LLM depuis n’importe quel site
+icon: Album
+---
+
+## Introduction
+
+Conçu pour les LLM. Un crawler et scraper multithread haute performance, prêt à l’emploi. Grâce à une OpenAPI conviviale pour les développeurs, il fournit des données propres et structurées, optimisées pour les LLM.
+
+AnyCrawl propose les fonctionnalités suivantes :
+
+<Cards>
+
+<Card icon={<CpuIcon className="text-purple-300" />} title="Haute performance">
+    Haute performance, multithread.
+</Card>
+
+<Card icon={<GithubIcon className="text-blue-300" />} title="Entièrement open source">
+    Open source, disponible sur GitHub.
+</Card>
+
+<Card icon={<OpenAIIcon />} title='Compatible LLM'>
+Données propres et structurées pour les LLM.
+</Card>
+<Card icon={<OpenAPIIcon />} title='OpenAPI'>
+Compatible OpenAPI.
+
+</Card>
+
+</Cards>
+
+## Conventions de l’API
+
+### Nommage des paramètres
+
+L’API AnyCrawl suit des conventions de nommage cohérentes :
+
+- **Paramètres de requête** : principalement en `snake_case`
+  - Exemples courants : `webhook_url`, `event_types`, `cron_expression`, `max_retries`
+  - Remarque : quelques champs spécifiques à un endpoint utilisent des noms en camelCase existants (par exemple `timeRange` dans Search).
+
+- **Champs de réponse** : format `snake_case`
+  - Exemple : `task_id`, `webhook_id`, `next_execution_at`, `task_type`, `cron_expression`, `is_active`
+
+Pour les corps de requête, référez-vous au tableau des paramètres de chaque endpoint et à l’OpenAPI comme source de vérité.
+
+### Format des réponses
+
+Toutes les réponses de l’API suivent une structure standard :
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Optional message"
+}
+```
+
+- `success` : booléen indiquant si la requête a réussi
+- `data` : charge utile de la réponse (objet ou tableau)
+- `message` : message lisible par un humain (optionnel)
+
+### Réponses d’erreur
+
+Les réponses d’erreur contiennent des informations détaillées :
+
+```json
+{
+  "success": false,
+  "error": "Error type",
+  "message": "Human-readable error message",
+  "details": { ... }
+}
+```
+
+Codes HTTP courants :
+- `200` - Succès
+- `400` - Requête incorrecte (erreurs de validation)
+- `401` - Non autorisé (clé API invalide)
+- `402` - Paiement requis (crédits insuffisants)
+- `404` - Non trouvé
+- `429` - Trop de requêtes (limite de débit dépassée)
+- `500` - Erreur interne du serveur

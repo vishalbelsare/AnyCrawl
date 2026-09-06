@@ -1,0 +1,948 @@
+---
+title: Webhooks
+description: 接收 AnyCrawl 所有事件的实时通知，包括抓取、爬取、站点地图、搜索和定时任务。
+icon: Webhook
+---
+
+## 简介
+
+Webhooks 允许您在 AnyCrawl 账户中发生事件时接收实时 HTTP 通知。无需轮询更新，AnyCrawl 会在事件发生时自动向您指定的端点发送 POST 请求。
+
+**核心特性**：订阅多种事件类型、HMAC-SHA256 签名验证、带指数退避的自动重试、投递历史跟踪以及私有 IP 保护。
+
+### 核心功能
+
+- **事件订阅**：订阅抓取、爬取、站点地图、搜索、定时任务和系统事件
+- **安全投递**：HMAC-SHA256 签名验证确保真实性
+- **自动重试**：失败投递的指数退避重试机制
+- **投递跟踪**：完整的 Webhook 投递历史记录
+- **范围过滤**：订阅所有事件或仅特定任务的事件
+- **自定义请求头**：为 Webhook 请求添加自定义 HTTP 请求头
+- **私有 IP 保护**：内置 SSRF 攻击防护
+
+## API 端点
+
+```
+POST   /v1/webhooks                              # 创建 Webhook 订阅
+GET    /v1/webhooks                              # 列出所有 Webhooks
+GET    /v1/webhooks/:webhookId                   # 获取 Webhook 详情
+PUT    /v1/webhooks/:webhookId                   # 更新 Webhook
+DELETE /v1/webhooks/:webhookId                   # 删除 Webhook
+GET    /v1/webhooks/:webhookId/deliveries        # 获取投递历史
+POST   /v1/webhooks/:webhookId/test              # 发送测试 Webhook
+PUT    /v1/webhooks/:webhookId/activate          # 激活 Webhook
+PUT    /v1/webhooks/:webhookId/deactivate        # 停用 Webhook
+POST   /v1/webhooks/:webhookId/deliveries/:deliveryId/replay  # 重放失败的投递
+GET    /v1/webhook-events                        # 列出支持的事件
+```
+
+## 支持的事件
+
+### 作业事件
+
+| 事件 | 说明 | 触发时机 |
+|-------|-------------|----------------|
+| `scrape.created` | 抓取作业已创建 | 新抓取作业进入队列 |
+| `scrape.started` | 抓取作业已开始 | 作业开始执行 |
+| `scrape.completed` | 抓取作业已完成 | 作业成功完成 |
+| `scrape.failed` | 抓取作业失败 | 作业遇到错误 |
+| `scrape.cancelled` | 抓取作业已取消 | 作业被手动取消 |
+| `crawl.created` | 爬取作业已创建 | 新爬取作业进入队列 |
+| `crawl.started` | 爬取作业已开始 | 作业开始执行 |
+| `crawl.completed` | 爬取作业已完成 | 作业成功完成 |
+| `crawl.failed` | 爬取作业失败 | 作业遇到错误 |
+| `crawl.cancelled` | 爬取作业已取消 | 作业被手动取消 |
+
+### 定时任务事件
+
+| 事件 | 说明 | 触发时机 |
+|-------|-------------|----------------|
+| `task.executed` | 任务已执行 | 定时任务运行 |
+| `task.failed` | 任务失败 | 定时任务失败 |
+| `task.paused` | 任务已暂停 | 任务被暂停 |
+| `task.resumed` | 任务已恢复 | 任务被恢复 |
+
+### 搜索事件
+
+| 事件 | 说明 | 触发时机 |
+|-------|-------------|----------------|
+| `search.created` | 搜索作业已创建 | 新搜索作业进入队列 |
+| `search.started` | 搜索作业已开始 | 作业开始执行 |
+| `search.completed` | 搜索作业已完成 | 作业成功完成 |
+| `search.failed` | 搜索作业失败 | 作业遇到错误 |
+
+### 站点地图事件
+
+| 事件 | 说明 | 触发时机 |
+|-------|-------------|----------------|
+| `map.created` | 站点地图作业已创建 | 新站点地图作业进入队列 |
+| `map.started` | 站点地图作业已开始 | 作业开始执行 |
+| `map.completed` | 站点地图作业已完成 | 作业成功完成 |
+| `map.failed` | 站点地图作业失败 | 作业遇到错误 |
+
+### 测试事件
+
+| 事件 | 说明 | 触发时机 |
+|-------|-------------|----------------|
+| `webhook.test` | 测试事件 | 手动发送测试 Webhook |
+
+## 快速开始
+
+### 创建 Webhook
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Production Notifications",
+    "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+    "event_types": ["scrape.completed", "scrape.failed", "crawl.completed"],
+    "scope": "all",
+    "timeout_seconds": 10,
+    "max_retries": 3
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/webhooks", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    name: "Production Notifications",
+    webhook_url: "https://your-domain.com/webhooks/anycrawl",
+    event_types: ["scrape.completed", "scrape.failed"],
+    scope: "all"
+  })
+});
+
+const data = await response.json();
+console.log("Webhook ID:", data.data.webhook_id);
+console.log("Secret:", data.data.secret);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/webhooks",
+    headers={
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json"
+    },
+    json={
+        "name": "Production Notifications",
+        "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+        "event_types": ["scrape.completed", "scrape.failed"],
+        "scope": "all"
+    }
+)
+
+data = response.json()
+print(f"Webhook ID: {data['data']['webhook_id']}")
+print(f"Secret: {data['data']['secret']}")
+```
+
+### 响应
+
+```json
+{
+  "success": true,
+  "data": {
+    "webhook_id": "webhook-uuid-here",
+    "secret": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+    "message": "Webhook created successfully. Save the secret - it won't be shown again."
+  }
+}
+```
+
+<Callout type="warn">
+**重要提示**：请立即保存 `secret`！它仅在创建时显示一次，且用于签名验证。
+</Callout>
+
+## 请求参数
+
+### Webhook 配置
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|-----------|------|----------|---------|-------------|
+| `name` | string | 是 | - | Webhook 名称（1-255 个字符） |
+| `description` | string | 否 | - | Webhook 描述 |
+| `webhook_url` | string | 是 | - | 您的端点 URL（建议使用 HTTPS） |
+| `event_types` | string[] | 是 | - | 要订阅的事件类型数组 |
+| `scope` | string | 否 | `"all"` | 订阅范围：`"all"` 或 `"specific"` |
+| `specific_task_ids` | string[] | 否 | - | 任务 ID（scope 为 "specific" 时必填） |
+
+### 投递配置
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|-----------|------|----------|---------|-------------|
+| `timeout_seconds` | number | 否 | `10` | 请求超时（1-60 秒） |
+| `max_retries` | number | 否 | `3` | 最大重试次数（0-10） |
+| `retry_backoff_multiplier` | number | 否 | `2` | 重试退避乘数（1-10） |
+| `custom_headers` | object | 否 | - | 自定义 HTTP 请求头 |
+
+<Callout type="info">
+Webhook 在连续 10 次失败后会自动停用，以防止过多重试。您可以在修复问题后手动重新激活。
+</Callout>
+
+### 元数据
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|-----------|------|----------|---------|-------------|
+| `tags` | string[] | 否 | - | 用于组织的标签 |
+| `metadata` | object | 否 | - | 自定义元数据 |
+
+## Webhook 负载格式
+
+### HTTP 请求头
+
+每个 Webhook 请求包含以下请求头：
+
+```http
+Content-Type: application/json
+X-AnyCrawl-Signature: sha256=abc123...
+X-Webhook-Event: scrape.completed
+X-Webhook-Delivery-Id: delivery-uuid-1
+X-Webhook-Timestamp: 2026-01-27T10:00:00.000Z
+```
+
+### 负载示例
+
+#### scrape.completed
+
+```json
+{
+  "job_id": "job-uuid-1",
+  "status": "completed",
+  "url": "https://example.com",
+  "total": 10,
+  "completed": 10,
+  "failed": 0,
+  "credits_used": 5,
+  "created_at": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T10:00:00.000Z"
+}
+```
+
+#### scrape.failed
+
+```json
+{
+  "job_id": "job-uuid-1",
+  "status": "failed",
+  "url": "https://example.com",
+  "error_message": "Connection timeout",
+  "credits_used": 3,
+  "created_at": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T10:00:00.000Z"
+}
+```
+
+#### task.executed
+
+```json
+{
+  "task_id": "task-uuid-1",
+  "task_name": "Daily News Scrape",
+  "execution_id": "exec-uuid-1",
+  "execution_number": 45,
+  "status": "completed",
+  "job_id": "job-uuid-1",
+  "credits_used": 5,
+  "scheduled_for": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T09:02:15.000Z"
+}
+```
+
+## 签名验证
+
+### 为什么要验证签名？
+
+签名验证确保 Webhook 请求确实来自 AnyCrawl 且未被篡改，可防止恶意请求。
+
+### 验证算法
+
+AnyCrawl 使用 HMAC-SHA256 对负载进行签名：
+
+```
+signature = HMAC-SHA256(payload, webhook_secret)
+header_value = "sha256=" + hex(signature)
+```
+
+### 实现示例
+
+#### Node.js / Express
+
+```javascript
+const crypto = require('crypto');
+const express = require('express');
+
+function verifyWebhookSignature(payload, signature, secret) {
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(JSON.stringify(payload));
+  const expectedSignature = `sha256=${hmac.digest('hex')}`;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+const app = express();
+app.use(express.json());
+
+app.post('/webhooks/anycrawl', (req, res) => {
+  const signature = req.headers['x-anycrawl-signature'];
+  const secret = process.env.WEBHOOK_SECRET;
+
+  // Verify signature
+  if (!verifyWebhookSignature(req.body, signature, secret)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  // Extract event info
+  const eventType = req.headers['x-webhook-event'];
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  console.log(`Received event: ${eventType}`);
+  console.log(`Delivery ID: ${deliveryId}`);
+  console.log('Payload:', req.body);
+
+  // Respond quickly (< 5 seconds recommended)
+  res.status(200).json({ received: true });
+
+  // Process asynchronously
+  processWebhookAsync(eventType, req.body).catch(console.error);
+});
+
+app.listen(3000);
+```
+
+#### Python / Flask
+
+```python
+import hmac
+import hashlib
+import json
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+WEBHOOK_SECRET = 'your-webhook-secret-here'
+
+def verify_webhook_signature(payload, signature, secret):
+    expected_signature = 'sha256=' + hmac.new(
+        secret.encode('utf-8'),
+        json.dumps(payload).encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(signature, expected_signature)
+
+@app.route('/webhooks/anycrawl', methods=['POST'])
+def webhook_handler():
+    signature = request.headers.get('X-AnyCrawl-Signature')
+    payload = request.get_json()
+
+    # Verify signature
+    if not verify_webhook_signature(payload, signature, WEBHOOK_SECRET):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    # Extract event info
+    event_type = request.headers.get('X-Webhook-Event')
+    delivery_id = request.headers.get('X-Webhook-Delivery-Id')
+
+    print(f'Received event: {event_type}')
+    print(f'Delivery ID: {delivery_id}')
+    print(f'Payload: {payload}')
+
+    # Respond quickly
+    return jsonify({'received': True}), 200
+
+if __name__ == '__main__':
+    app.run(port=3000)
+```
+
+#### Go
+
+```go
+package main
+
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "os"
+)
+
+func verifyWebhookSignature(payload []byte, signature, secret string) bool {
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(payload)
+    expectedSignature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    signature := r.Header.Get("X-AnyCrawl-Signature")
+    eventType := r.Header.Get("X-Webhook-Event")
+    secret := os.Getenv("WEBHOOK_SECRET")
+
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "Error reading body", http.StatusBadRequest)
+        return
+    }
+
+    if !verifyWebhookSignature(body, signature, secret) {
+        http.Error(w, "Invalid signature", http.StatusUnauthorized)
+        return
+    }
+
+    var payload map[string]interface{}
+    if err := json.Unmarshal(body, &payload); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+
+    fmt.Printf("Received event: %s\n", eventType)
+    fmt.Printf("Payload: %+v\n", payload)
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]bool{"received": true})
+}
+
+func main() {
+    http.HandleFunc("/webhooks/anycrawl", webhookHandler)
+    http.ListenAndServe(":3000", nil)
+}
+```
+
+## 管理 Webhooks
+
+### 列出所有 Webhooks
+
+```bash tab="cURL"
+curl -X GET "https://api.anycrawl.dev/v1/webhooks" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/webhooks", {
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+
+const data = await response.json();
+console.log("Webhooks:", data.data);
+```
+
+### 响应
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "uuid": "webhook-uuid-1",
+      "name": "Production Notifications",
+      "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+      "webhook_secret": "***hidden***",
+      "event_types": ["scrape.completed", "scrape.failed"],
+      "scope": "all",
+      "is_active": true,
+      "consecutive_failures": 0,
+      "total_deliveries": 145,
+      "successful_deliveries": 142,
+      "failed_deliveries": 3,
+      "last_success_at": "2026-01-27T10:00:00.000Z",
+      "last_failure_at": "2026-01-26T15:30:00.000Z",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+<Callout type="info">
+出于安全考虑，`webhook_secret` 在列表和详情视图中始终处于隐藏状态。
+</Callout>
+
+### 更新 Webhook
+
+```bash tab="cURL"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_types": ["scrape.completed", "scrape.failed", "crawl.completed"]
+  }'
+```
+
+<Callout type="info">
+您无法更新 Webhook 密钥。如需更改密钥，请删除并重新创建 Webhook。
+</Callout>
+
+### 测试 Webhooks
+
+发送测试事件以验证您的 Webhook 配置：
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks/:webhookId/test" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+await fetch(`https://api.anycrawl.dev/v1/webhooks/${webhookId}/test`, {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+```
+
+**测试负载**：
+
+```json
+{
+  "message": "This is a test webhook from AnyCrawl",
+  "timestamp": "2026-01-27T10:00:00.000Z",
+  "webhook_id": "webhook-uuid-1"
+}
+```
+
+### 停用/激活 Webhook
+
+```bash tab="Deactivate"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/deactivate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```bash tab="Activate"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### 删除 Webhook
+
+```bash tab="cURL"
+curl -X DELETE "https://api.anycrawl.dev/v1/webhooks/:webhookId" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+<Callout type="warn">
+删除 Webhook 也会删除其所有投递历史。
+</Callout>
+
+### 重放失败的投递
+
+手动重试失败的 Webhook 投递：
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks/:webhookId/deliveries/:deliveryId/replay" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+await fetch(`https://api.anycrawl.dev/v1/webhooks/${webhookId}/deliveries/${deliveryId}/replay`, {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+```
+
+**响应**：
+
+```json
+{
+  "success": true,
+  "message": "Delivery replayed successfully",
+  "data": {
+    "delivery_id": "delivery-uuid-1",
+    "status": "pending"
+  }
+}
+```
+
+<Callout type="info">
+重放投递会使用相同的负载创建新的投递尝试。这对于在修复端点问题后重试失败的投递非常有用。
+</Callout>
+
+## 投递历史
+
+### 查看投递记录
+
+```bash tab="cURL"
+curl -X GET "https://api.anycrawl.dev/v1/webhooks/:webhookId/deliveries?limit=20" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### 查询参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|-----------|------|---------|-------------|
+| `limit` | number | `100` | 返回的投递记录数量 |
+| `offset` | number | `0` | 跳过的投递记录数量 |
+| `status` | string | - | 按状态过滤：`delivered`、`failed`、`retrying` |
+| `from` | string | - | 开始日期（ISO 8601） |
+| `to` | string | - | 结束日期（ISO 8601） |
+
+### 响应
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "uuid": "delivery-uuid-1",
+      "webhookSubscriptionUuid": "webhook-uuid-1",
+      "eventType": "scrape.completed",
+      "status": "delivered",
+      "attempt_number": 1,
+      "request_url": "https://your-domain.com/webhooks/anycrawl",
+      "request_method": "POST",
+      "response_status": 200,
+      "response_duration_ms": 125,
+      "created_at": "2026-01-27T10:00:00.000Z",
+      "delivered_at": "2026-01-27T10:00:00.125Z"
+    },
+    {
+      "uuid": "delivery-uuid-2",
+      "status": "failed",
+      "attempt_number": 3,
+      "error_message": "Connection timeout",
+      "error_code": "ETIMEDOUT",
+      "created_at": "2026-01-27T09:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "limit": 20,
+    "offset": 0,
+    "filters": {
+      "status": null,
+      "from": null,
+      "to": null
+    }
+  }
+}
+```
+
+## 重试机制
+
+### 何时触发重试
+
+在以下情况下会重试 Webhook：
+- HTTP 状态码不是 2xx
+- 连接超时
+- 网络错误
+
+### 重试计划
+
+使用默认设置（`max_retries: 3`、`retry_backoff_multiplier: 2`）：
+
+| 尝试次数 | 延迟 | 首次之后的时间 |
+|---------|-------|--------------------|
+| 第 1 次重试 | 1 分钟 | 1 分钟 |
+| 第 2 次重试 | 2 分钟 | 3 分钟 |
+| 第 3 次重试 | 4 分钟 | 7 分钟 |
+
+延迟公式为：`backoff_multiplier ^ (attempt - 1) × 1 分钟`
+
+### 自动停用
+
+Webhook 在**连续 10 次失败**后会自动停用，以防止过多重试。
+
+**重新启用**：
+
+```bash
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+## 范围过滤
+
+### 所有事件（scope: "all"）
+
+接收所有已订阅类型的事件通知：
+
+```json
+{
+  "scope": "all",
+  "event_types": ["scrape.completed", "crawl.completed"]
+}
+```
+
+### 特定任务（scope: "specific"）
+
+仅接收特定定时任务的通知：
+
+```json
+{
+  "scope": "specific",
+  "specific_task_ids": ["task-uuid-1", "task-uuid-2"],
+  "event_types": ["task.executed", "task.failed"]
+}
+```
+
+## 私有 IP 保护
+
+### 默认行为
+
+AnyCrawl 阻止向私有 IP 地址投递 Webhook：
+
+- `10.0.0.0/8`
+- `172.16.0.0/12`
+- `192.168.0.0/16`
+- `169.254.0.0/16`（链路本地）
+- `127.0.0.1` / `localhost`
+- IPv6 私有地址
+
+### 允许本地 Webhooks（仅用于测试）
+
+对于本地开发，请设置：
+
+```bash
+ALLOW_LOCAL_WEBHOOKS=true
+```
+
+<Callout type="warn">
+切勿在生产环境中启用此选项。它会带来严重的安全风险。
+</Callout>
+
+## 最佳实践
+
+### 1. 快速响应
+
+在 **5 秒**内返回 2xx 状态码：
+
+```javascript
+app.post('/webhook', async (req, res) => {
+  // Verify signature
+  if (!verifySignature(req.body, req.headers['x-anycrawl-signature'])) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Quick acknowledgment
+  res.status(200).json({ received: true });
+
+  // Process asynchronously
+  queue.add('process-webhook', req.body);
+});
+```
+
+### 2. 实现幂等性
+
+使用 `X-Webhook-Delivery-Id` 防止重复处理：
+
+```javascript
+const processedDeliveries = new Set();
+
+app.post('/webhook', (req, res) => {
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  if (processedDeliveries.has(deliveryId)) {
+    return res.status(200).json({ received: true, duplicate: true });
+  }
+
+  processedDeliveries.add(deliveryId);
+
+  // Process event...
+
+  res.status(200).json({ received: true });
+});
+```
+
+### 3. 返回适当的状态码
+
+| 状态码 | 说明 | AnyCrawl 行为 |
+|-------------|-------------|-------------------|
+| 200-299 | 成功 | 不重试 |
+| 400-499 | 客户端错误 | 不重试（记录为失败） |
+| 500-599 | 服务器错误 | 指数退避重试 |
+| 超时 | 网络超时 | 指数退避重试 |
+
+### 4. 记录所有 Webhook 活动
+
+```javascript
+app.post('/webhook', (req, res) => {
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+  const eventType = req.headers['x-webhook-event'];
+
+  logger.info('Webhook received', {
+    deliveryId,
+    eventType,
+    timestamp: req.headers['x-webhook-timestamp']
+  });
+
+  try {
+    processWebhook(req.body, eventType);
+    logger.info('Webhook processed', { deliveryId });
+    res.status(200).json({ received: true });
+  } catch (error) {
+    logger.error('Webhook failed', {
+      deliveryId,
+      error: error.message
+    });
+    res.status(500).json({ error: 'Processing failed' });
+  }
+});
+```
+
+### 5. 安全检查清单
+
+- ✅ 始终验证签名
+- ✅ 在生产环境使用 HTTPS
+- ✅ 不要在 URL 中暴露密钥
+- ✅ 实现速率限制
+- ✅ 监控异常情况
+- ✅ 验证负载结构
+
+## 常见用例
+
+### Slack 通知
+
+将抓取结果发送到 Slack：
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const { job_id, status, url } = req.body;
+
+  await fetch(process.env.SLACK_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: `Job ${status}: ${url}\nJob ID: ${job_id}`
+    })
+  });
+
+  res.status(200).json({ received: true });
+});
+```
+
+### 邮件告警
+
+在失败时发送邮件通知：
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const eventType = req.headers['x-webhook-event'];
+
+  if (eventType.endsWith('.failed')) {
+    await sendEmail({
+      to: 'admin@example.com',
+      subject: 'AnyCrawl Job Failed',
+      body: JSON.stringify(req.body, null, 2)
+    });
+  }
+
+  res.status(200).json({ received: true });
+});
+```
+
+### 数据库日志
+
+将 Webhook 事件存储到数据库：
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const eventType = req.headers['x-webhook-event'];
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  await db.webhookEvents.create({
+    deliveryId,
+    eventType,
+    payload: req.body,
+    receivedAt: new Date()
+  });
+
+  res.status(200).json({ received: true });
+});
+```
+
+## 故障排除
+
+### Webhook 未接收到事件
+
+**检查**：
+- Webhook 是否已激活？（`is_active: true`）
+- 事件类型是否正确配置？
+- Webhook URL 是否可从互联网访问？
+- 是否被私有 IP 保护阻止？
+- 检查范围设置（all 或 specific）
+
+### 签名验证失败
+
+**常见问题**：
+- 使用了错误的密钥（检查 Webhook 创建响应）
+- 在哈希之前未对负载进行字符串化
+- JSON 中包含额外的空白或格式化
+- 使用了错误的 HMAC 算法（必须是 SHA-256）
+
+### 高失败率
+
+**解决方案**：
+- 检查您的端点是否在 5 秒内响应
+- 返回正确的 HTTP 状态码
+- 查看投递历史中的错误信息
+- 使用 ngrok 或类似工具在本地测试
+
+### Webhook 被自动停用
+
+**原因**：连续 10 次失败
+
+**解决方案**：
+1. 修复根本问题（端点、签名验证等）
+2. 使用测试端点进行测试
+3. 重新激活 Webhook：
+
+```bash
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+## 调试工具
+
+### 测试工具
+
+- [webhook.site](https://webhook.site) - 检查 Webhook 请求
+- [requestbin.com](https://requestbin.com) - 请求检查
+- [ngrok](https://ngrok.com) - 用于测试的本地隧道
+
+### 本地开发
+
+使用 ngrok 暴露本地服务器：
+
+```bash
+ngrok http 3000
+```
+
+然后使用 ngrok URL 作为您的 Webhook URL：
+
+```
+https://abc123.ngrok.io/webhooks/anycrawl
+```
+
+## 限制
+
+| 项目 | 限制 |
+|------|-------|
+| Webhook 名称长度 | 1-255 个字符 |
+| Webhook URL | 建议使用 HTTPS（生产环境） |
+| 超时 | 1-60 秒 |
+| 最大重试次数 | 0-10 |
+| 负载大小 | 最大 1MB |
+| 自定义请求头 | 最多 20 个 |
+| 每个 Webhook 的事件类型 | 无限制 |
+
+## 相关文档
+
+- [定时任务](./scheduled-tasks) - 自动化周期性作业
+- [Scrape API](./scrape) - 抓取端点
+- [Crawl API](./crawl) - 爬取端点

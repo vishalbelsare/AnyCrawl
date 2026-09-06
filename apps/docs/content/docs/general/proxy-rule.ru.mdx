@@ -1,0 +1,282 @@
+---
+title: Настройка прокси
+description: Маршрутизация прокси по URL для AnyCrawl
+icon: Waypoints
+---
+
+# Настройка прокси
+
+AnyCrawl поддерживает гибкую маршрутизацию прокси по шаблонам URL. Можно задать разные прокси для разных сайтов или конечных точек API.
+
+## Режимы прокси
+
+AnyCrawl поддерживает четыре режима прокси, задаваемых в запросах API:
+
+| Mode | Описание |
+|------|----------|
+| `auto` | Автоматический выбор между базовым и stealth-прокси. Начинает с базового, если доступен; при недоступности или повторах/сбоях переходит или откатывается к stealth. |
+| `base` | Прокси из `ANYCRAWL_PROXY_URL` (по умолчанию) |
+| `stealth` | Прокси из `ANYCRAWL_PROXY_STEALTH_URL` (обычно резидентский или премиум) |
+| Custom URL | Полная строка URL прокси (например, `http://user:pass@proxy:8080`); в ответах возвращается как `custom` |
+
+### Пример использования
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "auto"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "stealth"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://custom-proxy:8080"
+}
+```
+
+## Поведение таймаута (Scrape API)
+
+- Параметр `timeout` на уровне запроса всегда имеет приоритет.
+- Если `proxy` — `stealth` или `auto`, а `timeout` не задан, AnyCrawl использует `ANYCRAWL_STEALTH_TIMEOUT_MS` (по умолчанию `120000`).
+- Для режима `base` или пользовательского URL прокси без явного `timeout` AnyCrawl использует `60000`.
+
+## Способы настройки
+
+### Способ 1: простая настройка прокси (`ANYCRAWL_PROXY_URL`)
+
+Если для всех запросов нужен один и тот же прокси, задайте переменную окружения `ANYCRAWL_PROXY_URL`:
+
+```bash
+# Single proxy
+export ANYCRAWL_PROXY_URL=http://username:password@proxy.example.com:8080
+
+# Multiple proxies (tiered mode)
+export ANYCRAWL_PROXY_URL=http://proxy1:8080,http://proxy2:8080,http://proxy3:8080
+```
+
+При нескольких прокси (через запятую) AnyCrawl использует стратегию **многоуровневого прокси**:
+
+- Все запросы начинаются с первого прокси (уровень 0)
+- Если прокси падает для домена, AnyCrawl автоматически переключается на следующий уровень для этого домена
+- Так достигается отказоустойчивость и оптимальное использование прокси
+
+Это простейший вариант, если не нужна маршрутизация по URL.
+
+### Способ 2: расширенный файл конфигурации (`ANYCRAWL_PROXY_CONFIG`)
+
+Для маршрутизации по URL создайте JSON-файл (например, `proxy-config.json`) и укажите путь в `ANYCRAWL_PROXY_CONFIG`:
+
+```bash
+ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+**Примечание.** Если заданы и `ANYCRAWL_PROXY_URL`, и `ANYCRAWL_PROXY_CONFIG`, приоритет у правил из файла, а `ANYCRAWL_PROXY_URL` используется как запасной вариант для URL, не попавших под правила.
+
+## Типы правил
+
+AnyCrawl поддерживает три типа правил прокси в порядке приоритета:
+
+### 1. Правила URL (наивысший приоритет)
+
+Точное совпадение URL. Используйте, когда для конкретной конечной точки нужен отдельный прокси.
+
+```json
+{
+    "url": "https://api.example.com/v1/data",
+    "proxy": "http://username:password@proxy1.example.com:8080"
+}
+```
+
+### 2. Правила по шаблону (средний приоритет)
+
+Сопоставление полного URL с подстановочными знаками. Удобно для путей или протоколов.
+
+```json
+{
+    "pattern": "https://*.github.com/api/*",
+    "proxy": "http://username:password@proxy2.example.com:8080"
+}
+```
+
+### 3. Правила по домену (низший приоритет)
+
+Сопоставление только по домену. Весь трафик на домен идёт через указанный прокси.
+
+```json
+{
+    "domain": "*.gov.au",
+    "proxy": "http://username:password@proxy3.example.com:8080"
+}
+```
+
+## Шаблоны с подстановочными знаками
+
+- `*` — любое количество символов
+- `?` — ровно один символ
+- Регистр в шаблонах не учитывается
+
+### Примеры
+
+- `*.example.com` — `api.example.com`, `www.example.com`, `test.example.com`
+- `api-?.example.com` — `api-1.example.com`, `api-2.example.com`, но не `api-10.example.com`
+- `https://*.example.com/api/*` — любой HTTPS на поддоменах `example.com` с путём `/api/`
+
+## Полный пример конфигурации
+
+```json
+{
+    "rules": [
+        {
+            "url": "https://api.example.com/v1/users",
+            "proxy": "http://premium-proxy.example.com:8080"
+        },
+        {
+            "pattern": "https://api.github.com/*",
+            "proxy": "http://github-proxy.example.com:8080"
+        },
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-proxy.example.com:8080"
+        }
+    ]
+}
+```
+
+## Форматы URL прокси
+
+Поддерживаются такие форматы:
+
+- HTTP: `http://username:password@proxy.example.com:8080`
+- HTTPS: `https://username:password@proxy.example.com:8443`
+
+## Отладка
+
+В логах могут появляться сообщения вида:
+
+```
+Using proxy from request userData: http://custom-proxy:8080
+Found proxy for URL https://example.com: http://proxy.example.com:8080 By matching a rule.
+Proxy matched by domain pattern: *.gov.au → http://proxy.example.com:8080
+Using tiered proxy: http://default-proxy:8080
+```
+
+## Пример приоритета
+
+Для URL `https://api.github.com/repos/owner/repo` проверка идёт в таком порядке:
+
+1. **Совпадение по URL**: `"url": "https://api.github.com/repos/owner/repo"`
+2. **По шаблону**: `"pattern": "https://api.github.com/*"`
+3. **По домену**: `"domain": "*.github.com"`
+
+Срабатывает первое подошедшее правило.
+
+## Рекомендации
+
+1. **Правила домена** — для широких сценариев (например, все запросы к гос. сайтам страны)
+2. **Правила по шаблону** — когда нужны конкретные пути или протоколы
+3. **Правила URL** — для точных конечных точек с особыми требованиями
+4. **Порядок в файле не важен** — приоритет задаётся типом правила
+5. **Проверяйте шаблоны** по логам отладки, что совпадения ожидаемые
+
+## Многоуровневая система прокси
+
+При нескольких прокси в `ANYCRAWL_PROXY_URL` используется многоуровневая схема:
+
+### Как это работает
+
+1. **Начальное состояние**: для всех доменов сначала используется первый прокси (уровень 0)
+2. **Обнаружение ошибок**: при сбое прокси для домена этот домен переводится на следующий уровень
+3. **По доменам**: уровень хранится отдельно для каждого домена
+
+### Пример сценария
+
+```bash
+export ANYCRAWL_PROXY_URL=http://fast-proxy:8080,http://stable-proxy:8080,http://backup-proxy:8080
+```
+
+- Первые запросы к `example.com` → `fast-proxy:8080` (уровень 0)
+- Если `fast-proxy` падает для `example.com` → переключение на `stable-proxy:8080` (уровень 1)
+- При этом `github.com` может по-прежнему использовать `fast-proxy:8080`, если он работает
+- Периодически для `example.com` снова пробуется `fast-proxy`, чтобы проверить восстановление
+
+### Преимущества
+
+- **Автоматический failover**: без ручного вмешательства при сбоях прокси
+- **Оптимизация по доменам**: для каждого домена выбирается лучший доступный прокси
+- **Эффективность ресурсов**: упавшие прокси не отбрасываются навсегда
+- **Самовосстановление**: возврат к оптимальным прокси при их восстановлении
+
+## Полный пример: оба способа
+
+```bash
+# Set a default proxy for general use
+export ANYCRAWL_PROXY_URL=http://default-proxy:8080
+
+# Set up URL-based routing for specific sites
+export ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+Файл `proxy-config.json`:
+
+```json
+{
+    "rules": [
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-residential-proxy:8080"
+        },
+        {
+            "pattern": "https://api.*.com/*",
+            "proxy": "http://api-optimized-proxy:3128"
+        }
+    ]
+}
+```
+
+Результат:
+
+- `https://www.homeaffairs.gov.au/` → `au-residential-proxy:8080` (совпадение по домену)
+- `https://api.github.com/repos` → `api-optimized-proxy:3128` (совпадение по шаблону)
+- `https://example.com/` → `default-proxy:8080` (fallback на `ANYCRAWL_PROXY_URL`)
+
+## Сводка по переменным окружения
+
+| Variable                      | Назначение                                         | Example                                                |
+| ----------------------------- | -------------------------------------------------- | ------------------------------------------------------ |
+| `ANYCRAWL_PROXY_URL`          | Базовая настройка прокси (один или несколько)      | `http://proxy:8080` or `http://p1:8080,http://p2:8080` |
+| `ANYCRAWL_PROXY_STEALTH_URL`  | Stealth/премиум-прокси (резидентские)              | `http://residential-proxy:8080`                        |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | Доп. списание кредитов при stealth-прокси       | `5`                                                  |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS` | Таймаут по умолчанию для `proxy=stealth` и `proxy=auto`, если в запросе нет `timeout` | `120000` |
+| `ANYCRAWL_PROXY_CONFIG`       | Путь к JSON-файлу маршрутизации по URL            | `/path/to/proxy-config.json`                           |
+
+### Порядок приоритета
+
+1. **Наивысший**: режим прокси или пользовательский URL в опциях запроса
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "playwright",
+        "proxy": "stealth"
+    }
+    ```
+    Или с пользовательским URL:
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "proxy": "http://custom-proxy:8080"
+    }
+    ```
+2. **Высокий**: правила по URL из `ANYCRAWL_PROXY_CONFIG`
+3. **Низкий**: многоуровневые прокси из `ANYCRAWL_PROXY_URL` (fallback)

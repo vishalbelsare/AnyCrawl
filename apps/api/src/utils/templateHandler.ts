@@ -27,7 +27,7 @@ export class TemplateHandler {
      * @param currentUserId - Current user ID from API key
      * @returns true if user has permission, false otherwise
      */
-    private static hasTemplateAccess(template: any, currentUserId?: string): boolean {
+    public static hasTemplateAccess(template: any, currentUserId?: string): boolean {
         // If current request API key has no associated user, any template can be used
         // for self-hosted
         if (!currentUserId) {
@@ -722,6 +722,43 @@ export function validateVariables(
                     if (!isAllowed) {
                         errors.push(`Variable '${variableName}' must be one of [${allowed.map(v => JSON.stringify(v)).join(", ")}], got ${JSON.stringify(value)}`);
                     }
+                    break;
+                }
+
+                case "array": {
+                    if (!Array.isArray(value)) {
+                        errors.push(`Variable '${variableName}' must be an array, got ${actualType}`);
+                        break;
+                    }
+                    const defAny = definition as any;
+                    if (typeof defAny.minItems === "number" && value.length < defAny.minItems) {
+                        errors.push(`Variable '${variableName}' must have at least ${defAny.minItems} item(s)`);
+                    }
+                    if (typeof defAny.maxItems === "number" && value.length > defAny.maxItems) {
+                        errors.push(`Variable '${variableName}' must have at most ${defAny.maxItems} item(s)`);
+                    }
+                    const itemType: string | undefined = defAny.items?.type;
+                    const enumAllowed: Array<string | number | boolean> | undefined =
+                        defAny.items?.values ?? defAny.items?.enum ??
+                        (Array.isArray(defAny.items?.options) ? defAny.items.options.map((o: any) => o?.value) : undefined);
+                    value.forEach((el: any, i: number) => {
+                        const et = typeof el;
+                        if (itemType === "number") {
+                            if (et !== "number" || !Number.isFinite(el)) errors.push(`Variable '${variableName}[${i}]' must be a finite number`);
+                        } else if (itemType === "boolean") {
+                            if (et !== "boolean") errors.push(`Variable '${variableName}[${i}]' must be a boolean`);
+                        } else if (itemType === "url") {
+                            if (et !== "string") { errors.push(`Variable '${variableName}[${i}]' must be a URL string`); }
+                            else { try { new URL(el); } catch { errors.push(`Variable '${variableName}[${i}]' must be a valid URL`); } }
+                        } else if (itemType === "enum" || (Array.isArray(enumAllowed) && enumAllowed.length > 0)) {
+                            if (Array.isArray(enumAllowed) && enumAllowed.length > 0 && !enumAllowed.includes(el)) {
+                                errors.push(`Variable '${variableName}[${i}]' must be one of [${enumAllowed.map(v => JSON.stringify(v)).join(", ")}]`);
+                            }
+                        } else if (et !== "string") {
+                            // default element type is string
+                            errors.push(`Variable '${variableName}[${i}]' must be a string`);
+                        }
+                    });
                     break;
                 }
 

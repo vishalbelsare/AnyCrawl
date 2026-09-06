@@ -2,7 +2,6 @@ import axios, { AxiosInstance, AxiosResponse, AxiosError } from 'axios';
 import { Logger } from './logger.js';
 const log = new Logger();
 import {
-    ApiResponse,
     CrawlJobResponse,
     CrawlStatusResponse,
     CrawlResultsResponse,
@@ -12,13 +11,58 @@ import {
     CrawlRequest,
     SearchRequest,
     CrawlAndWaitResult,
+    BatchScrapeRequest,
+    BatchScrapeJobResponse,
+    BatchScrapeStatusResponse,
+    BatchScrapeResultsResponse,
+    BatchScrapeAndWaitResult,
     MapRequest,
     MapResult,
+    CreateScheduledTaskRequest,
+    UpdateScheduledTaskRequest,
+    ScheduledTask,
+    ScheduledTaskCreateResponse,
+    ScheduledTaskExecutionsResponse,
+    CreateWebhookRequest,
+    UpdateWebhookRequest,
+    Webhook,
+    WebhookCreateResponse,
+    WebhookDeliveriesResponse,
+    WebhookEventsResponse,
+    CreateMonitorRequest,
+    UpdateMonitorRequest,
+    Monitor,
+    MonitorCreateResponse,
+    MonitorSnapshot,
+    MonitorSnapshotDetail, MonitorSnapshotSummary, MonitorPage, MonitorPageParams, MonitorChangeFeedItem, MonitorCheck, MonitorNotification,
+    MonitorChange,
+    TemplateExecuteRequest,
+    TemplateExecuteResult,
+    TemplateSpec,
 } from './types.js';
 import { scrape as scrapeMethod } from './methods/scrape.js';
-import { createCrawl as createCrawlMethod } from './methods/crawl.js';
+import { unwrapApiResponse } from './utils/index.js';
+import {
+    createCrawl as createCrawlMethod,
+    getCrawlStatus as getCrawlStatusMethod,
+    getCrawlResults as getCrawlResultsMethod,
+    crawlAndWait as crawlAndWaitMethod,
+} from './methods/crawl.js';
+import {
+    createBatchScrape as createBatchScrapeMethod,
+    getBatchScrapeStatus as getBatchScrapeStatusMethod,
+    getBatchScrapeResults as getBatchScrapeResultsMethod,
+    batchScrapeAndWait as batchScrapeAndWaitMethod,
+} from './methods/batch-scrape.js';
 import { search as searchMethod } from './methods/search.js';
 import { map as mapMethod } from './methods/map.js';
+import * as scheduledTasksMethods from './methods/scheduled-tasks.js';
+import * as webhooksMethods from './methods/webhooks.js';
+import * as monitorsMethods from './methods/monitors.js';
+import {
+    executeTemplate as executeTemplateMethod,
+    getTemplateSpec as getTemplateSpecMethod,
+} from './methods/template.js';
 
 /**
  * AnyCrawl JavaScript/TypeScript client.
@@ -105,12 +149,8 @@ export class AnyCrawlClient {
      * @returns A small object like { status: 'ok' }
      */
     async healthCheck(): Promise<{ status: string }> {
-        try {
-            const response: AxiosResponse<{ status: string }> = await this.client.get('/health');
-            return response.data;
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
+        const response: AxiosResponse<{ status: string }> = await this.client.get('/health');
+        return response.data;
     }
 
     /**
@@ -120,11 +160,7 @@ export class AnyCrawlClient {
      * @returns A successful or failed scrape result
      */
     async scrape(input: ScrapeRequest): Promise<ScrapeResult> {
-        try {
-            return await scrapeMethod(this.client, input);
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
+        return await scrapeMethod(this.client, input);
     }
 
     /**
@@ -134,11 +170,7 @@ export class AnyCrawlClient {
      * @returns Crawl job metadata (job_id, status, message)
      */
     async createCrawl(input: CrawlRequest): Promise<CrawlJobResponse> {
-        try {
-            return await createCrawlMethod(this.client, input);
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
+        return await createCrawlMethod(this.client, input);
     }
 
     /**
@@ -148,14 +180,7 @@ export class AnyCrawlClient {
      * @returns Status information (pending/completed/failed/cancelled, progress, credits)
      */
     async getCrawlStatus(jobId: string): Promise<CrawlStatusResponse> {
-        try {
-            const response: AxiosResponse<any> = await this.client.get(`/v1/crawl/${jobId}/status`);
-            const payload: any = response.data;
-            if (!payload.success) throw new Error(payload.error || 'Failed to get crawl status');
-            return payload.data as CrawlStatusResponse;
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
+        return await getCrawlStatusMethod(this.client, jobId);
     }
 
     /**
@@ -166,12 +191,7 @@ export class AnyCrawlClient {
      * @returns A page of results with optional next token info
      */
     async getCrawlResults(jobId: string, skip: number = 0): Promise<CrawlResultsResponse> {
-        try {
-            const response: AxiosResponse<CrawlResultsResponse> = await this.client.get(`/v1/crawl/${jobId}?skip=${skip}`);
-            return response.data;
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
+        return await getCrawlResultsMethod(this.client, jobId, skip);
     }
 
     /**
@@ -181,15 +201,55 @@ export class AnyCrawlClient {
      * @returns Confirmation object with job_id and status
      */
     async cancelCrawl(jobId: string): Promise<{ job_id: string; status: string }> {
-        try {
-            const response: AxiosResponse<ApiResponse<{ job_id: string; status: string }>> = await this.client.delete(`/v1/crawl/${jobId}`);
-            if (!response.data.success) {
-                throw new Error((response.data as any).error || 'Failed to cancel crawl');
-            }
-            return (response.data as any).data;
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
+        const response: AxiosResponse<unknown> = await this.client.delete(`/v1/crawl/${jobId}`);
+        return unwrapApiResponse<{ job_id: string; status: string }>(response.data, 'Failed to cancel crawl');
+    }
+
+    /**
+     * Create a batch scrape job (async). Options are shared across all URLs.
+     *
+     * @param input Batch scrape parameters (urls + shared scrape options)
+     * @returns Batch scrape job metadata (job_id, status, total, invalid_urls)
+     */
+    async createBatchScrape(input: BatchScrapeRequest): Promise<BatchScrapeJobResponse> {
+        return await createBatchScrapeMethod(this.client, input);
+    }
+
+    /**
+     * Get the current status of a batch scrape job.
+     */
+    async getBatchScrapeStatus(jobId: string): Promise<BatchScrapeStatusResponse> {
+        return await getBatchScrapeStatusMethod(this.client, jobId);
+    }
+
+    /**
+     * Get a page of batch scrape results.
+     */
+    async getBatchScrapeResults(jobId: string, skip: number = 0): Promise<BatchScrapeResultsResponse> {
+        return await getBatchScrapeResultsMethod(this.client, jobId, skip);
+    }
+
+    /**
+     * Cancel a running batch scrape.
+     */
+    async cancelBatchScrape(jobId: string): Promise<{ job_id: string; status: string }> {
+        const response: AxiosResponse<unknown> = await this.client.delete(`/v1/batch/scrape/${jobId}`);
+        return unwrapApiResponse<{ job_id: string; status: string }>(response.data, 'Failed to cancel batch scrape');
+    }
+
+    /**
+     * Create a batch scrape and block until it finishes, then return aggregated results.
+     *
+     * @param input Batch scrape parameters (urls + shared scrape options)
+     * @param pollIntervalSeconds Poll interval in seconds (default: 2s)
+     * @param timeoutMs Optional timeout in milliseconds (no timeout if undefined)
+     */
+    async batchScrape(
+        input: BatchScrapeRequest,
+        pollIntervalSeconds: number = 2,
+        timeoutMs?: number
+    ): Promise<BatchScrapeAndWaitResult> {
+        return await batchScrapeAndWaitMethod(this.client, input, pollIntervalSeconds, timeoutMs);
     }
 
     /**
@@ -199,11 +259,7 @@ export class AnyCrawlClient {
      * @returns A list of search results (optionally enriched with scrape fields)
      */
     async search(input: SearchRequest): Promise<SearchResult[]> {
-        try {
-            return await searchMethod(this.client, input);
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
+        return await searchMethod(this.client, input);
     }
 
     /**
@@ -213,26 +269,194 @@ export class AnyCrawlClient {
      * @returns Map result with list of discovered URLs
      */
     async map(input: MapRequest): Promise<MapResult> {
-        try {
-            return await mapMethod(this.client, input);
-        } catch (error: any) {
-            return this.normalizeAxiosError(error);
-        }
-    }
-
-    /** Delay helper used by polling logic. */
-    private async sleep(seconds: number): Promise<void> {
-        await new Promise((resolve) => setTimeout(resolve, Math.max(0, seconds) * 1000));
+        return await mapMethod(this.client, input);
     }
 
     /**
-     * Start a crawl and wait until it reaches a terminal state, then fetch all results.
+     * Access a template's dedicated endpoint by its vanity slug or templateId.
      *
-     * @param input Crawl request options
-     * @param pollIntervalSeconds Polling interval in seconds (default: 2)
-     * @param timeoutMs Optional timeout in milliseconds
-     * @returns Aggregated crawl results and metadata
+     * Returns a small handle bound to `ref` with two methods:
+     * - `execute(input?)` — POST /v1/template/{ref}/execute. Body accepts only
+     *   `url`/`query`/`variables`. Result depends on the template type: scrape ->
+     *   ScrapeResult, search -> SearchResult[], crawl -> CrawlJobResponse (async).
+     * - `spec()` — GET /v1/template/{ref}. Returns the redacted call-spec (free).
+     *
+     * @param ref Vanity slug (preferred) or templateId
+     *
+     * @example
+     * const t = client.template("content-extractor");
+     * const spec = await t.spec();
+     * const result = await t.execute({ url: "https://example.com" });
      */
+    template(ref: string): {
+        execute: (input?: TemplateExecuteRequest) => Promise<TemplateExecuteResult>;
+        spec: () => Promise<TemplateSpec>;
+    } {
+        return {
+            execute: (input: TemplateExecuteRequest = {}) =>
+                executeTemplateMethod(this.client, ref, input),
+            spec: () => getTemplateSpecMethod(this.client, ref),
+        };
+    }
+
+    // Scheduled Tasks
+    async createScheduledTask(input: CreateScheduledTaskRequest): Promise<ScheduledTaskCreateResponse> {
+        return await scheduledTasksMethods.createScheduledTask(this.client, input);
+    }
+
+    async listScheduledTasks(): Promise<ScheduledTask[]> {
+        return await scheduledTasksMethods.listScheduledTasks(this.client);
+    }
+
+    async getScheduledTask(taskId: string): Promise<ScheduledTask> {
+        return await scheduledTasksMethods.getScheduledTask(this.client, taskId);
+    }
+
+    async updateScheduledTask(taskId: string, input: UpdateScheduledTaskRequest): Promise<ScheduledTask> {
+        return await scheduledTasksMethods.updateScheduledTask(this.client, taskId, input);
+    }
+
+    async pauseScheduledTask(taskId: string, reason?: string): Promise<void> {
+        return await scheduledTasksMethods.pauseScheduledTask(this.client, taskId, reason);
+    }
+
+    async resumeScheduledTask(taskId: string): Promise<void> {
+        return await scheduledTasksMethods.resumeScheduledTask(this.client, taskId);
+    }
+
+    async deleteScheduledTask(taskId: string): Promise<void> {
+        return await scheduledTasksMethods.deleteScheduledTask(this.client, taskId);
+    }
+
+    async getScheduledTaskExecutions(
+        taskId: string,
+        params?: { limit?: number; offset?: number }
+    ): Promise<ScheduledTaskExecutionsResponse> {
+        return await scheduledTasksMethods.getScheduledTaskExecutions(this.client, taskId, params);
+    }
+
+    async cancelScheduledTaskExecution(taskId: string, executionId: string): Promise<void> {
+        return await scheduledTasksMethods.cancelScheduledTaskExecution(this.client, taskId, executionId);
+    }
+
+    // Webhooks
+    async createWebhook(input: CreateWebhookRequest): Promise<WebhookCreateResponse> {
+        return await webhooksMethods.createWebhook(this.client, input);
+    }
+
+    async listWebhooks(): Promise<Webhook[]> {
+        return await webhooksMethods.listWebhooks(this.client);
+    }
+
+    async getWebhook(webhookId: string): Promise<Webhook> {
+        return await webhooksMethods.getWebhook(this.client, webhookId);
+    }
+
+    async updateWebhook(webhookId: string, input: UpdateWebhookRequest): Promise<void> {
+        return await webhooksMethods.updateWebhook(this.client, webhookId, input);
+    }
+
+    async deleteWebhook(webhookId: string): Promise<void> {
+        return await webhooksMethods.deleteWebhook(this.client, webhookId);
+    }
+
+    async getWebhookDeliveries(
+        webhookId: string,
+        params?: { limit?: number; offset?: number; status?: string; from?: string; to?: string }
+    ): Promise<WebhookDeliveriesResponse> {
+        return await webhooksMethods.getWebhookDeliveries(this.client, webhookId, params);
+    }
+
+    async testWebhook(webhookId: string): Promise<void> {
+        return await webhooksMethods.testWebhook(this.client, webhookId);
+    }
+
+    async activateWebhook(webhookId: string): Promise<void> {
+        return await webhooksMethods.activateWebhook(this.client, webhookId);
+    }
+
+    async deactivateWebhook(webhookId: string): Promise<void> {
+        return await webhooksMethods.deactivateWebhook(this.client, webhookId);
+    }
+
+    async replayWebhookDelivery(webhookId: string, deliveryId: string): Promise<void> {
+        return await webhooksMethods.replayWebhookDelivery(this.client, webhookId, deliveryId);
+    }
+
+    async getWebhookEvents(): Promise<WebhookEventsResponse> {
+        return await webhooksMethods.getWebhookEvents(this.client);
+    }
+
+    // Monitors
+    async createMonitor(input: CreateMonitorRequest): Promise<MonitorCreateResponse> {
+        return await monitorsMethods.createMonitor(this.client, input);
+    }
+
+    async listMonitors(): Promise<Monitor[]> {
+        return await monitorsMethods.listMonitors(this.client);
+    }
+
+    async getMonitor(monitorId: string): Promise<Monitor> {
+        return await monitorsMethods.getMonitor(this.client, monitorId);
+    }
+
+    async updateMonitor(monitorId: string, input: UpdateMonitorRequest): Promise<Monitor> {
+        return await monitorsMethods.updateMonitor(this.client, monitorId, input);
+    }
+
+    async deleteMonitor(monitorId: string): Promise<void> {
+        return await monitorsMethods.deleteMonitor(this.client, monitorId);
+    }
+
+    async pauseMonitor(monitorId: string): Promise<void> {
+        return await monitorsMethods.pauseMonitor(this.client, monitorId);
+    }
+
+    async resumeMonitor(monitorId: string): Promise<void> {
+        return await monitorsMethods.resumeMonitor(this.client, monitorId);
+    }
+
+    async runMonitor(monitorId: string): Promise<void> {
+        return await monitorsMethods.runMonitor(this.client, monitorId);
+    }
+
+    async getMonitorSnapshots(
+        monitorId: string,
+        params?: MonitorPageParams
+    ): Promise<MonitorSnapshot[]> {
+        return await monitorsMethods.getMonitorSnapshots(this.client, monitorId, params);
+    }
+
+    async getMonitorChanges(
+        monitorId: string,
+        params?: MonitorPageParams
+    ): Promise<MonitorChange[]> {
+        return await monitorsMethods.getMonitorChanges(this.client, monitorId, params);
+    }
+
+    async getMonitorSnapshot(monitorId: string, snapshotId: string): Promise<MonitorSnapshotDetail> {
+        return monitorsMethods.getMonitorSnapshot(this.client, monitorId, snapshotId);
+    }
+    async getMonitorSnapshotsPage(monitorId: string, params?: MonitorPageParams): Promise<MonitorPage<MonitorSnapshotSummary>> {
+        return monitorsMethods.getMonitorSnapshotsPage(this.client, monitorId, params);
+    }
+    async getMonitorChangesPage(monitorId: string, params?: MonitorPageParams & { include_diff_text?: boolean }): Promise<MonitorPage<MonitorChange>> {
+        return monitorsMethods.getMonitorChangesPage(this.client, monitorId, params);
+    }
+    async listMonitorChanges(params?: MonitorPageParams & { change_type?: MonitorChange['change_type'] }): Promise<MonitorPage<MonitorChangeFeedItem>> {
+        return monitorsMethods.listMonitorChanges(this.client, params);
+    }
+    async getMonitorChecks(monitorId: string, params?: { limit?: number }): Promise<MonitorCheck[]> {
+        return monitorsMethods.getMonitorChecks(this.client, monitorId, params);
+    }
+    async getMonitorNotifications(monitorId: string, params?: { limit?: number }): Promise<MonitorNotification[]> {
+        return monitorsMethods.getMonitorNotifications(this.client, monitorId, params);
+    }
+
+    async getMonitorChange(monitorId: string, changeId: string): Promise<MonitorChange> {
+        return await monitorsMethods.getMonitorChange(this.client, monitorId, changeId);
+    }
+
     /**
      * Create a crawl and block until it finishes, then return all aggregated results.
      *
@@ -248,67 +472,12 @@ export class AnyCrawlClient {
         pollIntervalSeconds: number = 2,
         timeoutMs?: number
     ): Promise<CrawlAndWaitResult> {
-        const started = await this.createCrawl(input);
-        const jobId = started.job_id;
-
-        const startedAt = Date.now();
-        // Poll for completion
-        // Terminal states: completed, failed, cancelled
-        // Throw on failed/cancelled, unless caller wants to handle differently
-        // Optional timeout
-        // eslint-disable-next-line no-constant-condition
-        while (true) {
-            const status = await this.getCrawlStatus(jobId);
-            if (status.status === 'completed') break;
-            if (status.status === 'failed') {
-                throw new Error(`Crawl failed (job_id=${jobId})`);
-            }
-            if (status.status === 'cancelled') {
-                // throw new Error(`Crawl cancelled (job_id=${jobId})`);
-                break;
-            }
-
-            if (timeoutMs !== undefined && Date.now() - startedAt > timeoutMs) {
-                throw new Error(`Crawl timed out after ${timeoutMs}ms (job_id=${jobId})`);
-            }
-
-            await this.sleep(pollIntervalSeconds);
-        }
-
-        // Fetch and aggregate all results using pagination via skip
-        const aggregated: any[] = [];
-        let skip = 0;
-        let total = 0;
-        let completed = 0;
-        let creditsUsed = 0;
-        while (true) {
-            const page = await this.getCrawlResults(jobId, skip);
-            // Some backends may omit totals on subsequent pages; update when present
-            if (typeof page.total === 'number') total = page.total;
-            if (typeof page.completed === 'number') completed = page.completed;
-            if (typeof page.creditsUsed === 'number') creditsUsed = page.creditsUsed;
-
-            if (Array.isArray(page.data) && page.data.length > 0) {
-                aggregated.push(...page.data);
-            }
-
-            if (page.next) {
-                // Advance by number of results fetched so far
-                skip = aggregated.length;
-            } else {
-                break;
-            }
-        }
-
-        const result: CrawlAndWaitResult = {
-            job_id: jobId,
-            status: 'completed',
-            total,
-            completed,
-            creditsUsed,
-            data: aggregated,
-        };
-        return result;
+        return await crawlAndWaitMethod(
+            this.client,
+            input,
+            pollIntervalSeconds,
+            timeoutMs
+        );
     }
 }
 

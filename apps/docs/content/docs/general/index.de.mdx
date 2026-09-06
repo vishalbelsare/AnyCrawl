@@ -1,0 +1,84 @@
+---
+title: Schnellstart
+description: Erfahren Sie, wie Sie die Web-Scraping- und Crawling-API von AnyCrawl nutzen, um LLM-taugliche Daten von beliebigen Websites zu extrahieren
+icon: Album
+---
+
+## Einführung
+
+Für LLMs gemacht. Ein mehrthreadfähiger, leistungsstarker Crawler und Scraper, der sofort einsatzbereit ist. Mit einer entwicklerfreundlichen OpenAPI liefert er saubere, strukturierte Daten – optimal aufbereitet für LLMs.
+
+AnyCrawl bietet folgende Funktionen:
+
+<Cards>
+
+<Card icon={<CpuIcon className="text-purple-300" />} title="Hohe Leistung">
+    Hohe Leistung, Mehrthreading.
+</Card>
+
+<Card icon={<GithubIcon className="text-blue-300" />} title="Vollständig Open Source">
+    Open Source, verfügbar auf GitHub.
+</Card>
+
+<Card icon={<OpenAIIcon />} title='LLM-freundlich'>
+Saubere, strukturierte Daten für LLMs.
+</Card>
+<Card icon={<OpenAPIIcon />} title='OpenAPI'>
+OpenAPI-freundlich.
+
+</Card>
+
+</Cards>
+
+## API-Konventionen
+
+### Parameternamen
+
+Die AnyCrawl-API folgt einheitlichen Namenskonventionen:
+
+- **Anfrageparameter**: überwiegend `snake_case`
+  - Häufige Beispiele: `webhook_url`, `event_types`, `cron_expression`, `max_retries`
+  - Hinweis: Einige feldspezifische Eigenschaften nutzen bestehende camelCase-Namen (z. B. `timeRange` bei Search).
+
+- **Antwortfelder**: Format `snake_case`
+  - Beispiele: `task_id`, `webhook_id`, `next_execution_at`, `task_type`, `cron_expression`, `is_active`
+
+Für Request-Bodies gelten die Parametertabelle bzw. OpenAPI des jeweiligen Endpunkts als maßgeblich.
+
+### Antwortformat
+
+Alle API-Antworten folgen einer einheitlichen Struktur:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Optional message"
+}
+```
+
+- `success`: Boolescher Wert, ob die Anfrage erfolgreich war
+- `data`: Nutzdaten der Antwort (Objekt oder Array)
+- `message`: Optionale, menschenlesbare Nachricht
+
+### Fehlerantworten
+
+Fehlerantworten enthalten detaillierte Informationen:
+
+```json
+{
+  "success": false,
+  "error": "Error type",
+  "message": "Human-readable error message",
+  "details": { ... }
+}
+```
+
+Häufige HTTP-Statuscodes:
+- `200` – Erfolg
+- `400` – Bad Request (Validierungsfehler)
+- `401` – Unauthorized (ungültiger API-Schlüssel)
+- `402` – Payment Required (unzureichendes Guthaben)
+- `404` – Not Found
+- `429` – Too Many Requests (Ratenlimit überschritten)
+- `500` – Internal Server Error

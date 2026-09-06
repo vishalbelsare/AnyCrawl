@@ -1,0 +1,284 @@
+---
+title: การตั้งค่า Proxy
+description: กำหนดการส่งต่อ proxy ตาม URL สำหรับ AnyCrawl
+icon: Waypoints
+---
+
+# การตั้งค่า Proxy
+
+AnyCrawl รองรับการส่งต่อ proxy แบบยืดหยุ่นตามรูปแบบ URL คุณสามารถกำหนด proxy ต่างกันสำหรับเว็บไซต์หรือเอนด์พอยต์ API ต่างกันได้
+
+## โหมด Proxy
+
+AnyCrawl รองรับสี่โหมด proxy ที่ระบุในคำขอ API:
+
+| โหมด | คำอธิบาย |
+|------|----------|
+| `auto` | เลือกอัตโนมัติระหว่าง proxy หลักและ stealth เริ่มจากหลักเมื่อใช้ได้ หากหลักใช้ไม่ได้หรือมีการลองใหม่/ล้มเหลว จะอัปเกรด/สลับไป stealth |
+| `base` | ใช้ proxy ที่ตั้งใน `ANYCRAWL_PROXY_URL` (ค่าเริ่มต้น) |
+| `stealth` | ใช้ proxy ที่ตั้งใน `ANYCRAWL_PROXY_STEALTH_URL` (มักเป็น residential หรือพรีเมียม) |
+| Custom URL | สตริง URL proxy เต็ม (เช่น `http://user:pass@proxy:8080`) ในการตอบกลับจะแสดงเป็น `custom` |
+
+### ตัวอย่างการใช้งาน
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "auto"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "stealth"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://custom-proxy:8080"
+}
+```
+
+## พฤติกรรม Timeout (Scrape API)
+
+- `timeout` ระดับคำขอมีความสำคัญสูงสุดเสมอ
+- หาก `proxy` เป็น `stealth` หรือ `auto` และไม่ได้ส่ง `timeout` AnyCrawl จะใช้ `ANYCRAWL_STEALTH_TIMEOUT_MS` (ค่าเริ่มต้น `120000`)
+- สำหรับโหมด `base` หรือ custom proxy URL โดยไม่มี `timeout` ชัดเจน AnyCrawl ใช้ `60000`
+
+## วิธีการตั้งค่า
+
+### วิธีที่ 1: การตั้งค่า Proxy แบบง่าย (ANYCRAWL_PROXY_URL)
+
+สำหรับกรณีที่ต้องการใช้ proxy เดียวกันทุกคำขอ ให้ตั้งตัวแปรสภาพแวดล้อม `ANYCRAWL_PROXY_URL`:
+
+```bash
+# Proxy เดียว
+export ANYCRAWL_PROXY_URL=http://username:password@proxy.example.com:8080
+
+# หลาย proxy (โหมดชั้น)
+export ANYCRAWL_PROXY_URL=http://proxy1:8080,http://proxy2:8080,http://proxy3:8080
+```
+
+เมื่อมีหลาย proxy (คั่นด้วยจุลภาค) AnyCrawl ใช้กลยุทธ์ **tiered proxy**:
+
+- คำขอทั้งหมดเริ่มจาก proxy แรก (tier 0)
+- หาก proxy ล้มเหลวสำหรับโดเมนใด AnyCrawl จะสลับไป tier ถัดไปสำหรับโดเมนนั้นโดยอัตโนมัติ
+- ช่วยให้ failover อัจฉริยะและใช้ proxy ได้เหมาะสม
+
+นี่เป็นวิธีง่ายที่สุดเมื่อไม่ต้องการ routing ตาม URL
+
+### วิธีที่ 2: ไฟล์ตั้งค่าขั้นสูง (ANYCRAWL_PROXY_CONFIG)
+
+สำหรับการส่งต่อ proxy ตาม URL ให้สร้างไฟล์ JSON (เช่น `proxy-config.json`) แล้วตั้ง `ANYCRAWL_PROXY_CONFIG` เป็นพาธของไฟล์:
+
+```bash
+ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+**หมายเหตุ**: หากตั้งทั้ง `ANYCRAWL_PROXY_URL` และ `ANYCRAWL_PROXY_CONFIG` กฎในไฟล์ config มีลำดับความสำคัญกว่า และ `ANYCRAWL_PROXY_URL` เป็น fallback สำหรับ URL ที่ไม่ตรงกฎใดๆ
+
+## ประเภทของกฎ
+
+AnyCrawl รองรับกฎ proxy สามประเภท เรียงตามลำดับความสำคัญ:
+
+### 1. กฎ URL (สูงสุด)
+
+จับคู่ URL แบบตรง ใช้เมื่อต้องการ proxy เฉพาะสำหรับเอนด์พอยต์เฉพาะ
+
+```json
+{
+    "url": "https://api.example.com/v1/data",
+    "proxy": "http://username:password@proxy1.example.com:8080"
+}
+```
+
+### 2. กฎ Pattern (กลาง)
+
+จับคู่ URL เต็มรูปแบบพร้อม wildcards เหมาะกับพาธหรือโปรโตคอลเฉพาะ
+
+```json
+{
+    "pattern": "https://*.github.com/api/*",
+    "proxy": "http://username:password@proxy2.example.com:8080"
+}
+```
+
+### 3. กฎ Domain (ต่ำสุด)
+
+จับคู่เฉพาะโดเมน ส่งคำขอทั้งหมดไปยังโดเมนนั้นผ่าน proxy ที่กำหนด
+
+```json
+{
+    "domain": "*.gov.au",
+    "proxy": "http://username:password@proxy3.example.com:8080"
+}
+```
+
+## รูปแบบ Wildcard
+
+- `*` — ตรงกับอักขระจำนวนใดก็ได้
+- `?` — ตรงกับอักขระหนึ่งตัวพอดี
+- รูปแบบไม่สนตัวพิมพ์เล็กใหญ่
+
+### ตัวอย่าง
+
+- `*.example.com` — ตรงกับ `api.example.com`, `www.example.com`, `test.example.com`
+- `api-?.example.com` — ตรงกับ `api-1.example.com`, `api-2.example.com` แต่ไม่ใช่ `api-10.example.com`
+- `https://*.example.com/api/*` — ตรงกับ HTTPS บน subdomain ใดก็ได้ของ example.com ที่มีพาธ `/api/`
+
+## ตัวอย่างการตั้งค่าแบบสมบูรณ์
+
+```json
+{
+    "rules": [
+        {
+            "url": "https://api.example.com/v1/users",
+            "proxy": "http://premium-proxy.example.com:8080"
+        },
+        {
+            "pattern": "https://api.github.com/*",
+            "proxy": "http://github-proxy.example.com:8080"
+        },
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-proxy.example.com:8080"
+        }
+    ]
+}
+```
+
+## รูปแบบ URL ของ Proxy
+
+AnyCrawl รองรับรูปแบบ proxy หลายแบบ:
+
+- HTTP: `http://username:password@proxy.example.com:8080`
+- HTTPS: `https://username:password@proxy.example.com:8443`
+
+## การดีบัก
+
+คุณจะเห็นข้อความเช่น:
+
+```
+Using proxy from request userData: http://custom-proxy:8080
+Found proxy for URL https://example.com: http://proxy.example.com:8080 By matching a rule.
+Proxy matched by domain pattern: *.gov.au → http://proxy.example.com:8080
+Using tiered proxy: http://default-proxy:8080
+```
+
+## ตัวอย่างลำดับความสำคัญ
+
+สำหรับ URL `https://api.github.com/repos/owner/repo` จะตรวจกฎตามลำดับ:
+
+1. **จับคู่ URL**: `"url": "https://api.github.com/repos/owner/repo"`
+2. **จับคู่ Pattern**: `"pattern": "https://api.github.com/*"`
+3. **จับคู่ Domain**: `"domain": "*.github.com"`
+
+กฎแรกที่ตรงจะชนะ
+
+## แนวทางปฏิบัติที่ดี
+
+1. **ใช้กฎ domain** สำหรับความต้องการ proxy กว้างๆ (เช่น เว็บราชการทั้งประเทศ)
+2. **ใช้กฎ pattern** เมื่อต้องการจับพาธหรือโปรโตคอลเฉพาะ
+3. **ใช้กฎ URL** สำหรับเอนด์พอยต์ที่ต้องจัดการพิเศษ
+4. **ลำดับในไฟล์ไม่สำคัญ** — ลำดับความสำคัญกำหนดตามประเภทกฎ
+5. **ทดสอบรูปแบบ** ด้วย log ดีบักให้แน่ใจว่าตรงตามที่คาด
+
+## ระบบ Tiered Proxy
+
+เมื่อใช้หลาย proxy กับ `ANYCRAWL_PROXY_URL` AnyCrawl ใช้ระบบ tiered proxy อัจฉริยะ:
+
+### การทำงาน
+
+1. **สถานะเริ่มต้น**: ทุกโดเมนเริ่มจาก proxy แรก (tier 0)
+2. **ตรวจจับข้อผิดพลาด**: เมื่อ proxy ล้มเหลวสำหรับโดเมนใด โดเมนนั้นจะถูกเลื่อนไป tier ถัดไป
+3. **เฉพาะโดเมน**: แต่ละโดเมนมีระดับ tier ของตัวเองแยกกัน
+
+### สถานการณ์ตัวอย่าง
+
+```bash
+export ANYCRAWL_PROXY_URL=http://fast-proxy:8080,http://stable-proxy:8080,http://backup-proxy:8080
+```
+
+- คำขอแรกไป `example.com` → ใช้ `fast-proxy:8080` (tier 0)
+- หาก `fast-proxy` ล้มเหลวสำหรับ `example.com` → สลับไป `stable-proxy:8080` (tier 1)
+- ในขณะเดียวกัน `github.com` อาจยังใช้ `fast-proxy:8080` หากทำงานปกติ
+- ระบบจะลอง `fast-proxy` อีกครั้งเป็นระยะเพื่อตรวจว่ากลับมาใช้ได้
+
+### ประโยชน์
+
+- **Failover อัตโนมัติ**: ไม่ต้องแทรกแซงด้วยมือเมื่อ proxy ล้ม
+- **ปรับให้เหมาะกับโดเมน**: แต่ละโดเมนใช้ proxy ที่ดีที่สุดที่มี
+- **ใช้ทรัพยากรอย่างมีประสิทธิภาพ**: proxy ที่ล้มไม่ถูกทิ้งถาวร
+- **ซ่อมตัวเอง**: กลับไปใช้ proxy ที่เหมาะสมเมื่อกลับมาทำงาน
+
+## ตัวอย่างแบบสมบูรณ์: ใช้ทั้งสองวิธี
+
+ตัวอย่างการตั้งค่าที่ใช้ทั้งสองแบบ:
+
+```bash
+# ตั้ง proxy เริ่มต้นสำหรับการใช้งานทั่วไป
+export ANYCRAWL_PROXY_URL=http://default-proxy:8080
+
+# ตั้ง routing ตาม URL สำหรับเว็บเฉพาะ
+export ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+พร้อม `proxy-config.json`:
+
+```json
+{
+    "rules": [
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-residential-proxy:8080"
+        },
+        {
+            "pattern": "https://api.*.com/*",
+            "proxy": "http://api-optimized-proxy:3128"
+        }
+    ]
+}
+```
+
+ผลลัพธ์:
+
+- `https://www.homeaffairs.gov.au/` → ใช้ `au-residential-proxy:8080` (ตรงกฎ domain)
+- `https://api.github.com/repos` → ใช้ `api-optimized-proxy:3128` (ตรงกฎ pattern)
+- `https://example.com/` → ใช้ `default-proxy:8080` (fallback ไป `ANYCRAWL_PROXY_URL`)
+
+## สรุปตัวแปรสภาพแวดล้อม
+
+| ตัวแปร                      | วัตถุประสงค์                                         | ตัวอย่าง                                                |
+| ----------------------------- | --------------------------------------------------- | ------------------------------------------------------ |
+| `ANYCRAWL_PROXY_URL`          | การตั้งค่า proxy หลัก (เดียวหรือหลายตัว)             | `http://proxy:8080` หรือ `http://p1:8080,http://p2:8080` |
+| `ANYCRAWL_PROXY_STEALTH_URL`  | Proxy stealth/พรีเมียม (residential)                | `http://residential-proxy:8080`                        |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | เครดิตพิเศษเมื่อใช้ stealth proxy                  | `5`                                                  |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS` | Timeout เริ่มต้นสำหรับ `proxy=stealth` และ `proxy=auto` เมื่อไม่ส่ง `timeout` ในคำขอ | `120000` |
+| `ANYCRAWL_PROXY_CONFIG`       | พาธไฟล์ JSON สำหรับ routing ตาม URL                 | `/path/to/proxy-config.json`                           |
+
+### ลำดับความสำคัญ
+
+1. **สูงสุด**: โหมด proxy หรือ custom URL ในตัวเลือกคำขอ
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "playwright",
+        "proxy": "stealth"
+    }
+    ```
+    หรือใช้ URL แบบกำหนดเอง:
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "proxy": "http://custom-proxy:8080"
+    }
+    ```
+2. **สูง**: กฎจาก `ANYCRAWL_PROXY_CONFIG`
+3. **ต่ำ**: Tiered proxy จาก `ANYCRAWL_PROXY_URL` (fallback)

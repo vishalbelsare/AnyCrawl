@@ -81,6 +81,12 @@ export class TemplateCodeValidator {
      * Validate code complexity
      */
     private validateComplexity(code: string): void {
+        // Check total code length (guards against oversized handlers / DoS via huge payloads)
+        const maxCodeLength = 10000;
+        if (code.length > maxCodeLength) {
+            throw new TemplateValidationError(`Code too long (max ${maxCodeLength} characters)`);
+        }
+
         // Check nesting depth
         const maxNestingDepth = 20;
         let currentDepth = 0;

@@ -1,0 +1,604 @@
+---
+title: 抓取
+description: 抓取一個 URL，並將其轉換為 LLM 就緒的結構化資料。
+icon: Crosshair
+---
+
+## 簡介
+
+AnyCrawl 抓取 API 可將任何網頁轉換為針對大型語言模型（LLM）最佳化的結構化資料。它支援多種抓取引擎，包括 Cheerio、Playwright、Puppeteer，並支援多種輸出格式，如 HTML、Markdown、JSON 等。
+
+**核心亮點**：API **立即同步回傳資料** — 無需輪詢或 Webhook。它還**原生支援高併發**，適用於大規模抓取操作。
+
+### 核心特性
+
+- **多引擎支援**：支援 `auto`（智慧引擎選擇，預設）、`cheerio`（靜態 HTML 解析，最快）、`playwright`（跨瀏覽器 JavaScript 渲染）、`puppeteer`（Chrome 最佳化 JavaScript 渲染）
+- **LLM 最佳化**：自動提取和格式化內容，產生 Markdown 格式便於 LLM 處理
+- **代理支援**：支援 HTTP/HTTPS 代理設定
+- **健全的錯誤處理**：全面的錯誤處理和重試機制
+- **高效能**：**原生高併發支援**，非同步佇列處理
+- **即時回應**：**同步 API** — 即時取得結果，無需輪詢
+
+## API 端點
+
+```
+POST https://api.anycrawl.dev/v1/scrape
+```
+
+## 使用範例
+
+### cURL
+
+#### 基本抓取（使用預設 auto 引擎）
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### 使用 Playwright 引擎抓取動態內容
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://spa-example.com",
+    "engine": "playwright"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://spa-example.com",
+        engine: "playwright",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://spa-example.com',
+        'engine': 'playwright'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### 使用代理進行抓取
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://proxy.example.com:8080"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        engine: "playwright",
+        proxy: "http://proxy.example.com:8080",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'engine': 'playwright',
+        'proxy': 'http://proxy.example.com:8080'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+## 請求參數
+
+| 參數                | 類型                     | 必需 | 預設值         | 描述                                                                                                                                 |
+| ------------------- | ------------------------ | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | string                   | 是   | -              | 要抓取的 URL，必須是有效的 HTTP/HTTPS 位址                                                                                           |
+| `template_id`       | string                   | 否   | -              | 用於本次抓取的範本 ID                                                                                                                |
+| `variables`         | object                   | 否   | -              | 範本變數（僅在提供 `template_id` 時使用）                                                                                            |
+| `engine`            | enum                     | 否   | `auto`         | 抓取引擎類型，選項：`auto`、`cheerio`、`playwright`、`puppeteer`                                                                     |
+| `formats`           | array                    | 否   | `["markdown"]` | 輸出格式，選項：`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`、`summary`、`links`                         |
+| `timeout`           | number                   | 否   | `60000`        | 逾時時間（毫秒）。如省略：`proxy=stealth` / `proxy=auto` 時為 `120000`；否則為 `60000`。 |
+| `retry`             | boolean                  | 否   | `false`        | 失敗時是否重試                                                                                                                       |
+| `max_age`           | number                   | 否   | -              | 快取最大存活時間（毫秒）。使用 `0` 跳過快取讀取；省略則使用伺服器預設值                                                             |
+| `store_in_cache`    | boolean                  | 否   | `true`         | 是否為本次抓取寫入頁面快取                                                                                                           |
+| `wait_for`          | number                   | 否   | -              | 提取前的延遲時間（毫秒）；僅瀏覽器引擎可用；優先級低於 `wait_for_selector`                                                           |
+| `wait_until`        | enum                     | 否   | -              | 瀏覽器引擎的導覽等待條件：`load`、`domcontentloaded`、`networkidle`、`commit`                                                         |
+| `wait_for_selector` | string、object 或 array  | 否   | -              | 等待一個或多個選擇器（僅瀏覽器引擎可用）。接受 CSS 選擇器字串、物件 `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }` 或混合字串/物件的陣列。每個條目按順序等待。優先級高於 `wait_for`。 |
+| `include_tags`      | array                    | 否   | -              | 包含的標籤，例如：`h1`                                                                                                               |
+| `exclude_tags`      | array                    | 否   | -              | 排除的標籤，例如：`h1`                                                                                                               |
+| `only_main_content` | boolean                  | 否   | `true`         | 僅提取主要內容，移除頁首、頁尾、導覽列等（`include_tags` 優先）                                                                      |
+| `proxy`             | string (URI)             | 否   | -              | 代理伺服器位址，格式：`http://proxy:port` 或 `https://proxy:port`                                                                    |
+| `json_options`      | json                     | 否   | -              | JSON 選項，例如：`{"schema": {}, "user_prompt": "Extract key fields"}`                                                              |
+| `extract_source`    | enum                     | 否   | `markdown`     | JSON 提取的來源：`markdown`（預設）或 `html`                                                                                         |
+| `ocr_options`       | boolean                  | 否   | `false`        | 僅對 markdown 圖片啟用 OCR 增強。在 markdown 輸出中新增 OCR 文字區塊；不影響 `html`/`rawHtml`。                                      |
+
+### 快取行為
+
+- `max_age` 控制快取讀取。`0` 強制重新整理。
+- `store_in_cache=false` 跳過快取寫入。
+- 快取命中時，回應中包含 `cachedAt` 和 `maxAge`（毫秒）。
+
+### 引擎類型
+
+**重要說明**：`playwright` 和 `puppeteer` 都可以使用 Chromium（Chrome 的開源版本），但它們用途不同，功能也有所差異。
+
+#### `auto`（預設）
+
+- **使用場景**：不確定哪個引擎最適合目標頁面時
+- **優勢**：自動分析頁面並選擇最佳引擎 — 靜態頁面使用 `cheerio`，JavaScript 密集型頁面使用 `playwright`
+- **工作原理**：先發起輕量級 HTTP 請求；如果頁面需要 JavaScript 渲染，則自動升級到瀏覽器引擎
+- **推薦用於**：通用抓取，希望在不手動選擇引擎的情況下獲得最佳效能
+
+#### `cheerio`
+
+- **使用場景**：靜態 HTML 內容抓取
+- **優勢**：最快的抓取速度，最低的資源消耗
+- **限制**：無法執行 JavaScript，無法處理動態內容
+- **推薦用於**：新聞文章、部落格、靜態網站
+
+#### `playwright`
+
+- **使用場景**：需要 JavaScript 渲染的現代網站，跨瀏覽器測試
+- **優勢**：健全的自動等待功能，更好的穩定性
+- **限制**：資源消耗較高
+- **推薦用於**：複雜的 Web 應用程式
+
+#### `puppeteer`
+
+- **優勢**：深度 Chrome DevTools 整合，出色的效能指標，更快的執行速度
+- **限制**：**不支援 ARM CPU 架構**
+
+### 輸出格式
+
+你可以使用 `formats` 參數指定回應中包含哪些資料格式：
+
+#### `markdown`
+
+- **描述**：將 HTML 內容轉換為乾淨、結構化的 Markdown 格式
+- **使用場景**：最適合 LLM 處理、文件編寫和內容分析
+- **推薦用於**：文字密集型內容、文章、部落格
+
+#### `html`
+
+- **描述**：回傳清理和格式化後的 HTML 內容
+- **使用場景**：需要保留格式的結構化 HTML 時
+- **推薦用於**：需要保持 HTML 結構的網頁內容
+
+#### `text`
+
+- **描述**：提取不含任何格式的純文字內容
+- **使用場景**：用於基本內容分析的簡單文字提取
+- **推薦用於**：純文字處理、關鍵字提取
+
+#### `screenshot`
+
+- **描述**：擷取頁面可見區域的截圖
+- **使用場景**：網頁的視覺呈現
+- **限制**：僅在 `playwright` 和 `puppeteer` 引擎下可用
+- **推薦用於**：視覺驗證、UI 測試
+
+#### `screenshot@fullPage`
+
+- **描述**：擷取包括摺疊下方內容的完整頁面截圖
+- **使用場景**：完整擷取整個網頁的視覺效果
+- **限制**：僅在 `playwright` 和 `puppeteer` 引擎下可用
+- **推薦用於**：完整頁面文件、存檔用途
+
+#### `rawHtml`
+
+- **描述**：回傳原始的、未處理的 HTML 原始碼
+- **使用場景**：需要從伺服器接收的精確 HTML 時
+- **推薦用於**：技術分析、除錯、保留原始結構
+
+#### `summary`
+
+- **描述**：使用 AI 產生網頁內容的簡要摘要
+- **使用場景**：快速理解內容、文件摘要、內容摘要
+- **推薦用於**：新聞聚合、研究、內容策展、產生摘要
+
+#### `links`
+
+- **描述**：以字串陣列形式提取頁面中的所有連結（URL）
+- **使用場景**：連結發現、網站地圖產生、爬蟲準備、連結分析
+- **特性**：自動將相對 URL 轉換為絕對 URL，去除重複和片段
+- **推薦用於**：建構爬蟲、分析網站結構、發現相關頁面
+
+### JSON 選項物件
+
+`json_options` 參數是一個接受以下參數的物件：
+
+- `schema`：用於提取的 schema。
+- `user_prompt`：用於提取的使用者提示。
+- `schema_name`：可選的輸出名稱。
+- `schema_description`：可選的輸出描述。
+
+#### 範例
+
+```json
+{
+    "schema": {},
+    "user_prompt": "Extract the title and content of the page"
+}
+```
+
+或
+
+```json
+{
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string"
+            },
+            "company_name": {
+                "type": "string"
+            },
+            "summary": {
+                "type": "string"
+            },
+            "is_open_source": {
+                "type": "boolean"
+            }
+        },
+        "required": ["company_name", "summary"]
+    },
+    "user_prompt": "Extract the company name, summary, and if it is open source"
+}
+```
+
+## 回應格式
+
+### 成功回應 (HTTP 200)
+
+#### 抓取成功
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://mock.httpstatus.io/200",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "title": "",
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">200 OK</pre></body></html>",
+        "screenshot": "http://localhost:8080/v1/public/storage/file/screenshot-c9fb76c4-2d7b-41f9-9141-b9ec9af58b39.jpeg",
+        "timestamp": "2025-07-01T04:38:02.951Z"
+    }
+}
+```
+
+#### 快取命中回應
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "cachedAt": "2026-02-08T12:34:56.000Z",
+        "maxAge": 172800000
+    }
+}
+```
+
+### 錯誤回應
+
+#### 400 - 驗證錯誤
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": [
+            "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'"
+        ]
+    }
+}
+```
+
+#### 401 - 認證錯誤
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+### 抓取失敗
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 404 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/404",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 404 ",
+        "code": 404,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "34cd1d26-eb83-40ce-9d63-3be1a901f4a3",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">404 Not Found</pre></body></html>",
+        "screenshot": "screenshot-34cd1d26-eb83-40ce-9d63-3be1a901f4a3.jpeg",
+        "timestamp": "2025-07-01T04:36:20.978Z",
+        "statusCode": 404,
+        "statusMessage": ""
+    }
+}
+```
+
+或
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 502 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/502",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 502 ",
+        "code": 502,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "5fc50008-07e0-4913-a6af-53b0b3e0214b",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">502 Bad Gateway</pre></body></html>",
+        "screenshot": "screenshot-5fc50008-07e0-4913-a6af-53b0b3e0214b.jpeg",
+        "timestamp": "2025-07-01T04:39:59.981Z",
+        "statusCode": 502,
+        "statusMessage": ""
+    }
+}
+```
+
+或
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 400 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/400",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 400 ",
+        "code": 400,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "0081747c-1fc5-44f9-800c-e27b24b55a2c",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">400 Bad Request</pre></body></html>",
+        "screenshot": "screenshot-0081747c-1fc5-44f9-800c-e27b24b55a2c.jpeg",
+        "timestamp": "2025-07-01T04:38:24.136Z",
+        "statusCode": 400,
+        "statusMessage": ""
+    }
+}
+```
+
+或
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available",
+    "data": {
+        "url": "https://httpstat.us/401",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available"
+    }
+}
+```
+
+## 最佳實踐
+
+### 引擎選擇指南
+
+1. **不確定 / 通用場景** → 使用 `auto`（預設）— 伺服器自動選擇最佳引擎
+2. **靜態內容網站**（新聞、部落格、文件）→ 使用 `cheerio`
+3. **複雜 Web 應用**（需要 JavaScript 渲染的 SPA）→ 使用 `playwright` 或 `puppeteer`
+
+### 效能最佳化
+
+- 批次抓取靜態內容時，優先使用 `cheerio` 引擎
+- 僅在需要 JavaScript 渲染時使用 `playwright` 或 `puppeteer`
+- 為獲得最佳效果，使用輪換代理以避免 IP 封鎖和速率限制，並確保代理伺服器穩定可靠
+- **善用原生高併發** — API 可高效處理多個併發請求
+
+### 錯誤處理
+
+```javascript
+try {
+    const response = await fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.data.status === "completed") {
+        // Handle successful result
+        console.log(result.data.markdown);
+    } else {
+        // Handle scraping failure
+        console.error("Scraping failed:", result.data.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## 高併發使用
+
+API **原生支援高併發**。你可以同時發起多個請求，無需擔心速率限制：
+
+```javascript
+// Concurrent scraping example
+const urls = ["https://example1.com", "https://example2.com", "https://example3.com"];
+
+const scrapePromises = urls.map((url) =>
+    fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, engine: "cheerio" }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(scrapePromises);
+```
+
+## 常見問題
+
+### 問：什麼時候應該使用不同的引擎？
+
+答：每個引擎都有各自的優勢：
+
+- **Auto**（預設）：為每個 URL 智慧選擇最佳引擎 — 先用 Cheerio 快速處理，需要 JavaScript 渲染時自動升級到 Playwright
+- **Cheerio**：適用於靜態 HTML 內容，效能最快，不執行 JavaScript
+- **Playwright**：適用於複雜 Web 應用，更好的穩定性和自動等待功能，未來將支援更多瀏覽器類型
+- **Puppeteer**：僅限 Chrome/Chromium，不支援 ARM CPU，我們不提供相關 Docker 映像
+
+### 問：為什麼有些網站抓取失敗？
+
+答：可能的原因包括：
+
+- 網站阻止爬蟲（回傳 403/404）
+- 需要 JavaScript 渲染但使用了 cheerio 引擎
+- 網站需要認證或特殊請求標頭
+- 網路連線問題
+
+### 問：如何處理需要登入的網站？
+
+答：目前 API 不支援認證。建議：
+
+- 抓取公開可存取的頁面
+- 使用其他方式取得需要認證的內容
+
+### 問：代理設定有什麼要求？
+
+答：
+
+- 注意：我們預設提供高品質代理。如果沒有特殊需求，無需自行設定代理。
+- 支援 HTTP/HTTPS 代理
+- 格式：`http://host:port` 或 `https://host:port`
+- 確保代理伺服器穩定可用
+
+### 問：併發請求是否有速率限制？
+
+答：沒有，API **原生支援高併發**。你可以同時發起多個請求，無需擔心速率限制，所有請求都會立即回傳資料。

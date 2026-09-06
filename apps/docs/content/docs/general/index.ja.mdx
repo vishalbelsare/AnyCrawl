@@ -1,0 +1,84 @@
+---
+title: クイックスタート
+description: AnyCrawl の Web スクレイピング・クロール API を使い、任意のサイトから LLM 向けデータを取得する方法
+icon: Album
+---
+
+## はじめに
+
+LLM のために設計されました。マルチスレッドで高性能なクローラー／スクレイパーで、すぐに使い始められます。開発者向けの OpenAPI により、LLM に最適化されたクリーンで構造化されたデータを提供します。
+
+AnyCrawl の主な特徴は次のとおりです。
+
+<Cards>
+
+<Card icon={<CpuIcon className="text-purple-300" />} title="高性能">
+    高性能でマルチスレッド対応。
+</Card>
+
+<Card icon={<GithubIcon className="text-blue-300" />} title="完全オープンソース">
+    オープンソースで GitHub 上で公開されています。
+</Card>
+
+<Card icon={<OpenAIIcon />} title='LLM 向け'>
+LLM 向けにクリーンで構造化されたデータ。
+</Card>
+<Card icon={<OpenAPIIcon />} title='OpenAPI'>
+OpenAPI との親和性が高い。
+
+</Card>
+
+</Cards>
+
+## API の約束事
+
+### パラメータ名
+
+AnyCrawl API は一貫した命名規則に従います。
+
+- **リクエストパラメータ**：主に `snake_case`
+  - 例：`webhook_url`、`event_types`、`cron_expression`、`max_retries`
+  - 注：一部のエンドポイント固有フィールドは既存の camelCase（例：Search の `timeRange`）。
+
+- **レスポンスフィールド**：`snake_case` 形式
+  - 例：`task_id`、`webhook_id`、`next_execution_at`、`task_type`、`cron_expression`、`is_active`
+
+リクエストボディは、各エンドポイントのパラメータ表／OpenAPI を正としてください。
+
+### レスポンス形式
+
+すべての API レスポンスは次の標準構造に従います。
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Optional message"
+}
+```
+
+- `success`：リクエストが成功したかどうかを示すブール値
+- `data`：レスポンス本体（オブジェクトまたは配列）
+- `message`：任意の人間向けメッセージ
+
+### エラーレスポンス
+
+エラーレスポンスには詳細情報が含まれます。
+
+```json
+{
+  "success": false,
+  "error": "Error type",
+  "message": "Human-readable error message",
+  "details": { ... }
+}
+```
+
+よく使われる HTTP ステータスコード：
+- `200` - 成功
+- `400` - 不正なリクエスト（バリデーションエラー）
+- `401` - 未認証（API キーが無効）
+- `402` - 支払いが必要（クレジット不足）
+- `404` - 見つからない
+- `429` - リクエスト過多（レート制限超過）
+- `500` - 内部サーバーエラー

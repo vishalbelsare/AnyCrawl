@@ -1,0 +1,427 @@
+---
+title: การใช้งาน Docker
+description: คู่มือทีละขั้นสำหรับโฮสต์ AnyCrawl เองด้วย Docker พร้อมตัวเลือกการตั้งค่าและแนวทางปฏิบัติที่ดี
+icon: Hammer
+---
+
+## Docker กับอิมเมจสำเร็จรูป
+
+AnyCrawl มีอิมเมจ Docker สำเร็จรูปผ่าน GitHub Container Registry คุณสามารถดีพลอย AnyCrawl ได้อย่างรวดเร็วโดยไม่ต้อง build จากซอร์ส
+
+### อิมเมจสำเร็จรูปที่มี
+
+อิมเมจต่อไปนี้มีจาก [GitHub Container Registry](https://github.com/any4ai/AnyCrawl/packages):
+
+- **anycrawl**: อิมเมจ all-in-one สำหรับ AnyCrawl รวมบริการและ dependencies ทั้งหมด
+- **anycrawl-api**: บริการ API หลัก
+- **anycrawl-scrape-cheerio**: เครื่องมือดึงข้อมูล Cheerio
+- **anycrawl-scrape-playwright**: เครื่องมือดึงข้อมูล Playwright
+- **anycrawl-scrape-puppeteer**: เครื่องมือดึงข้อมูล Puppeteer
+
+## เริ่มต้นอย่างรวดเร็ว
+
+AnyCrawl มีอิมเมจ all-in-one อิมเมจสำเร็จรูปคือ `ghcr.io/any4ai/anycrawl:latest` ซึ่งรวมบริการและ dependencies ทั้งหมด รันด้วยคำสั่ง:
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+- หมายเหตุ: อิมเมจสถาปัตยกรรม arm64 **ไม่รวม**บริการ `scrape-puppeteer` หากต้องการใช้ puppeteer จริงๆ ให้ตั้ง `platform` เป็น `linux/amd64` ในคำสั่ง docker run เช่น:
+
+```bash
+docker run -p 8080:8080 --platform linux/amd64 ghcr.io/any4ai/anycrawl:latest
+```
+
+> หมายเหตุ: จะมีผลต่อประสิทธิภาพ ต่ำกว่าอิมเมจ arm64 แบบเนทีฟ
+
+รันในพื้นหลัง:
+
+```bash
+docker run -d -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+หากต้องการรันบน Arm64 (ไม่รองรับ puppeteer) ใช้คำสั่ง:
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest-arm64
+```
+
+### พร้อมตัวแปรสภาพแวดล้อม
+
+```bash
+# รันด้วยการตั้งค่ากำหนดเอง
+docker run -d \
+  -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e ANYCRAWL_API_AUTH_ENABLED=false \
+  -e ANYCRAWL_HEADLESS=true \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+### พร้อมไฟล์ .env
+
+```bash
+# รันด้วยไฟล์ .env ในเครื่อง
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/.env:/usr/src/app/.env:ro \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+## Build Docker
+
+หากต้องการ build อิมเมจเอง ทำตามขั้นตอนด้านล่าง
+
+### ข้อกำหนดเบื้องต้น
+
+ก่อนเริ่ม ให้แน่ใจว่าติดตั้งซอฟต์แวร์ต่อไปนี้:
+
+- **Docker**: เวอร์ชัน 20.10 ขึ้นไป
+- **Docker Compose**: เวอร์ชัน 2.0 ขึ้นไป
+
+### ติดตั้ง Docker และ Docker Compose
+
+#### macOS
+
+```bash
+# ติดตั้งด้วย Homebrew
+brew install docker docker-compose
+
+# หรือดาวน์โหลด Docker Desktop
+# https://www.docker.com/products/docker-desktop
+```
+
+#### Ubuntu/Debian
+
+```bash
+# ติดตั้ง Docker
+# Add Docker's official GPG key:
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the repository to Apt sources:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+## เริ่มต้นอย่างรวดเร็ว
+
+### 1. โคลนที่เก็บ
+
+```bash
+git clone https://github.com/any4ai/AnyCrawl.git
+cd AnyCrawl
+```
+
+### 2. เริ่มบริการ
+
+```bash
+# Build และเริ่มบริการทั้งหมด
+docker compose up --build
+
+# หรือรันในพื้นหลัง
+docker compose up --build -d
+```
+
+### 3. ตรวจสอบการดีพลอย
+
+```bash
+# ตรวจสถานะบริการ
+docker compose ps
+
+# ทดสอบว่า API ทำงาน
+curl http://localhost:8080/health
+```
+
+## สถาปัตยกรรมบริการ
+
+AnyCrawl ใช้สถาปัตยกรรมไมโครเซอร์วิส มีบริการดังนี้:
+
+### บริการหลัก
+
+| ชื่อบริการ        | คำอธิบาย                              | พอร์ต | Dependencies |
+| ------------------- | ---------------------------------------- | ---- | ------------ |
+| `api`               | API gateway และอินเทอร์เฟซหลัก   | 8080 | redis        |
+| `scrape-puppeteer`  | เครื่องมือดึงข้อมูล Puppeteer                | -    | redis        |
+| `scrape-playwright` | เครื่องมือดึงข้อมูล Playwright               | -    | redis        |
+| `scrape-cheerio`    | เครื่องมือดึงข้อมูล Cheerio (ไม่รองรับ SPA) | -    | redis        |
+| `redis`             | คิวข้อความและแคช                  | 6379 | -            |
+
+## การตั้งค่าตัวแปรสภาพแวดล้อม
+
+### การตั้งค่าพื้นฐาน
+
+| ชื่อตัวแปร       | คำอธิบาย         | ค่าเริ่มต้น      | ตัวอย่าง                     |
+| ------------------- | ------------------- | ------------ | --------------------------- |
+| `NODE_ENV`          | สภาพแวดล้อมรันไทม์ | `production` | `production`, `development` |
+| `ANYCRAWL_API_PORT` | พอร์ตบริการ API    | `8080`       | `8080`                      |
+
+### การตั้งค่าการดึงข้อมูล
+
+| ชื่อตัวแปร                    | คำอธิบาย                                          | ค่าเริ่มต้น  | ตัวอย่าง                          |
+| -------------------------------- | ---------------------------------------------------- | -------- | -------------------------------- |
+| `ANYCRAWL_HEADLESS`              | ใช้โหมด headless                                    | `true`   | `true`, `false`                  |
+| `ANYCRAWL_PROXY_URL`             | ที่อยู่ proxy หลัก                            | -        | `http://proxy:8080`              |
+| `ANYCRAWL_PROXY_STEALTH_URL`     | ที่อยู่ proxy stealth                         | -        | `http://residential-proxy:8080`  |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | เครดิตพิ่มเติมเมื่อใช้ stealth proxy     | `5`      | `5`                              |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS`    | Timeout เริ่มต้นสำหรับโหมด stealth/auto (ms)    | `120000` | `120000`                         |
+| `ANYCRAWL_IGNORE_SSL_ERROR`      | ละเลยข้อผิดพลาด SSL                                    | `true`   | `true`, `false`                  |
+
+### การตั้งค่าฐานข้อมูล
+
+| ชื่อตัวแปร                | คำอธิบาย              | ค่าเริ่มต้น                       |
+| ---------------------------- | ------------------------ | ----------------------------- |
+| `ANYCRAWL_API_DB_TYPE`       | ชนิดฐานข้อมูล            | `sqlite`                      |
+| `ANYCRAWL_API_DB_CONNECTION` | พาธการเชื่อมต่อฐานข้อมูล | `/usr/src/app/db/database.db` |
+
+### การตั้งค่า Redis
+
+| ชื่อตัวแปร        | คำอธิบาย          | ค่าเริ่มต้น              |
+| -------------------- | -------------------- | -------------------- |
+| `ANYCRAWL_REDIS_URL` | URL การเชื่อมต่อ Redis | `redis://redis:6379` |
+
+### การตั้งค่าการยืนยันตัวตน
+
+| ชื่อตัวแปร               | คำอธิบาย               | ค่าเริ่มต้น |
+| --------------------------- | ------------------------- | ------- |
+| `ANYCRAWL_API_AUTH_ENABLED` | เปิดการยืนยันตัวตน API | `false` |
+
+## การตั้งค่ากำหนดเอง
+
+### สร้างไฟล์การตั้งค่าสภาพแวดล้อม
+
+```bash
+# สร้างไฟล์ .env
+cp .env.example .env
+```
+
+### ตัวอย่างไฟล์ .env
+
+```bash
+# Basic configuration
+NODE_ENV=production
+ANYCRAWL_API_PORT=8080
+
+# Scraping configuration
+ANYCRAWL_HEADLESS=true
+ANYCRAWL_PROXY_URL=
+ANYCRAWL_PROXY_STEALTH_URL=
+ANYCRAWL_PROXY_STEALTH_CREDITS=5
+ANYCRAWL_STEALTH_TIMEOUT_MS=120000
+ANYCRAWL_IGNORE_SSL_ERROR=true
+
+# Database configuration
+ANYCRAWL_API_DB_TYPE=sqlite
+ANYCRAWL_API_DB_CONNECTION=/usr/src/app/db/database.db
+
+# Redis configuration
+ANYCRAWL_REDIS_URL=redis://redis:6379
+
+# Authentication configuration
+ANYCRAWL_API_AUTH_ENABLED=false
+```
+
+## ความคงทนของข้อมูล
+
+### โวลุ่มจัดเก็บ
+
+AnyCrawl ใช้โวลุ่มต่อไปนี้เพื่อความคงทนของข้อมูล:
+
+```yaml
+volumes:
+    - ./storage:/usr/src/app/storage # Scraping data storage
+    - ./db:/usr/src/app/db # Database files
+    - redis-data:/data # Redis data
+```
+
+### สำรองข้อมูล
+
+```bash
+# Backup database
+docker compose exec api cp /usr/src/app/db/database.db /usr/src/app/storage/backup.db
+
+# Backup Redis data
+docker compose exec redis redis-cli SAVE
+docker compose cp redis:/data/dump.rdb ./backup/
+```
+
+## คำสั่งที่ใช้บ่อย
+
+### การจัดการบริการ
+
+```bash
+# Start services
+docker compose up -d
+
+# Stop services
+docker compose down
+
+# Restart specific service
+docker compose restart api
+
+# View service logs
+docker compose logs -f api
+```
+
+### ปรับขนาดบริการ
+
+```bash
+# Scale scraping service instances
+docker compose up -d --scale scrape-puppeteer=3
+docker compose up -d --scale scrape-playwright=2
+```
+
+## คำสั่งมอนิเตอร์
+
+```bash
+# View service status
+docker compose ps
+
+# View resource usage
+docker stats
+
+# View specific service logs
+docker compose logs -f --tail=100 api
+```
+
+## แก้ปัญหา
+
+### ปัญหาทั่วไป
+
+#### 1. พอร์ตชนกัน
+
+```bash
+# Check port usage
+lsof -i :8080
+
+# Modify port mapping
+# Change ports configuration in docker-compose.yml
+ports:
+  - "8081:8080"  # Change local port to 8081
+```
+
+#### 2. หน่วยความจำไม่พอ
+
+```bash
+# Check container memory usage
+docker stats
+
+# Increase Docker available memory (Docker Desktop)
+# Docker Desktop -> Settings -> Resources -> Memory
+```
+
+#### 3. การเชื่อมต่อฐานข้อมูลล้มเหลว
+
+```bash
+# Check database file permissions
+ls -la ./db/
+
+# Recreate database volume
+docker compose down -v
+docker compose up --build
+```
+
+#### 4. การเชื่อมต่อ Redis ล้มเหลว
+
+```bash
+# Check Redis service status
+docker compose exec redis redis-cli ping
+
+# View Redis logs
+docker compose logs redis
+```
+
+### โหมดดีบัก
+
+เปิดโหมดดีบักเพื่อแก้ปัญหา:
+
+```bash
+# Set environment variables to enable debugging
+export NODE_ENV=development
+export DEBUG=anycrawl:*
+
+# Start services
+docker compose up --build
+```
+
+## การดีพลอย production
+
+### การตั้งค่าความปลอดภัย
+
+1. **เปิดการยืนยันตัวตน**:
+
+```bash
+ANYCRAWL_API_AUTH_ENABLED=true
+```
+
+หลังเปิดการยืนยันตัวตน คุณต้องเพิ่ม ApiKey และใช้ในหัวข้อคำขอ
+
+### สร้าง API Key
+
+หากเปิดการยืนยันตัวตน (`ANYCRAWL_API_AUTH_ENABLED=true`) ให้สร้าง API key จากรากที่เก็บ:
+
+```bash
+pnpm --filter api key:generate
+# optionally name the key
+pnpm --filter api key:generate -- default
+```
+
+คำสั่งจะพิมพ์ `uuid`, `key`, และ `credits` ใช้ key ที่พิมพ์ในหัวข้อ `Authorization: Bearer <KEY>`
+
+#### รันภายในคอนเทนเนอร์ Docker
+
+หากรันผ่าน Docker ให้รันคำสั่งภายในคอนเทนเนอร์:
+
+- ใช้ Docker Compose:
+
+```bash
+docker compose exec api pnpm --filter api key:generate
+docker compose exec api pnpm --filter api key:generate -- default
+```
+
+- ใช้คอนเทนเนอร์เดียว (แทนที่ `<container_name_or_id>`):
+
+```bash
+docker exec -it <container_name_or_id> pnpm --filter api key:generate
+docker exec -it <container_name_or_id> pnpm --filter api key:generate -- default
+```
+
+2. **ใช้ HTTPS**:
+
+อ้างอิง:
+
+```yaml
+services:
+    nginx:
+        image: nginx:alpine
+        ports:
+            - "443:443"
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf
+            - ./ssl:/etc/ssl/certs
+```
+
+ใช้ `nginx` เป็น reverse proxy
+
+## อัปเดตและการบำรุงรักษา
+
+### อัปเดตบริการ
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Rebuild and start
+docker compose up --build -d
+
+# Clean up old images
+docker image prune -f
+```

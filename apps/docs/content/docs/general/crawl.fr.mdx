@@ -1,0 +1,439 @@
+---
+title: Crawl
+description: Parcourez un site entier et transformez-le en données structurées prêtes pour les LLM.
+icon: Bug
+---
+
+## Introduction
+
+L’API crawl AnyCrawl découvre et traite plusieurs pages à partir d’une URL de départ, en appliquant le même pipeline d’extraction par page que `/v1/scrape`. Elle est asynchrone : vous recevez immédiatement un `job_id`, puis interrogez l’état et récupérez les résultats par pages.
+
+**Points clés**
+
+- **Jobs asynchrones** : mettez un crawl en file et récupérez les résultats plus tard
+- **Multi-moteurs** : `auto` (défaut), `cheerio`, `playwright`, `puppeteer`
+- **Contrôle de portée** : `strategy`, `max_depth`, `include_paths`, `exclude_paths`
+- **Options par page** : réutilisez les options de `/v1/scrape` dans `scrape_options`
+- **Pagination** : flux de résultats via `skip` pour limiter la taille des réponses
+
+### Points de terminaison de l’API
+
+```
+POST    https://api.anycrawl.dev/v1/crawl
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}/status
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}?skip=0
+DELETE  https://api.anycrawl.dev/v1/crawl/{jobId}
+```
+
+## Exemples d’utilisation
+
+### Créer un job de crawl
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://anycrawl.dev",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 100,
+    "exclude_paths": ["/blog/*"],
+    "scrape_options": {
+      "formats": ["markdown"],
+      "timeout": 60000
+    }
+  }'
+```
+
+### Scraping sélectif avec `scrape_paths`
+
+Utilisez `scrape_paths` pour visiter des pages afin de découvrir des liens sans extraire le contenu. Cela réduit les coûts et le stockage :
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://shop.example.com",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 200,
+    "include_paths": ["/*"],
+    "scrape_paths": ["/products/*/details", "/products/*/reviews"],
+    "scrape_options": {
+      "formats": ["markdown", "json"]
+    }
+  }'
+```
+
+Dans cet exemple :
+
+- Toutes les pages correspondant à `/*` sont **visitées** pour découvrir les liens
+- Seules les pages correspondant à `/products/*/details` ou `/products/*/reviews` ont leur **contenu extrait et enregistré**
+- Les pages catégories, navigation, etc. sont crawlées mais pas scrapées, ce qui économise crédits et stockage
+
+```javascript tab="JavaScript"
+const start = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://anycrawl.dev",
+        engine: "cheerio",
+        strategy: "same-domain",
+        max_depth: 5,
+        limit: 100,
+        exclude_paths: ["/blog/*"],
+        scrape_options: { formats: ["markdown"], timeout: 60000 },
+    }),
+});
+const startResult = await start.json();
+const jobId = startResult.data.job_id;
+```
+
+```python tab="Python"
+import requests
+resp = requests.post(
+    'https://api.anycrawl.dev/v1/crawl',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://anycrawl.dev',
+        'engine': 'cheerio',
+        'strategy': 'same-domain',
+        'max_depth': 5,
+        'limit': 100,
+        'exclude_paths': ['/blog/*'],
+    'scrape_options': { 'formats': ['markdown'], 'timeout': 60000 }
+    }
+)
+start = resp.json()
+job_id = start['data']['job_id']
+```
+
+### Interroger l’état
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396/status"
+```
+
+```javascript tab="JavaScript"
+const statusRes = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}/status`, {
+    headers: { Authorization: "Bearer YOUR_API_KEY" },
+});
+const status = await statusRes.json();
+```
+
+### Récupérer les résultats (paginés)
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=0"
+```
+
+```javascript tab="JavaScript"
+let skip = 0;
+while (true) {
+    const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`, {
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+    });
+    const page = await res.json();
+    // process page.data
+    if (!page.next) break;
+    const nextUrl = new URL(page.next);
+    skip = Number(nextUrl.searchParams.get("skip") || 0);
+}
+```
+
+### Annuler un job
+
+```bash tab="cURL"
+curl -X DELETE -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396"
+```
+
+## Paramètres de requête
+
+| Paramètre           | Type            | Obligatoire | Défaut       | Description                                                                                                              |
+| ------------------- | --------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `url`               | string          | Oui      | -             | URL de départ du crawl                                                                                                   |
+| `template_id`       | string          | Non      | -             | ID du modèle à utiliser pour ce crawl                                                                                    |
+| `variables`         | object          | Non      | -             | Variables du modèle (uniquement si `template_id` est fourni)                                                            |
+| `engine`            | enum            | Non      | `auto`        | Moteur de scraping par page : `auto`, `cheerio`, `playwright`, `puppeteer`                                               |
+| `exclude_paths`     | array of string | Non      | -             | Règles de chemins à exclure (style glob), ex. `/blog/*`                                                                  |
+| `include_paths`     | array of string | Non      | -             | Règles de chemins à inclure pour le crawl (après exclusion)                                                                 |
+| `scrape_paths`      | array of string | Non      | -             | Règles pour l’extraction de contenu. Seules les URL correspondantes sont enregistrées. Si absent, toutes les URL incluses sont scrapées |
+| `max_depth`         | number          | Non      | `10`          | Profondeur max depuis l’URL de départ                                                                                      |
+| `strategy`          | enum            | Non      | `same-domain` | Portée : `all`, `same-domain`, `same-hostname`, `same-origin`                                                              |
+| `limit`             | number          | Non      | `100`         | Nombre maximum de pages à crawler                                                                                        |
+| `max_age`           | number          | Non      | -             | Durée de vie max du cache (ms). Utilisez `0` pour ignorer la lecture du cache ; omis = défaut serveur                      |
+| `store_in_cache`    | boolean         | Non      | `true`        | Écrire ou non le cache de page pour les scrapes par page                                                                   |
+| `retry`             | boolean         | Non      | `false`       | Réessayer ou non en cas d’échec                                                                                            |
+| `proxy`             | string (URI)    | Non      | -             | URL de proxy optionnelle                                                                                                   |
+| `formats`           | array of enum   | Non      | `["markdown"]`| Formats de sortie pour les scrapes par page                                                                                |
+| `timeout`           | number          | Non      | `60000`       | Délai d’attente par requête (ms)                                                                                           |
+| `wait_for`          | number          | Non      | -             | Délai avant extraction (ms) ; moteurs navigateur uniquement                                                                |
+| `wait_until`        | enum            | Non      | -             | Condition d’attente de navigation : `load`, `domcontentloaded`, `networkidle`, `commit`                                    |
+| `wait_for_selector` | string, object, or array | Non | -          | Attendre un ou plusieurs sélecteurs (moteurs navigateur uniquement). Priorité sur `wait_for`.                              |
+| `include_tags`      | array of string | Non      | -             | N’inclure que les éléments correspondant aux sélecteurs CSS                                                                  |
+| `exclude_tags`      | array of string | Non      | -             | Exclure les éléments correspondant aux sélecteurs CSS                                                                  |
+| `only_main_content` | boolean         | Non      | `true`        | Extraire uniquement le contenu principal (en-têtes, pieds, navigation, etc. exclus)                                          |
+| `json_options`      | object          | Non      | -             | Options d’extraction JSON structurée (schema, user_prompt, schema_name, schema_description)                                  |
+| `extract_source`    | enum            | Non      | `markdown`    | Source pour extraire le JSON : `markdown` (défaut) ou `html`                                                               |
+| `ocr_options`       | boolean         | Non      | `false`       | OCR pour les images markdown uniquement. Affecte le markdown, pas `html`/`rawHtml`.                                        |
+| `scrape_options`    | object          | Non      | -             | Options de scrape par page (mêmes champs que `/v1/scrape` sans `url`/`engine` de niveau supérieur)                         |
+
+### Champs `scrape_options`
+
+| Champ               | Type                     | Défaut        | Notes                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `formats`           | array of enum            | `["markdown"]` | Formats : `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                               |
+| `timeout`           | number                   | `60000`        | Délai par requête (ms)                                                                                                                    |
+| `wait_for`          | number                   | -              | Délai avant extraction (ms) ; navigateur ; priorité inférieure à `wait_for_selector`                                                 |
+| `wait_for_selector` | string, object, or array | -              | Attendre un ou plusieurs sélecteurs (navigateur). Chaîne CSS, objet `{ selector, state?, timeout? }`, ou tableau. Chaque entrée attendue séquentiellement. Priorité sur `wait_for`. |
+| `include_tags`      | array of string          | -              | N’inclure que les éléments correspondant aux sélecteurs CSS                                                                                              |
+| `exclude_tags`      | array of string          | -              | Exclure les éléments correspondant aux sélecteurs CSS                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | Contenu principal uniquement                                                                                                        |
+| `proxy`             | string (URI)             | -              | URL de proxy optionnelle                                                                                                                          |
+| `json_options`      | object                   | -              | Options d’extraction JSON structurée                                                                                                               |
+| `extract_source`    | enum                     | `markdown`     | Source JSON : `markdown` (défaut) ou `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | OCR pour images markdown uniquement.                                                                                                         |
+| `max_age`           | number                   | -              | Cache max (ms). `0` ignore la lecture du cache.                                                                                                     |
+| `store_in_cache`    | boolean                  | `true`         | Écrire le cache de page pour les scrapes par page                                                                                              |
+
+### Comportement du cache
+
+- Le crawl ne **lit pas** actuellement le cache de page, mais peut toujours écrire.
+- Si vous passez `scrape_options`, définissez-y les contrôles de cache.
+
+## Format des réponses
+
+### 1) Création (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "created",
+        "message": "Crawl job has been queued for processing"
+    }
+}
+```
+
+#### Erreurs possibles
+
+- 400 Erreur de validation
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid enum value...",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            { "field": "engine", "message": "Invalid enum value", "code": "invalid_enum_value" }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+- 401 Erreur d’authentification
+
+```json
+{ "success": false, "error": "Invalid API key" }
+```
+
+### 2) État (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job status retrieved successfully",
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "completed",
+        "start_time": "2025-05-25T07:56:44.162Z",
+        "expires_at": "2025-05-26T07:56:44.162Z",
+        "credits_used": 0,
+        "total": 120,
+        "completed": 30,
+        "failed": 2
+    }
+}
+```
+
+### 3) Page de résultats (HTTP 200)
+
+```json
+{
+    "success": true,
+    "status": "pending",
+    "total": 120,
+    "completed": 30,
+    "credits_used": 12,
+    "next": "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=100",
+    "data": [
+        {
+            "url": "https://anycrawl.dev/",
+            "title": "AnyCrawl",
+            "markdown": "# AnyCrawl...",
+            "timestamp": "2025-05-25T07:56:44.162Z"
+        }
+    ]
+}
+```
+
+#### Erreurs possibles
+
+- 400 ID de job invalide / introuvable
+
+```json
+{ "success": false, "error": "Invalid job ID", "message": "Job ID must be a valid UUID" }
+```
+
+### 4) Annulation (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job cancelled successfully",
+    "data": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396", "status": "cancelled" }
+}
+```
+
+#### Erreurs possibles
+
+- 404 Introuvable
+- 409 Job déjà terminé
+
+```json
+{
+    "success": false,
+    "error": "Job already finished",
+    "message": "Finished jobs cannot be cancelled"
+}
+```
+
+## Bonnes pratiques
+
+- Utilisez `/v1/scrape` pour les pages uniques afin de limiter le coût ; utilisez `/v1/crawl` pour les données à l’échelle du site.
+- Ajustez `strategy`, `max_depth` et les règles de chemins pour contrôler la portée et le coût.
+- Utilisez `scrape_paths` pour réduire les coûts : crawler navigation / catégories pour les liens, ne scraper que les pages de contenu.
+- Utilisez `formats` pour limiter la taille de sortie à ce dont vous avez besoin.
+- Paginez avec `skip` pour éviter des réponses trop volumineuses.
+
+### Optimisation des coûts avec `scrape_paths`
+
+Le paramètre `scrape_paths` permet d’optimiser le coût du crawl :
+
+**Sans `scrape_paths` (défaut)** :
+
+- Toutes les pages incluses → visitées + contenu extrait + enregistré
+
+**Avec `scrape_paths`** :
+
+- Pages dans `include_paths` mais pas dans `scrape_paths` → visitées uniquement (découverte de liens)
+- Pages à la fois dans `include_paths` **et** `scrape_paths` → visitées + contenu extrait + enregistré
+
+Exemples :
+
+- E-commerce : crawler toutes les catégories, ne scraper que les fiches produit
+- Documentation : visiter toute la navigation, n’extraire que le contenu des articles
+- Sites d’actualités : parcourir les rubriques, n’enregistrer que les articles complets
+
+## Exemple de gestion d’erreurs
+
+```javascript
+async function fetchAllResults(jobId) {
+    let skip = 0;
+    while (true) {
+        const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const page = await res.json();
+        // handle page.data here
+        if (!page.next) break;
+        const next = new URL(page.next);
+        skip = Number(next.searchParams.get("skip") || 0);
+    }
+}
+```
+
+## Utilisation à forte concurrence
+
+La file de crawl accepte des jobs concurrents. Soumettez plusieurs crawls et interrogez-les indépendamment :
+
+```javascript
+const seeds = ["https://site-a.com", "https://site-b.com", "https://site-c.com"];
+const jobs = await Promise.all(
+    seeds.map((url) =>
+        fetch("https://api.anycrawl.dev/v1/crawl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, engine: "cheerio" }),
+        }).then((r) => r.json())
+    )
+);
+```
+
+## FAQ
+
+### En quoi `/v1/crawl` diffère-t-il de `/v1/scrape` ?
+
+`/v1/scrape` récupère une URL unique de façon synchrone et renvoie le contenu immédiatement. `/v1/crawl` découvre plusieurs pages depuis une URL de départ et s’exécute de façon asynchrone.
+
+### Comment limiter la portée et le coût ?
+
+Utilisez `strategy`, `max_depth`, `limit` et les règles de chemins (`include_paths`, `exclude_paths`, `scrape_paths`).
+
+### Différence entre `include_paths` et `scrape_paths` ?
+
+- `include_paths` : contrôle quelles URL sont **visitées** (découverte de liens)
+- `scrape_paths` : contrôle quelles URL ont leur **contenu extrait et enregistré**
+
+Si `scrape_paths` n’est pas défini, toutes les URL incluses sont scrapées (comportement rétrocompatible).
+
+### Comment réduire les coûts de crawl ?
+
+Utilisez `scrape_paths` pour visiter navigation / catégories sans enregistrer leur contenu. Extrayez et enregistrez uniquement les pages correspondant à vos motifs `scrape_paths`.
+
+### Comment paginer les résultats ?
+
+Utilisez le paramètre de requête `skip`. Si la réponse contient `next`, suivez-le pour la page suivante.
+
+### Pourquoi certains jobs ne renvoient pas `html`/`markdown` ?
+
+Vérifiez que les formats souhaités sont dans `scrape_options.formats` et que le moteur choisi les prend en charge.
+
+## Valeurs de statut
+
+Le `status` du job suit les valeurs du modèle de job :
+
+| Statut      | Signification                                               |
+| ----------- | ----------------------------------------------------- |
+| `pending`   | Job en file ou en cours (pas encore terminé)              |
+| `completed` | Job terminé avec succès                             |
+| `failed`    | Job terminé avec une erreur                               |
+| `cancelled` | Job annulé ; aucun traitement ultérieur |
+
+## OpenAPI (généré automatiquement)
+
+Voir la référence API pour la documentation générée :
+
+- `POST /v1/crawl`
+- `GET /v1/crawl/{jobId}/status`
+- `GET /v1/crawl/{jobId}`
+- `DELETE /v1/crawl/{jobId}`

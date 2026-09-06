@@ -1,0 +1,752 @@
+---
+title: Поиск (Search)
+description: "API выдачи поисковой системы (SERP): запросы к поисковикам и структурированные результаты."
+icon: Search
+---
+
+## Введение
+
+Search API AnyCrawl даёт программный доступ к результатам поиска. Данные ориентированы на большие языковые модели (LLM): чистый структурированный JSON для анализа и обработки.
+
+API **отвечает сразу синхронно** — без опроса и вебхуков. Поддерживаются **несколько поисковых систем** и **несколько страниц выдачи** в одном запросе.
+
+### Основные возможности
+
+- **Несколько движков**: сейчас Google; планируются другие
+- **Удобно для LLM**: структурированный JSON
+- **Языки и регионы**: поиск на разных языках
+- **Несколько страниц выдачи**: в одном запросе
+- **Производительность**: **высокая параллельность** с асинхронной обработкой
+- **Синхронный ответ**: результаты сразу, без опроса
+- **Полная выдача**: результаты поиска и подсказки (suggestions)
+
+## Конечная точка API
+
+```
+POST https://api.anycrawl.dev/v1/search
+```
+
+## Примеры
+
+#### Базовый поиск (Google по умолчанию)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "OpenAI ChatGPT"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "OpenAI ChatGPT",
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "OpenAI ChatGPT"
+    }
+)
+print(response.json())
+```
+
+#### Несколько страниц выдачи
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "machine learning tutorials",
+    "pages": 3,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "machine learning tutorials",
+        pages: 3,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "machine learning tutorials",
+        "pages": 3,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### Язык и регион
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "AnyCrawl",
+    "lang": "zh",
+    "pages": 2
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "AnyCrawl",
+        lang: "zh",
+        pages: 2,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "AnyCrawl",
+        "lang": "zh",
+        "pages": 2
+    }
+)
+print(response.json())
+```
+
+#### Пагинация
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "web scraping tools",
+    "offset": 20,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "web scraping tools",
+        offset: 20,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "web scraping tools",
+        "offset": 20,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### Безопасный поиск
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "educational content",
+    "safe_search": 0
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "educational content",
+        safe_search: 0,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "educational content",
+        "safe_search": 0
+    }
+)
+print(response.json())
+```
+
+## Параметры запроса
+
+| Parameter       | Type           | Required | Default  | Description                                                                                                                           |
+| --------------- | -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`         | string         | Yes      | -        | Поисковый запрос                                                                                                                      |
+| `template_id`   | string         | No       | -        | ID шаблона для этого поиска                                                                                                         |
+| `variables`     | object         | No       | -        | Переменные шаблона (только с `template_id`)                                                                                           |
+| `engine`        | enum           | No       | `google` | Поисковая система. Сейчас: `google`                                                                                                 |
+| `limit`         | number         | No       | 10       | Макс. число результатов на страницу                                                                                                   |
+| `offset`        | number         | No       | 0        | Пропуск результатов (пагинация)                                                                                                       |
+| `pages`         | number         | No       | 1        | Число страниц выдачи (мин: 1, макс: 20)                                                                                               |
+| `lang`          | string         | No       | `en`     | Локаль языка (напр. 'en', 'zh', 'es', 'fr')                                                                                           |
+| `country`       | string         | No       | -        | Локаль страны (напр. 'US', 'GB', 'CN')                                                                                                |
+| `timeRange`     | enum           | No       | -        | Фильтр по времени: `day`, `week`, `month`, `year`                                                                                     |
+| `sources`       | enum           | No       | -        | Источники: `web`, `images`, `news` (SearXNG)                                                                                          |
+| `safe_search`   | number \| null | No       | null     | Уровень безопасного поиска Google: `0` (выкл), `1` (средний), `2` (строгий) или null (по умолчанию). Только для Google.                |
+
+### Опционально: `scrape_options` для URL из результатов
+
+Если задано, каждый URL результата может быть дополнительно скрейпнут с этими опциями (как `/v1/scrape` без верхнеуровневого `url`). Опции только для браузера игнорируются, если скрейп не браузерный.
+
+| Field               | Type                     | Default        | Notes                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine`            | enum                     | -              | Scrape engine for result URLs: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                 |
+| `formats`           | array of enum            | `["markdown"]` | Output formats: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                                          |
+| `timeout`           | number                   | `60000`        | Per-request timeout (ms)                                                                                                                    |
+| `wait_for`          | number                   | -              | Delay before extraction (ms); browser engines only; lower priority than `wait_for_selector`                                                 |
+| `wait_until`        | enum                     | -              | Navigation wait condition for browser engines: `load`, `domcontentloaded`, `networkidle`, `commit`                                           |
+| `wait_for_selector` | string, object, or array | -              | Wait for one or multiple selectors (browser engines only). Accepts a CSS selector string, an object `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }`, or an array mixing strings/objects. Each entry is awaited sequentially. Takes priority over `wait_for`. |
+| `include_tags`      | array of string          | -              | Only include elements that match CSS selectors                                                                                              |
+| `exclude_tags`      | array of string          | -              | Exclude elements that match CSS selectors                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | Only extract main content, removing headers, footers, navigation, etc. (`include_tags` takes precedence)                                  |
+| `proxy`             | string (URI)             | -              | Optional proxy URL                                                                                                                          |
+| `json_options`      | object                   | -              | Options for structured JSON extraction (schema, user_prompt, schema_name, schema_description)                                               |
+| `extract_source`    | enum                     | `markdown`     | Source to extract JSON from: `markdown` (default) or `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | Enable OCR enhancement for markdown images only. Affects markdown generation, not `html`/`rawHtml`.                                         |
+| `max_age`           | number                   | -              | Cache max age (ms). Use `0` to skip cache read; omit to use server default                                                                    |
+| `store_in_cache`    | boolean                  | `true`         | Whether to write Page Cache for per-result scrapes                                                                                           |
+| `template_id`       | string                   | -              | **Scrape** template ID for follow-ups (same as `/v1/scrape`). URLs outside `allowedDomains` are skipped. |
+| `variables`         | object                   | -              | Variables for that scrape template (with `template_id`). |
+
+### Поддерживаемые поисковые системы
+
+#### `google` (по умолчанию)
+
+- **Сценарий**: общий веб-поиск с полной выдачей
+- **Плюсы**: широкие результаты, много языков и регионов
+- **Возможности**: результаты поиска и подсказки; безопасный поиск (выкл/средний/строгий)
+- **Когда**: исследования, открытие контента
+- **Safe Search**: параметр `safe_search`: 0 (выкл), 1 (средний), 2 (строгий) или null (по умолчанию)
+
+## Формат ответа
+
+### Успешный ответ (HTTP 200)
+
+#### Успешный поиск
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "title": "AlsoAsked: People Also Ask keyword research tool",
+            "url": "https://alsoasked.com/",
+            "description": "Find the questions people also ask. Enter a question, brand or search query. e.g. 'keyword research'.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "OpenAI ChatGPT Features and Benefits",
+            "url": "https://openai.com/chatgpt",
+            "description": "ChatGPT is an AI assistant that can help with writing, research, and problem-solving.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "Keyword tool",
+            "source": "Google Suggestions"
+        }
+    ]
+}
+```
+
+#### Типы результатов
+
+API возвращает два типа:
+
+1. **Результаты поиска**: заголовок, URL, описание, источник
+2. **Подсказки (suggestions)**: связанные запросы от поисковой системы
+
+### Ответы с ошибками
+
+#### 400 — ошибка валидации
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'google', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": ["Invalid enum value. Expected 'google', received 'invalid'"]
+    }
+}
+```
+
+#### 401 — ошибка аутентификации
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+#### 402 — требуется оплата
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits. Please upgrade your plan or purchase more credits."
+}
+```
+
+## Рекомендации
+
+### Выбор поисковой системы
+
+1. **Общий веб-поиск** → `google` (сейчас единственный поддерживаемый движок)
+2. **Несколько языков** → задайте подходящий `lang`
+3. **Широкий охват** → используйте несколько страниц выдачи
+
+### Производительность
+
+- **Пакет страниц**: параметр `pages` — несколько страниц выдачи в одном запросе
+- **Язык**: уточняйте `lang` для региональной выдачи
+- **Запрос**: конкретные формулировки улучшают релевантность
+
+### Обработка ошибок
+
+```javascript
+try {
+    const response = await fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            query: "artificial intelligence",
+            pages: 2,
+        }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+        // Handle successful result
+        console.log("Found results:", result.data.length);
+
+        // Separate search results from suggestions
+        const searchResults = result.data.filter((item) => item.url);
+        const suggestions = result.data.filter((item) => !item.url);
+
+        console.log("Search Results:", searchResults.length);
+        console.log("Suggestions:", suggestions.length);
+    } else {
+        // Handle search failure
+        console.error("Search failed:", result.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## Высокая параллельность
+
+API **поддерживает высокую параллельность**. Можно отправлять много поисковых запросов одновременно без искусственного лимита частоты:
+
+```javascript
+// Concurrent searching example
+const queries = ["machine learning", "artificial intelligence", "data science"];
+
+const searchPromises = queries.map((query) =>
+    fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, engine: "google", pages: 2 }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(searchPromises);
+console.log(`Completed ${results.length} searches simultaneously`);
+```
+
+## Лимиты и кредиты
+
+- **Нет отдельного лимита частоты для параллельных запросов** — API поддерживает высокую параллельность.
+- Учёт расхода — по заголовкам ответа и `BillingChargeDetails`.
+
+### Модель кредитов (поиск + опциональные follow-up scrapes)
+
+1. **`search_pages`** — соответствует **`pages`** (часто 1 кредит за страницу по умолчанию).
+2. **`template_per_call`** — при верхнеуровневом **`template_id`** (шаблон **search**): `pricing.perCall` один раз за запрос.
+3. При **`scrape_options`** и успешных follow-up:
+   - **`search_result_scrape`** — `completed_scrape_count ×` единица движка (`calculateScrapeCredits`).
+   - **`search_result_scrape_template`** — при **`scrape_options.template_id`**: `pricing.perCall` шаблона scrape за успех. **Только для search-шаблонов:** `metadata.charge_scrape_template_credits: false` отключает эту строку (строка движка остаётся).
+
+Полная спецификация: репозиторий **`docs/api/search-scrape-credits-and-templates.md`**.
+
+## Частые вопросы
+
+### Когда использовать разные языковые настройки?
+
+- **English (`en`)**: глобальная выдача и международный контент
+- **Chinese (`zh`)**: китайский язык и фокус на КНР
+- **Региональные варианты** (напр. `en-GB`, `fr-CA`): локализованная выдача
+
+### Почему результатов меньше ожидаемого?
+
+Возможные причины:
+
+- слишком узкий или редкий запрос
+- несоответствие языка запроса и параметра `lang`
+- ограничения поисковика по теме или региону
+- сетевые проблемы
+
+### Как учитывать регион?
+
+Сейчас регион во многом задаётся через `lang`. Рекомендации:
+
+- коды языка под целевой регион (напр. `en-GB` для UK)
+- добавляйте в запрос региональные термины при необходимости
+
+### Чем отличаются результаты поиска от подсказок?
+
+- **Результаты поиска**: заголовок, URL, описание, источник
+- **Подсказки**: связанные запросы без URL — для расширения запроса
+
+### Есть ли лимит на параллельные поисковые запросы?
+
+Нет, API **поддерживает высокую параллельность**. Можно отправлять много запросов одновременно; ответы приходят сразу.
+
+## Языки и регионы
+
+Search API поддерживает много языков и регионов через параметр `lang`. Ниже перечислены поддерживаемые локали.
+
+### Основные языки
+
+- `all` - All languages
+
+#### **English** 🌐
+
+- `en` - Global English
+- `en-AU` - English (Australia) 🇦🇺
+- `en-CA` - English (Canada) 🇨🇦
+- `en-GB` - English (United Kingdom) 🇬🇧
+- `en-IE` - English (Ireland) 🇮🇪
+- `en-IN` - English (India) 🇮🇳
+- `en-NZ` - English (New Zealand) 🇳🇿
+- `en-PH` - English (Philippines) 🇵🇭
+- `en-PK` - English (Pakistan) 🇵🇰
+- `en-SG` - English (Singapore) 🇸🇬
+- `en-US` - English (United States) 🇺🇸
+- `en-ZA` - English (South Africa) 🇿🇦
+
+#### **Chinese** 🌐
+
+- `zh` - Global Chinese
+- `zh-CN` - Chinese (China) 🇨🇳
+- `zh-HK` - Chinese (Hong Kong) 🇭🇰
+- `zh-TW` - Chinese (Taiwan) 🇹🇼
+
+#### **Spanish** 🌐
+
+- `es` - Global Spanish
+- `es-AR` - Spanish (Argentina) 🇦🇷
+- `es-CL` - Spanish (Chile) 🇨🇱
+- `es-CO` - Spanish (Colombia) 🇨🇴
+- `es-ES` - Spanish (Spain) 🇪🇸
+- `es-MX` - Spanish (Mexico) 🇲🇽
+- `es-PE` - Spanish (Peru) 🇵🇪
+
+#### **French** 🌐
+
+- `fr` - Global French
+- `fr-BE` - French (Belgium) 🇧🇪
+- `fr-CA` - French (Canada) 🇨🇦
+- `fr-CH` - French (Switzerland) 🇨🇭
+- `fr-FR` - French (France) 🇫🇷
+
+#### **German** 🌐
+
+- `de` - Global German
+- `de-AT` - German (Austria) 🇦🇹
+- `de-BE` - German (Belgium) 🇧🇪
+- `de-CH` - German (Switzerland) 🇨🇭
+- `de-DE` - German (Germany) 🇩🇪
+
+#### **Portuguese** 🌐
+
+- `pt` - Global Portuguese
+- `pt-BR` - Portuguese (Brazil) 🇧🇷
+- `pt-PT` - Portuguese (Portugal) 🇵🇹
+
+#### **Italian** 🌐
+
+- `it` - Global Italian
+- `it-CH` - Italian (Switzerland) 🇨🇭
+- `it-IT` - Italian (Italy) 🇮🇹
+
+#### **Japanese** 🌐
+
+- `ja` - Global Japanese
+- `ja-JP` - Japanese (Japan) 🇯🇵
+
+#### **Korean** 🌐
+
+- `ko` - Global Korean
+- `ko-KR` - Korean (South Korea) 🇰🇷
+
+#### **Russian** 🌐
+
+- `ru` - Global Russian
+- `ru-RU` - Russian (Russia) 🇷🇺
+
+### Европейские языки
+
+#### **Dutch** 🌐
+
+- `nl` - Global Dutch
+- `nl-BE` - Dutch (Belgium) 🇧🇪
+- `nl-NL` - Dutch (Netherlands) 🇳🇱
+
+#### **Polish** 🌐
+
+- `pl` - Global Polish
+- `pl-PL` - Polish (Poland) 🇵🇱
+
+#### **Czech** 🌐
+
+- `cs` - Global Czech
+- `cs-CZ` - Czech (Czech Republic) 🇨🇿
+
+#### **Hungarian** 🌐
+
+- `hu` - Global Hungarian
+- `hu-HU` - Hungarian (Hungary) 🇭🇺
+
+#### **Romanian** 🌐
+
+- `ro` - Global Romanian
+- `ro-RO` - Romanian (Romania) 🇷🇴
+
+#### **Greek** 🌐
+
+- `el` - Global Greek
+- `el-GR` - Greek (Greece) 🇬🇷
+
+#### **Bulgarian** 🌐
+
+- `bg` - Global Bulgarian
+- `bg-BG` - Bulgarian (Bulgaria) 🇧🇬
+
+#### **Croatian** 🌐
+
+- `hr` - Global Croatian
+
+#### **Slovak** 🌐
+
+- `sk` - Global Slovak
+
+#### **Slovenian** 🌐
+
+- `sl` - Global Slovenian
+
+#### **Estonian** 🌐
+
+- `et` - Global Estonian
+- `et-EE` - Estonian (Estonia) 🇪🇪
+
+#### **Latvian** 🌐
+
+- `lv` - Global Latvian
+
+#### **Lithuanian** 🌐
+
+- `lt` - Global Lithuanian
+
+#### **Finnish** 🌐
+
+- `fi` - Global Finnish
+- `fi-FI` - Finnish (Finland) 🇫🇮
+
+#### **Swedish** 🌐
+
+- `sv` - Global Swedish
+- `sv-SE` - Swedish (Sweden) 🇸🇪
+
+#### **Norwegian** 🌐
+
+- `nb` - Norwegian Bokmål
+- `nb-NO` - Norwegian Bokmål (Norway) 🇳🇴
+
+#### **Danish** 🌐
+
+- `da` - Global Danish
+- `da-DK` - Danish (Denmark) 🇩🇰
+
+#### **Icelandic** 🌐
+
+- `is` - Global Icelandic
+
+### Другие языки
+
+#### **Arabic** 🌐
+
+- `ar` - Global Arabic
+- `ar-SA` - Arabic (Saudi Arabia) 🇸🇦
+
+#### **Hebrew** 🇮🇱
+
+- `he` - Hebrew
+
+#### **Turkish** 🌐
+
+- `tr` - Global Turkish
+- `tr-TR` - Turkish (Turkey) 🇹🇷
+
+#### **Persian** 🌐
+
+- `fa` - Persian
+
+#### **Hindi** 🌐
+
+- `hi` - Hindi
+
+#### **Urdu** 🌐
+
+- `ur` - Urdu
+
+#### **Thai** 🌐
+
+- `th` - Global Thai
+- `th-TH` - Thai (Thailand) 🇹🇭
+
+#### **Vietnamese** 🌐
+
+- `vi` - Global Vietnamese
+- `vi-VN` - Vietnamese (Vietnam) 🇻🇳
+
+#### **Indonesian** 🌐
+
+- `id` - Global Indonesian
+- `id-ID` - Indonesian (Indonesia) 🇮🇩
+
+#### **Indian Languages**
+
+- `kn` - Kannada 🌐
+- `ml` - Malayalam 🌐
+- `mr` - Marathi 🌐
+- `ta` - Tamil 🌐
+- `te` - Telugu 🌐
+
+#### **Other European Languages**
+
+- `af` - Afrikaans 🌐
+- `be` - Belarusian 🌐
+- `ca` - Catalan 🌐
+- `cy` - Welsh 🌐
+- `eu` - Basque 🌐
+- `ga` - Irish 🌐
+- `gd` - Scottish Gaelic 🌐
+- `gl` - Galician 🌐
+- `sq` - Albanian 🌐
+- `uk` - Ukrainian 🌐
+
+### Примечания
+
+- **Глобальные коды** (напр. `en`, `zh`, `es`) дают более широкую выдачу без жёсткой привязки к стране
+- **Коды со страной** (напр. `en-US`, `zh-CN`, `es-MX`) — локализованная выдача для региона
+- API подбирает домен Google и языковые настройки по указанной локали
+- Для лучшего качества совмещайте `lang` с языком поискового запроса

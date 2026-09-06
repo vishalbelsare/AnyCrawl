@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: Web-Scraping und Suche in Windsurf mit AnyCrawl MCP ergänzen
+icon: Wind
+---
+
+# MCP-Websuche und Web-Scraping in Windsurf
+
+Ergänzen Sie Windsurf um Web-Scraping und Suche mit AnyCrawl MCP.
+
+## Schnellstart
+
+### 1. API-Schlüssel holen
+
+Registrieren Sie sich auf [anycrawl.dev](https://anycrawl.dev) und kopieren Sie Ihren API-Schlüssel aus dem Dashboard.
+
+### 2. In Windsurf eintragen
+
+Fügen Sie Folgendes in `~/.codeium/windsurf/mcp_config.json` ein:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Ersetzen Sie `your-api-key` durch Ihren echten AnyCrawl-API-Schlüssel.
+
+### 3. Windsurf neu starten
+
+Fertig – Windsurf kann jetzt im Web suchen und Seiten scrapen.
+
+## Kurzdemonstration
+
+Probieren Sie in Windsurf:
+
+**Websuche:**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**Seite scrapen:**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**Dokumentation holen:**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**Website crawlen:**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Die KI-Agenten von Windsurf nutzen automatisch die AnyCrawl-Tools.
+
+## Fehlerbehebung
+
+### Server reagiert nicht
+
+1. Prüfen Sie, ob der API-Schlüssel gültig ist.
+2. Stellen Sie sicher, dass Node.js 18+ installiert ist.
+3. Starten Sie Windsurf nach Konfigurationsänderungen neu.
+
+### Berechtigungsfehler
+
+Stellen Sie sicher, dass `npx` ausführen darf. Ggf. global installieren:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Konfiguration auf das globale Paket umstellen:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Nächste Schritte
+
+- Mehr zu [Scrape-Optionen](../scrape)
+- [Crawl-Funktionen](../crawl) erkunden
+- [Suchfunktionen](../search) ansehen
+- Vollständige [MCP-Server-Dokumentation](../mcp)

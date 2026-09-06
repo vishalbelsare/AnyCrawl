@@ -1,0 +1,28 @@
+{
+    "title": "概要",
+    "description": "一般ドキュメント",
+    "root": true,
+    "icon": "Building2",
+    "pages": [
+        "---はじめに---",
+        "index",
+        "mcp",
+        "---機能---",
+        "scrape",
+        "crawl",
+        "cache",
+        "search",
+        "map",
+        "json-mode",
+        "template",
+        "---自動化---",
+        "scheduled-tasks",
+        "monitors",
+        "webhooks",
+        "---開発者ガイド---",
+        "mcp-setup-guides",
+        "---セルフホスト---",
+        "docker",
+        "proxy-rule"
+    ]
+}

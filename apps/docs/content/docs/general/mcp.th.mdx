@@ -1,0 +1,458 @@
+---
+title: เซิร์ฟเวอร์ MCP
+description: เชื่อม AnyCrawl เข้ากับ Cursor, Claude และ VS Code ผ่าน Model Context Protocol (MCP)
+icon: Zap
+---
+
+**AnyCrawl MCP Server** — การดึงข้อมูลและการครอลเว็บที่ทรงพลังสำหรับ Cursor, Claude และไคลเอนต์ LLM อื่นๆ ผ่าน Model Context Protocol (MCP)
+
+## คุณสมบัติ
+
+- การดึงข้อมูลเว็บ การครอล และการแยกเนื้อหา
+- ความสามารถค้นหาและค้นพบ
+- การประมวลผลแบบแบตช์และ concurrency
+- รองรับคลาวด์และโฮสต์เอง
+- ติดตามความคืบหน้าแบบเรียลไทม์
+- รองรับ SSE
+
+## การติดตั้ง
+
+### รันด้วย npx
+
+```bash
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### ใช้ API ที่โฮสต์
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/mcp"
+        }
+    }
+}
+```
+
+### ติดตั้งด้วยมือ
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
+```
+
+## รันบน Cursor
+
+เพิ่มเซิร์ฟเวอร์ AnyCrawl MCP ใน Cursor:
+
+1. เปิด Cursor Settings
+2. ไปที่ Features > MCP Servers
+3. คลิก "+ Add new global MCP server"
+4. ใส่การตั้งค่าต่อไปนี้:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl-mcp": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+            }
+        }
+    }
+}
+```
+
+## รันบน VS Code
+
+เพิ่มบล็อก JSON ต่อไปนี้ใน User Settings (JSON) ของ VS Code:
+
+```json
+{
+    "mcp": {
+        "inputs": [
+            {
+                "type": "promptString",
+                "id": "apiKey",
+                "description": "AnyCrawl API Key",
+                "password": true
+            }
+        ],
+        "servers": {
+            "anycrawl": {
+                "command": "npx",
+                "args": ["-y", "anycrawl-mcp"],
+                "env": {
+                    "ANYCRAWL_API_KEY": "${input:apiKey}"
+                }
+            }
+        }
+    }
+}
+```
+
+## รันบน Claude Desktop
+
+เพิ่มสิ่งนี้ในไฟล์ config ของ Claude:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/sse"
+        }
+    }
+}
+```
+
+## การตั้งค่า
+
+### ตัวแปรสภาพแวดล้อม
+
+#### จำเป็นสำหรับ Cloud API
+
+- `ANYCRAWL_API_KEY`: API key ของ AnyCrawl
+    - จำเป็นเมื่อใช้ cloud API (ค่าเริ่มต้น)
+    - ไม่บังคับเมื่อโฮสต์เอง
+- `ANYCRAWL_BASE_URL`: URL ฐานของ AnyCrawl API
+    - ไม่บังคับ
+    - จำเป็นเมื่อโฮสต์เอง
+
+### ตัวอย่างการตั้งค่า
+
+#### การตั้งค่า Cloud พื้นฐาน
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key-here"
+npx -y anycrawl-mcp
+```
+
+#### การตั้งค่าโฮสต์เอง
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key"
+export ANYCRAWL_BASE_URL="https://your-instance.com"
+npx -y anycrawl-mcp
+```
+
+## เครื่องมือที่มี
+
+### 1. เครื่องมือ Scrape (`anycrawl_scrape`)
+
+ดึงข้อมูลจาก URL เดียวในรูปแบบต่างๆ
+
+**เหมาะกับ:**
+
+- แยกเนื้อหาจากหน้าเดียว
+- ดึงข้อมูลอย่างรวดเร็ว
+- ทดสอบ URL เฉพาะ
+
+**พารามิเตอร์:**
+
+- `url` (จำเป็น): URL ที่จะดึง
+- `engine` (ไม่บังคับ): เครื่องมือดึง (`auto`, `playwright`, `cheerio`, `puppeteer`) ค่าเริ่มต้น `auto`
+- `formats` (ไม่บังคับ): รูปแบบผลลัพธ์ (`markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`)
+- `timeout` (ไม่บังคับ): timeout มิลลิวินาที (ค่าเริ่มต้น: 300000)
+- `wait_for` (ไม่บังคับ): เวลารอให้หน้าโหลด
+- `include_tags` (ไม่บังคับ): แท็ก HTML ที่จะรวม
+- `exclude_tags` (ไม่บังคับ): แท็ก HTML ที่จะยกเว้น
+- `json_options` (ไม่บังคับ): ตัวเลือกการดึง JSON
+- `ocr_options` (ไม่บังคับ): เปิด OCR เสริมสำหรับรูปใน markdown เท่านั้น ไม่เปลี่ยน `html`/`rawHtml`
+
+**ตัวอย่าง:**
+
+```json
+{
+    "name": "anycrawl_scrape",
+    "arguments": {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "formats": ["markdown", "html"],
+        "timeout": 30000
+    }
+}
+```
+
+### 2. เครื่องมือ Crawl (`anycrawl_crawl`)
+
+เริ่มงานครอลเพื่อดึงหลายหน้าจากเว็บไซต์ โดยค่าเริ่มต้นจะรอจนเสร็จและคืนผลรวมด้วย SDK `client.crawl` (poll ทุก 3 วินาที timeout 60 วินาที)
+
+**เหมาะกับ:**
+
+- แยกเนื้อหาจากหลายหน้าที่เกี่ยวข้อง
+- วิเคราะห์เว็บไซต์แบบครอบคลุม
+- รวบรวมข้อมูลจำนวนมาก
+
+**พารามิเตอร์:**
+
+- `url` (จำเป็น): URL ฐานสำหรับครอล
+- `engine` (ไม่บังคับ): เครื่องมือดึง (`auto`, `playwright`, `cheerio`, `puppeteer`) ค่าเริ่มต้น `auto`
+- `max_depth` (ไม่บังคับ): ความลึกสูงสุด (ค่าเริ่มต้น: 10)
+- `limit` (ไม่บังคับ): จำนวนหน้าสูงสุด (ค่าเริ่มต้น: 100)
+- `strategy` (ไม่บังคับ): กลยุทธ์การครอล (`all`, `same-domain`, `same-hostname`, `same-origin`)
+- `exclude_paths` (ไม่บังคับ): รูปแบบ URL ที่ยกเว้น
+- `include_paths` (ไม่บังคับ): รูปแบบ URL ที่รวม
+- `scrape_options` (ไม่บังคับ): ตัวเลือกต่อหน้า
+- `poll_seconds` (ไม่บังคับ): ช่วง poll เป็นรอบ (ค่าเริ่มต้น: 3)
+- `timeout_ms` (ไม่บังคับ): timeout รวมมิลลิวินาที (ค่าเริ่มต้น: 60000)
+
+**ตัวอย่าง:**
+
+```json
+{
+    "name": "anycrawl_crawl",
+    "arguments": {
+        "url": "https://example.com/blog",
+        "engine": "playwright",
+        "max_depth": 2,
+        "limit": 50,
+        "strategy": "same-domain",
+        "poll_seconds": 3,
+        "timeout_ms": 60000
+    }
+}
+```
+
+คืนค่า: `{ "job_id": "...", "status": "completed", "total": N, "completed": N, "credits_used": N, "data": [...] }`
+
+### 3. เครื่องมือ Crawl Status (`anycrawl_crawl_status`)
+
+ตรวจสถานะงานครอล
+
+**พารามิเตอร์:**
+
+- `job_id` (จำเป็น): ID งานครอล
+
+**ตัวอย่าง:**
+
+```json
+{
+    "name": "anycrawl_crawl_status",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 4. เครื่องมือ Crawl Results (`anycrawl_crawl_results`)
+
+รับผลจากงานครอล
+
+**พารามิเตอร์:**
+
+- `job_id` (จำเป็น): ID งานครอล
+- `skip` (ไม่บังคับ): จำนวนผลที่ข้าม (สำหรับแบ่งหน้า)
+
+**ตัวอย่าง:**
+
+```json
+{
+    "name": "anycrawl_crawl_results",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "skip": 0
+    }
+}
+```
+
+### 5. เครื่องมือ Cancel Crawl (`anycrawl_cancel_crawl`)
+
+ยกเลิกงานครอลที่ค้างอยู่
+
+**พารามิเตอร์:**
+
+- `job_id` (จำเป็น): ID งานครอลที่จะยกเลิก
+
+**ตัวอย่าง:**
+
+```json
+{
+    "name": "anycrawl_cancel_crawl",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 6. เครื่องมือ Search (`anycrawl_search`)
+
+ค้นหาเว็บด้วย AnyCrawl
+
+**เหมาะกับ:**
+
+- หาข้อมูลเฉพาะจากหลายเว็บ
+- การวิจัยและการค้นพบ
+- เมื่อไม่ทราบว่าเว็บใดมีข้อมูล
+
+**พารามิเตอร์:**
+
+- `query` (จำเป็น): คำค้นหา
+- `engine` (ไม่บังคับ): เครื่องมือค้นหา (`google`)
+- `limit` (ไม่บังคับ): จำนวนผลสูงสุด (ค่าเริ่มต้น: 5)
+- `offset` (ไม่บังคับ): จำนวนผลที่ข้าม (ค่าเริ่มต้น: 0)
+- `pages` (ไม่บังคับ): จำนวนหน้าผลค้นหา
+- `lang` (ไม่บังคับ): รหัสภาษา
+- `country` (ไม่บังคับ): รหัสประเทศ
+- `scrape_options` (ไม่บังคับ): ตัวเลือกการดึงผลค้นหา
+- `safeSearch` (ไม่บังคับ): ระดับความปลอดภัย (0=ปิด, 1=ปานกลาง, 2=เข้มงวด)
+
+**ตัวอย่าง:**
+
+```json
+{
+    "name": "anycrawl_search",
+    "arguments": {
+        "query": "latest AI research papers 2024",
+        "engine": "google",
+        "limit": 5,
+        "scrape_options": {
+            "engine": "cheerio",
+            "formats": ["markdown"]
+        }
+    }
+}
+```
+
+## รูปแบบผลลัพธ์
+
+### Markdown
+
+เนื้อหา markdown ที่สะอาดและมีโครงสร้าง เหมาะกับ LLM
+
+### HTML
+
+เนื้อหา HTML ดิบพร้อมการจัดรูปแบบ
+
+### Text
+
+ข้อความล้วนๆ มีการจัดรูปแบบน้อย
+
+### Screenshot
+
+ภาพหน้าจอของหน้า
+
+### Screenshot@fullPage
+
+ภาพหน้าจอเต็มหน้าลงไปด้านล่าง
+
+### Raw HTML
+
+HTML ดิบที่ยังไม่ประมวลผล
+
+### JSON
+
+การดึงข้อมูลมีโครงสร้างด้วย schema สำหรับคุณ
+
+## เครื่องมือดึงข้อมูล
+
+### Auto (ค่าเริ่มต้น)
+
+- เลือกเครื่องมืออัจฉริยะ
+- เลือกเครื่องมือที่เหมาะสมต่อ URL โดยอัตโนมัติ
+- เหมาะกับการดึงข้อมูลทั่วไป
+
+### Cheerio
+
+- เร็วและเบา
+- เหมาะกับเนื้อหาคงที่
+- เรนเดอร์ฝั่งเซิร์ฟเวอร์
+
+### Playwright
+
+- อัตโนมัติเบราว์เซอร์เต็มรูปแบบ
+- เรนเดอร์ JavaScript
+- เหมาะกับเนื้อหาไดนามิก
+
+### Puppeteer
+
+- อัตโนมัติ Chrome/Chromium
+- สมดุลระหว่างฟีเจอร์และประสิทธิภาพ
+
+## การจัดการข้อผิดพลาด
+
+เซิร์ฟเวอร์ให้การจัดการข้อผิดพลาดครบถ้วน:
+
+- **ข้อผิดพลาดการตรวจสอบ**: พารามิเตอร์ไม่ถูกต้องหรือขาดฟิลด์ที่จำเป็น
+- **ข้อผิดพลาด API**: ข้อผิดพลาด AnyCrawl พร้อมข้อความรายละเอียด
+- **ข้อผิดพลาดเครือข่าย**: การเชื่อมต่อและ timeout
+
+## การบันทึกล็อก
+
+เซิร์ฟเวอร์มี logging ละเอียด:
+
+- **Debug**: รายละเอียดการดำเนินการ
+- **Info**: สถานะทั่วไป
+- **Warn**: ปัญหาไม่ร้ายแรง
+- **Error**: ข้อผิดพลาดร้ายแรงและความล้มเหลว
+
+ตั้งระดับล็อกด้วยตัวแปรสภาพแวดล้อม:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## การพัฒนา
+
+### ข้อกำหนดเบื้องต้น
+
+- Node.js 18+
+- npm
+
+### ตั้งค่า
+
+```bash
+git clone https://github.com/any4ai/anycrawl-mcp-server.git
+cd anycrawl-mcp-server
+npm ci
+```
+
+### Build
+
+```bash
+npm run build
+```
+
+### ทดสอบ
+
+```bash
+npm test
+```
+
+### Lint
+
+```bash
+npm run lint
+```
+
+### Format
+
+```bash
+npm run format
+```
+
+## การมีส่วนร่วม
+
+1. Fork ที่เก็บ
+2. สร้าง branch ฟีเจอร์
+3. รัน tests: `npm test`
+4. ส่ง pull request
+
+## ใบอนุญาต
+
+MIT License — ดูไฟล์ LICENSE
+
+## การสนับสนุน
+
+- GitHub Issues: [รายงานบั๊กหรือขอฟีเจอร์](https://github.com/any4ai/anycrawl-mcp-server/issues)
+- เอกสาร: [เอกสาร AnyCrawl API](https://docs.anycrawl.dev)
+- อีเมล: help@anycrawl.dev
+
+## เกี่ยวกับ AnyCrawl
+
+AnyCrawl เป็น crawler Node.js/TypeScript ที่ทรงพลัง แปลงเว็บไซต์เป็นข้อมูลพร้อม LLM และดึงผล SERP มีโครงสร้างจาก Google/Bing/Baidu ฯลฯ มี multi-threading แบบเนทีฟสำหรับงานจำนวนมากและรองรับหลายรูปแบบผลลัพธ์
+
+- **เว็บไซต์**: https://anycrawl.dev
+- **GitHub**: https://github.com/any4ai/anycrawl
+- **API**: https://api.anycrawl.dev

@@ -1,0 +1,439 @@
+---
+title: Crawl
+description: Crawl toàn bộ website và chuyển thành dữ liệu có cấu trúc sẵn sàng cho LLM.
+icon: Bug
+---
+
+## Giới thiệu
+
+API crawl của AnyCrawl khám phá và xử lý nhiều trang từ URL gốc, áp dụng cùng pipeline trích từng trang như `/v1/scrape`. API bất đồng bộ: bạn nhận `job_id` ngay, sau đó poll trạng thái và lấy kết quả theo trang.
+
+**Điểm nổi bật**
+
+- **Job bất đồng bộ**: Xếp crawl và lấy kết quả sau
+- **Đa engine**: `auto` (mặc định), `cheerio`, `playwright`, `puppeteer`
+- **Kiểm soát phạm vi linh hoạt**: `strategy`, `max_depth`, `include_paths`, `exclude_paths`
+- **Tùy chọn từng trang**: Tái sử dụng tùy chọn `/v1/scrape` trong `scrape_options`
+- **Phân trang**: Luồng kết quả qua `skip` để kiểm soát kích thước payload
+
+### Endpoint API
+
+```
+POST    https://api.anycrawl.dev/v1/crawl
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}/status
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}?skip=0
+DELETE  https://api.anycrawl.dev/v1/crawl/{jobId}
+```
+
+## Ví dụ sử dụng
+
+### Tạo job crawl
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://anycrawl.dev",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 100,
+    "exclude_paths": ["/blog/*"],
+    "scrape_options": {
+      "formats": ["markdown"],
+      "timeout": 60000
+    }
+  }'
+```
+
+### Thu thập có chọn lọc với scrape_paths
+
+Dùng `scrape_paths` để **truy cập** trang nhằm khám phá liên kết mà không trích nội dung. Giảm chi phí và lưu trữ:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://shop.example.com",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 200,
+    "include_paths": ["/*"],
+    "scrape_paths": ["/products/*/details", "/products/*/reviews"],
+    "scrape_options": {
+      "formats": ["markdown", "json"]
+    }
+  }'
+```
+
+Trong ví dụ này:
+
+- Mọi trang khớp `/*` được **truy cập** để khám phá liên kết
+- Chỉ trang khớp `/products/*/details` hoặc `/products/*/reviews` mới **trích và lưu nội dung**
+- Trang danh mục, điều hướng, v.v. vẫn được crawl nhưng không scrape, tiết kiệm credit và dung lượng
+
+```javascript tab="JavaScript"
+const start = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://anycrawl.dev",
+        engine: "cheerio",
+        strategy: "same-domain",
+        max_depth: 5,
+        limit: 100,
+        exclude_paths: ["/blog/*"],
+        scrape_options: { formats: ["markdown"], timeout: 60000 },
+    }),
+});
+const startResult = await start.json();
+const jobId = startResult.data.job_id;
+```
+
+```python tab="Python"
+import requests
+resp = requests.post(
+    'https://api.anycrawl.dev/v1/crawl',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://anycrawl.dev',
+        'engine': 'cheerio',
+        'strategy': 'same-domain',
+        'max_depth': 5,
+        'limit': 100,
+        'exclude_paths': ['/blog/*'],
+    'scrape_options': { 'formats': ['markdown'], 'timeout': 60000 }
+    }
+)
+start = resp.json()
+job_id = start['data']['job_id']
+```
+
+### Poll trạng thái
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396/status"
+```
+
+```javascript tab="JavaScript"
+const statusRes = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}/status`, {
+    headers: { Authorization: "Bearer YOUR_API_KEY" },
+});
+const status = await statusRes.json();
+```
+
+### Lấy kết quả (phân trang)
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=0"
+```
+
+```javascript tab="JavaScript"
+let skip = 0;
+while (true) {
+    const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`, {
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+    });
+    const page = await res.json();
+    // process page.data
+    if (!page.next) break;
+    const nextUrl = new URL(page.next);
+    skip = Number(nextUrl.searchParams.get("skip") || 0);
+}
+```
+
+### Hủy job
+
+```bash tab="cURL"
+curl -X DELETE -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396"
+```
+
+## Tham số request
+
+| Parameter           | Type            | Required | Default       | Description                                                                                                              |
+| ------------------- | --------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `url`               | string          | Yes      | -             | URL gốc để bắt đầu crawl                                                                                               |
+| `template_id`       | string          | No       | -             | `template_id` dùng cho crawl này                                                                                        |
+| `variables`         | object          | No       | -             | Biến template (chỉ khi có `template_id`)                                                            |
+| `engine`            | enum            | No       | `auto`        | Engine scrape từng trang: `auto`, `cheerio`, `playwright`, `puppeteer`                                                   |
+| `exclude_paths`     | array of string | No       | -             | Quy tắc loại trừ (kiểu glob), ví dụ `/blog/*`                                                                        |
+| `include_paths`     | array of string | No       | -             | Quy tắc bao gồm cho crawl (áp dụng sau khi loại trừ)                                                             |
+| `scrape_paths`      | array of string | No       | -             | Quy tắc trích nội dung. Chỉ URL khớp mới lưu nội dung. Không đặt: scrape mọi URL đã include |
+| `max_depth`         | number          | No       | `10`          | Độ sâu tối đa từ URL gốc                                                                                              |
+| `strategy`          | enum            | No       | `same-domain` | Phạm vi crawl: `all`, `same-domain`, `same-hostname`, `same-origin`                                                        |
+| `limit`             | number          | No       | `100`         | Số trang tối đa                                                                                         |
+| `max_age`           | number          | No       | -             | Tuổi tối đa cache (ms). `0` bỏ đọc cache; bỏ trống: mặc định máy chủ                                                |
+| `store_in_cache`    | boolean         | No       | `true`        | Có ghi Page Cache cho scrape từng trang hay không                                                                          |
+| `retry`             | boolean         | No       | `false`       | Có thử lại khi lỗi hay không                                                                                               |
+| `proxy`             | string (URI)    | No       | -             | URL proxy tùy chọn                                                                                                        |
+| `formats`           | array of enum   | No       | `["markdown"]`| Định dạng đầu ra scrape từng trang                                                                                       |
+| `timeout`           | number          | No       | `60000`       | Timeout mỗi request (ms)                                                                                                  |
+| `wait_for`          | number          | No       | -             | Trễ trước khi trích (ms); chỉ engine trình duyệt                                                                        |
+| `wait_until`        | enum            | No       | -             | Điều kiện chờ điều hướng (engine trình duyệt): `load`, `domcontentloaded`, `networkidle`, `commit`                        |
+| `wait_for_selector` | string, object, or array | No | -          | Chờ một hoặc nhiều selector (chỉ engine trình duyệt). Ưu tiên hơn `wait_for`.                               |
+| `include_tags`      | array of string | No       | -             | Chỉ gồm phần tử khớp CSS selector                                                                            |
+| `exclude_tags`      | array of string | No       | -             | Loại phần tử khớp CSS selector                                                                                 |
+| `only_main_content` | boolean         | No       | `true`        | Chỉ trích nội dung chính, bỏ header/footer/nav, v.v.                                                    |
+| `json_options`      | object          | No       | -             | Tùy chọn trích JSON có cấu trúc (schema, user_prompt, schema_name, schema_description)                             |
+| `extract_source`    | enum            | No       | `markdown`    | Nguồn trích JSON: `markdown` (mặc định) hoặc `html`                                                               |
+| `ocr_options`       | boolean         | No       | `false`       | Bật OCR cho ảnh markdown. Ảnh hưởng markdown, không `html`/`rawHtml`.                       |
+| `scrape_options`    | object          | No       | -             | Tùy chọn scrape từng trang (cùng trường `/v1/scrape` trừ `url`/`engine` ở top-level)                                  |
+
+### Trường `scrape_options`
+
+| Field               | Type                     | Default        | Notes                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `formats`           | array of enum            | `["markdown"]` | Định dạng đầu ra: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                               |
+| `timeout`           | number                   | `60000`        | Timeout mỗi request (ms)                                                                                                                    |
+| `wait_for`          | number                   | -              | Trễ trước khi trích (ms); chỉ engine trình duyệt; thấp hơn `wait_for_selector`                                                 |
+| `wait_for_selector` | string, object, or array | -              | Chờ một hoặc nhiều selector (chỉ engine trình duyệt). Chuỗi CSS selector, object `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }`, hoặc mảng. Mỗi mục chờ lần lượt. Ưu tiên hơn `wait_for`. |
+| `include_tags`      | array of string          | -              | Chỉ gồm phần tử khớp CSS selector                                                                                              |
+| `exclude_tags`      | array of string          | -              | Loại phần tử khớp CSS selector                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | Chỉ trích nội dung chính, bỏ header/footer/nav, v.v.                                                                        |
+| `proxy`             | string (URI)             | -              | URL proxy tùy chọn                                                                                                                          |
+| `json_options`      | object                   | -              | Tùy chọn trích JSON có cấu trúc (schema, user_prompt, schema_name, schema_description)                                               |
+| `extract_source`    | enum                     | `markdown`     | Nguồn trích JSON: `markdown` (mặc định) hoặc `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | Bật OCR cho ảnh markdown. Ảnh hưởng markdown, không `html`/`rawHtml`.                                         |
+| `max_age`           | number                   | -              | Tuổi tối đa cache (ms). `0` bỏ đọc cache; bỏ trống: mặc định máy chủ                                                                     |
+| `store_in_cache`    | boolean                  | `true`         | Có ghi Page Cache cho scrape từng trang hay không                                                                                              |
+
+### Hành vi cache
+
+- Crawl hiện **không** đọc Page Cache cho request crawl đầy đủ, nhưng vẫn có thể ghi.
+- Nếu truyền `scrape_options`, đặt điều khiển cache bên trong đó.
+
+## Định dạng phản hồi
+
+### 1) Tạo (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "created",
+        "message": "Crawl job has been queued for processing"
+    }
+}
+```
+
+#### Lỗi có thể xảy ra
+
+- 400 Lỗi xác thực
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid enum value...",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            { "field": "engine", "message": "Invalid enum value", "code": "invalid_enum_value" }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+- 401 Lỗi xác thực
+
+```json
+{ "success": false, "error": "Invalid API key" }
+```
+
+### 2) Trạng thái (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job status retrieved successfully",
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "completed",
+        "start_time": "2025-05-25T07:56:44.162Z",
+        "expires_at": "2025-05-26T07:56:44.162Z",
+        "credits_used": 0,
+        "total": 120,
+        "completed": 30,
+        "failed": 2
+    }
+}
+```
+
+### 3) Trang kết quả (HTTP 200)
+
+```json
+{
+    "success": true,
+    "status": "pending",
+    "total": 120,
+    "completed": 30,
+    "credits_used": 12,
+    "next": "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=100",
+    "data": [
+        {
+            "url": "https://anycrawl.dev/",
+            "title": "AnyCrawl",
+            "markdown": "# AnyCrawl...",
+            "timestamp": "2025-05-25T07:56:44.162Z"
+        }
+    ]
+}
+```
+
+#### Lỗi có thể xảy ra
+
+- 400 Job id không hợp lệ / Không tìm thấy
+
+```json
+{ "success": false, "error": "Invalid job ID", "message": "Job ID must be a valid UUID" }
+```
+
+### 4) Hủy (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job cancelled successfully",
+    "data": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396", "status": "cancelled" }
+}
+```
+
+#### Lỗi có thể xảy ra
+
+- 404 Không tìm thấy
+- 409 Job đã kết thúc
+
+```json
+{
+    "success": false,
+    "error": "Job already finished",
+    "message": "Finished jobs cannot be cancelled"
+}
+```
+
+## Thực hành tốt
+
+- Dùng `/v1/scrape` cho từng trang để giảm chi phí; dùng `/v1/crawl` cho dữ liệu cả site.
+- Chỉnh `strategy`, `max_depth` và quy tắc đường dẫn để kiểm soát phạm vi và chi phí.
+- Dùng `scrape_paths` để giảm chi phí: crawl trang điều hướng/danh mục để tìm liên kết, chỉ scrape trang nội dung.
+- Dùng `formats` để giới hạn kích thước đầu ra theo nhu cầu.
+- Phân trang kết quả qua `skip` để tránh phản hồi quá lớn.
+
+### Tối ưu chi phí với scrape_paths
+
+Tham số `scrape_paths` giúp tối ưu chi phí crawl:
+
+**Không có `scrape_paths` (mặc định)**:
+
+- Mọi trang đã include → truy cập + trích nội dung + lưu
+
+**Có `scrape_paths`**:
+
+- Trang trong `include_paths` nhưng **không** trong `scrape_paths` → chỉ truy cập (khám phá liên kết)
+- Trang vừa trong `include_paths` **và** `scrape_paths` → truy cập + trích + lưu
+
+Ví dụ:
+
+- Thương mại điện tử: Crawl mọi trang danh mục, chỉ scrape trang chi tiết sản phẩm
+- Tài liệu: Truy cập mọi trang điều hướng, chỉ trích nội dung bài viết
+- Tin tức: Duyệt mọi mục, chỉ lưu trang bài đầy đủ
+
+## Ví dụ xử lý lỗi
+
+```javascript
+async function fetchAllResults(jobId) {
+    let skip = 0;
+    while (true) {
+        const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const page = await res.json();
+        // handle page.data here
+        if (!page.next) break;
+        const next = new URL(page.next);
+        skip = Number(next.searchParams.get("skip") || 0);
+    }
+}
+```
+
+## Dùng đồng thời cao
+
+Hàng đợi crawl hỗ trợ nhiều job song song. Gửi nhiều job crawl và poll độc lập:
+
+```javascript
+const seeds = ["https://site-a.com", "https://site-b.com", "https://site-c.com"];
+const jobs = await Promise.all(
+    seeds.map((url) =>
+        fetch("https://api.anycrawl.dev/v1/crawl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, engine: "cheerio" }),
+        }).then((r) => r.json())
+    )
+);
+```
+
+## FAQ
+
+### `/v1/crawl` khác `/v1/scrape` thế nào?
+
+`/v1/scrape` lấy một URL đồng bộ và trả nội dung ngay. `/v1/crawl` khám phá nhiều trang từ URL gốc và chạy bất đồng bộ.
+
+### Làm sao giới hạn phạm vi và chi phí crawl?
+
+Dùng `strategy`, `max_depth`, `limit` và quy tắc đường dẫn (`include_paths`, `exclude_paths`, `scrape_paths`).
+
+### Khác biệt `include_paths` và `scrape_paths`?
+
+- `include_paths`: Điều khiển URL nào được **truy cập** (khám phá liên kết)
+- `scrape_paths`: Điều khiển URL nào **trích và lưu nội dung**
+
+Nếu không đặt `scrape_paths`, mọi URL đã include đều được scrape (hành vi tương thích ngược).
+
+### Làm sao giảm chi phí crawl?
+
+Dùng `scrape_paths` để truy cập trang điều hướng/danh mục mà không lưu nội dung. Chỉ trích và lưu trang khớp mẫu `scrape_paths`.
+
+### Phân trang kết quả thế nào?
+
+Dùng query `skip`. Nếu phản hồi có `next`, theo URL đó để lấy trang tiếp theo.
+
+### Vì sao một số job không trả `html`/`markdown`?
+
+Đảm bảo định dạng mong muốn có trong `scrape_options.formats` và engine hỗ trợ.
+
+## Giá trị trạng thái
+
+`status` của job theo mô hình job:
+
+| Status      | Ý nghĩa                                               |
+| ----------- | ----------------------------------------------------- |
+| `pending`   | Đang xếp hàng hoặc đang chạy (chưa xong)       |
+| `completed` | Hoàn thành thành công                             |
+| `failed`    | Kết thúc với lỗi                               |
+| `cancelled` | Đã hủy; không xử lý thêm |
+
+## OpenAPI (tự sinh)
+
+Xem API Reference cho tài liệu tự sinh:
+
+- `POST /v1/crawl`
+- `GET /v1/crawl/{jobId}/status`
+- `GET /v1/crawl/{jobId}`
+- `DELETE /v1/crawl/{jobId}`

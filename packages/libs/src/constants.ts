@@ -17,7 +17,7 @@ export const AD_DOMAINS = [
     'amazon-adsystem.com'
 ]
 
-export const ALLOWED_ENGINES = ["playwright", "cheerio", "puppeteer"] as const;
+export const ALLOWED_ENGINES = ["auto", "playwright", "cheerio", "puppeteer"] as const;
 
 export const SCRAPE_FORMATS = [
     "markdown",
@@ -40,5 +40,6 @@ export const EXTRACT_SOURCES = [
 export const JOB_TYPE_SCRAPE = 'scrape' as const;
 export const JOB_TYPE_CRAWL = 'crawl' as const;
 export const JOB_TYPE_MAP = 'map' as const;
+export const JOB_TYPE_BATCH_SCRAPE = 'batch_scrape' as const;
 
 export const AVAILABLE_SEARCH_ENGINES = ["google", "searxng", 'ac-engine'] as const;

@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: Добавьте веб-скрапинг и поиск в Windsurf с помощью AnyCrawl MCP
+icon: Wind
+---
+
+# Веб-поиск и скрапинг через MCP в Windsurf
+
+Добавьте в Windsurf возможности веб-скрапинга и поиска с помощью AnyCrawl MCP.
+
+## Быстрая настройка
+
+### 1. Получите API-ключ
+
+Зарегистрируйтесь на [anycrawl.dev](https://anycrawl.dev) и скопируйте API-ключ в панели управления.
+
+### 2. Добавьте в Windsurf
+
+Добавьте в файл `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Замените `your-api-key` на ваш настоящий API-ключ AnyCrawl.
+
+### 3. Перезапустите Windsurf
+
+Готово! Windsurf может искать и скрапить веб.
+
+## Быстрое демо
+
+Попробуйте в Windsurf:
+
+**Поиск в интернете:**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**Скрапинг страницы:**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**Документация:**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**Обход сайта:**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Агенты AI Windsurf автоматически будут использовать инструменты AnyCrawl.
+
+## Устранение неполадок
+
+### Сервер не отвечает
+
+1. Проверьте, что API-ключ действителен
+2. Убедитесь, что установлен Node.js 18+
+3. Перезапустите Windsurf после изменения конфигурации
+
+### Ошибки прав
+
+Убедитесь, что `npx` может выполняться. Возможно, потребуется глобальная установка пакета:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Затем обновите конфигурацию для использования глобального пакета:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Дальше
+
+- Подробнее об [опциях скрапинга](../scrape)
+- [Возможности обхода](../crawl)
+- [Поиск](../search)
+- Полная [документация MCP-сервера](../mcp)

@@ -1,0 +1,61 @@
+---
+title: Cache
+description: Comportamento de cache das APIs Scrape, Crawl e Map.
+icon: Database
+---
+
+## Visão geral
+
+O AnyCrawl usa duas camadas de cache:
+
+- **Page Cache**: usada por `/v1/scrape` e pelo processamento por página em `/v1/crawl`
+- **Map Cache**: usada por `/v1/map` para resultados de descoberta de URLs
+
+## Parâmetros comuns
+
+### `max_age` (ms)
+
+- Controla o comportamento de **leitura** do cache.
+- `0`: força atualização (pula a leitura do cache)
+- `> 0`: permite dados em cache dentro dessa idade
+- omitido: usa o padrão do servidor
+
+### `store_in_cache`
+
+- Aplica-se às saídas de página de scrape/crawl.
+- `true` (padrão): grava no cache
+- `false`: não grava no cache
+
+### `use_index` (somente Map)
+
+- `true` (padrão): permite que o Map use o índice do Page Cache como fonte adicional
+- `false`: desativa essa fonte
+
+## Comportamento por endpoint
+
+### `/v1/scrape`
+
+- Pode ler o Page Cache antes de enfileirar um novo job.
+- Em cache hit, a resposta inclui metadados de cache (por exemplo `cachedAt` / `maxAge`).
+
+### `/v1/crawl`
+
+- Atualmente **não** lê o Page Cache para requisições de crawl completas.
+- Ainda suporta controles de escrita relacionados ao cache nas opções de scrape por página.
+
+### `/v1/map`
+
+- Pode ler o Map Cache.
+- A resposta não inclui um campo público `fromCache` (o uso de cache é interno).
+
+## Dicas práticas
+
+- Use `max_age: 0` quando precisar de dados frescos imediatamente.
+- Use `store_in_cache: false` para páginas muito dinâmicas para evitar gravar snapshots instáveis.
+- No Map, desative `use_index` se quiser que a descoberta dependa apenas de sitemap/busca/links da página.
+
+## Documentação relacionada
+
+- [API Scrape](./scrape)
+- [API Crawl](./crawl)
+- [API Map](./map)

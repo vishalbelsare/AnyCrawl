@@ -1,0 +1,28 @@
+{
+    "title": "Обзор",
+    "description": "Общая документация",
+    "root": true,
+    "icon": "Building2",
+    "pages": [
+        "---Начало работы---",
+        "index",
+        "mcp",
+        "---Возможности---",
+        "scrape",
+        "crawl",
+        "cache",
+        "search",
+        "map",
+        "json-mode",
+        "template",
+        "---Автоматизация---",
+        "scheduled-tasks",
+        "monitors",
+        "webhooks",
+        "---Руководства для разработчиков---",
+        "mcp-setup-guides",
+        "---Самостоятельное размещение---",
+        "docker",
+        "proxy-rule"
+    ]
+}

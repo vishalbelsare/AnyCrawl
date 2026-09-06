@@ -1,0 +1,28 @@
+{
+    "title": "개요",
+    "description": "일반 문서",
+    "root": true,
+    "icon": "Building2",
+    "pages": [
+        "---시작하기---",
+        "index",
+        "mcp",
+        "---기능---",
+        "scrape",
+        "crawl",
+        "cache",
+        "search",
+        "map",
+        "json-mode",
+        "template",
+        "---자동화---",
+        "scheduled-tasks",
+        "monitors",
+        "webhooks",
+        "---개발자 가이드---",
+        "mcp-setup-guides",
+        "---셀프 호스팅---",
+        "docker",
+        "proxy-rule"
+    ]
+}

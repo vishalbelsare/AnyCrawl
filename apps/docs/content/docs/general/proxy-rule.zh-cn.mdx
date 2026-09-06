@@ -1,0 +1,284 @@
+---
+title: 代理配置
+description: 为 AnyCrawl 配置基于 URL 的代理路由
+icon: Waypoints
+---
+
+# 代理配置
+
+AnyCrawl 支持基于 URL 模式的灵活代理路由。您可以为不同的网站或 API 端点配置不同的代理。
+
+## 代理模式
+
+AnyCrawl 支持四种代理模式，可在 API 请求中指定：
+
+| 模式 | 描述 |
+|------|------|
+| `auto` | 自动在基础代理和隐身代理之间选择。当基础代理可用时优先使用；如果基础代理不可用或重试/失败时，会升级/回退到隐身代理。 |
+| `base` | 使用 `ANYCRAWL_PROXY_URL` 中配置的代理（默认） |
+| `stealth` | 使用 `ANYCRAWL_PROXY_STEALTH_URL` 中配置的代理（通常是住宅代理或高级代理） |
+| 自定义 URL | 完整的代理 URL 字符串（例如 `http://user:pass@proxy:8080`），在响应中返回为 `custom` |
+
+### 使用示例
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "auto"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "stealth"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://custom-proxy:8080"
+}
+```
+
+## 超时行为（Scrape API）
+
+- 请求级别的 `timeout` 始终具有最高优先级。
+- 如果 `proxy` 为 `stealth` 或 `auto` 且未提供 `timeout`，AnyCrawl 使用 `ANYCRAWL_STEALTH_TIMEOUT_MS`（默认：`120000`）。
+- 对于 `base` 模式或自定义代理 URL 且未显式提供 `timeout` 的情况，AnyCrawl 使用 `60000`。
+
+## 配置方法
+
+### 方法 1：简单代理配置（ANYCRAWL_PROXY_URL）
+
+对于只需要所有请求使用相同代理的简单场景，设置 `ANYCRAWL_PROXY_URL` 环境变量：
+
+```bash
+# Single proxy
+export ANYCRAWL_PROXY_URL=http://username:password@proxy.example.com:8080
+
+# Multiple proxies (tiered mode)
+export ANYCRAWL_PROXY_URL=http://proxy1:8080,http://proxy2:8080,http://proxy3:8080
+```
+
+当提供多个代理（以逗号分隔）时，AnyCrawl 使用**分层代理**策略：
+
+- 所有请求最初使用第一个代理（层级 0）
+- 如果某个代理对某个域名失败，AnyCrawl 会自动为该域名切换到下一个层级
+- 这提供了智能故障转移和最优代理使用
+
+这是不需要基于 URL 路由时最简单的代理配置方式。
+
+### 方法 2：高级配置文件（ANYCRAWL_PROXY_CONFIG）
+
+对于基于 URL 的代理路由，创建一个 JSON 配置文件（例如 `proxy-config.json`）并将 `ANYCRAWL_PROXY_CONFIG` 环境变量设置为其路径：
+
+```bash
+ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+**注意**：如果同时设置了 `ANYCRAWL_PROXY_URL` 和 `ANYCRAWL_PROXY_CONFIG`，配置文件中的规则优先生效，`ANYCRAWL_PROXY_URL` 作为不匹配任何规则的 URL 的后备方案。
+
+## 规则类型
+
+AnyCrawl 支持三种代理规则，按优先级顺序应用：
+
+### 1. URL 规则（最高优先级）
+
+精确 URL 匹配。当您需要为特定端点使用特定代理时使用。
+
+```json
+{
+    "url": "https://api.example.com/v1/data",
+    "proxy": "http://username:password@proxy1.example.com:8080"
+}
+```
+
+### 2. 模式规则（中等优先级）
+
+完整 URL 模式匹配，支持通配符。适用于匹配具有特定路径或协议的 URL。
+
+```json
+{
+    "pattern": "https://*.github.com/api/*",
+    "proxy": "http://username:password@proxy2.example.com:8080"
+}
+```
+
+### 3. 域名规则（最低优先级）
+
+仅域名模式匹配。将某个域名的所有请求路由到特定代理。
+
+```json
+{
+    "domain": "*.gov.au",
+    "proxy": "http://username:password@proxy3.example.com:8080"
+}
+```
+
+## 通配符模式
+
+- `*` - 匹配任意数量的字符
+- `?` - 精确匹配一个字符
+- 模式不区分大小写
+
+### 示例
+
+- `*.example.com` - 匹配 `api.example.com`、`www.example.com`、`test.example.com`
+- `api-?.example.com` - 匹配 `api-1.example.com`、`api-2.example.com`，但不匹配 `api-10.example.com`
+- `https://*.example.com/api/*` - 匹配 example.com 任何子域名上带有 /api/ 路径的所有 HTTPS URL
+
+## 完整配置示例
+
+```json
+{
+    "rules": [
+        {
+            "url": "https://api.example.com/v1/users",
+            "proxy": "http://premium-proxy.example.com:8080"
+        },
+        {
+            "pattern": "https://api.github.com/*",
+            "proxy": "http://github-proxy.example.com:8080"
+        },
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-proxy.example.com:8080"
+        }
+    ]
+}
+```
+
+## 代理 URL 格式
+
+AnyCrawl 支持多种代理 URL 格式：
+
+- HTTP：`http://username:password@proxy.example.com:8080`
+- HTTPS：`https://username:password@proxy.example.com:8443`
+
+## 调试
+
+您将看到类似以下的消息：
+
+```
+Using proxy from request userData: http://custom-proxy:8080
+Found proxy for URL https://example.com: http://proxy.example.com:8080 By matching a rule.
+Proxy matched by domain pattern: *.gov.au → http://proxy.example.com:8080
+Using tiered proxy: http://default-proxy:8080
+```
+
+## 优先级示例
+
+给定 URL `https://api.github.com/repos/owner/repo`，以下规则将按顺序检查：
+
+1. **URL 匹配**：`"url": "https://api.github.com/repos/owner/repo"`
+2. **模式匹配**：`"pattern": "https://api.github.com/*"`
+3. **域名匹配**：`"domain": "*.github.com"`
+
+第一个匹配的规则生效。
+
+## 最佳实践
+
+1. **使用域名规则**处理广泛的代理需求（例如，某个国家所有政府网站的请求）
+2. **使用模式规则**当您需要匹配特定路径或协议时
+3. **使用 URL 规则**处理需要特殊处理的精确端点
+4. **顺序无关紧要** - 配置文件中的顺序不影响优先级，优先级由规则类型决定
+5. **测试您的模式** - 使用调试日志确保模式按预期匹配
+
+## 分层代理系统
+
+当使用 `ANYCRAWL_PROXY_URL` 配置多个代理时，AnyCrawl 采用智能分层代理系统：
+
+### 工作原理
+
+1. **初始状态**：所有域名从第一个代理开始使用（层级 0）
+2. **错误检测**：当某个代理对特定域名失败时，该域名会被提升到下一个层级
+3. **域名独立**：每个域名独立维护自己的层级
+
+### 场景示例
+
+```bash
+export ANYCRAWL_PROXY_URL=http://fast-proxy:8080,http://stable-proxy:8080,http://backup-proxy:8080
+```
+
+- 对 `example.com` 的初始请求 → 使用 `fast-proxy:8080`（层级 0）
+- 如果 `fast-proxy` 对 `example.com` 失败 → 切换到 `stable-proxy:8080`（层级 1）
+- 同时，`github.com` 如果运行正常，可能仍然使用 `fast-proxy:8080`
+- 系统会定期重试 `fast-proxy` 对 `example.com` 的连接，检查是否已恢复
+
+### 优势
+
+- **自动故障转移**：代理失败时无需手动干预
+- **域名优化**：每个域名使用最佳可用代理
+- **资源效率**：失败的代理不会被完全放弃
+- **自我修复**：当代理恢复时自动返回最优代理
+
+## 完整示例：同时使用两种方法
+
+以下是同时使用两种配置方法的示例设置：
+
+```bash
+# Set a default proxy for general use
+export ANYCRAWL_PROXY_URL=http://default-proxy:8080
+
+# Set up URL-based routing for specific sites
+export ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+使用以下 proxy-config.json：
+
+```json
+{
+    "rules": [
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-residential-proxy:8080"
+        },
+        {
+            "pattern": "https://api.*.com/*",
+            "proxy": "http://api-optimized-proxy:3128"
+        }
+    ]
+}
+```
+
+结果：
+
+- `https://www.homeaffairs.gov.au/` → 使用 `au-residential-proxy:8080`（域名规则匹配）
+- `https://api.github.com/repos` → 使用 `api-optimized-proxy:3128`（模式规则匹配）
+- `https://example.com/` → 使用 `default-proxy:8080`（回退到 ANYCRAWL_PROXY_URL）
+
+## 环境变量摘要
+
+| 变量名                          | 用途                                                     | 示例                                                   |
+| ------------------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| `ANYCRAWL_PROXY_URL`            | 基础代理配置（单个或多个）                               | `http://proxy:8080` 或 `http://p1:8080,http://p2:8080` |
+| `ANYCRAWL_PROXY_STEALTH_URL`    | 隐身/高级代理（住宅代理）                                | `http://residential-proxy:8080`                        |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | 使用隐身代理时额外消耗的积分                             | `5`                                                    |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS`   | `proxy=stealth` 和 `proxy=auto` 时未提供请求 `timeout` 的默认超时 | `120000`                                     |
+| `ANYCRAWL_PROXY_CONFIG`         | 基于 URL 路由的 JSON 配置文件路径                        | `/path/to/proxy-config.json`                           |
+
+### 优先级顺序
+
+1. **最高**：请求选项中指定的代理模式或自定义 URL
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "playwright",
+        "proxy": "stealth"
+    }
+    ```
+    或使用自定义 URL：
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "proxy": "http://custom-proxy:8080"
+    }
+    ```
+2. **高**：来自 `ANYCRAWL_PROXY_CONFIG` 的基于 URL 的规则
+3. **低**：来自 `ANYCRAWL_PROXY_URL` 的分层代理（后备方案）

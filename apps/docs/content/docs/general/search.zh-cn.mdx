@@ -1,0 +1,763 @@
+---
+title: 搜索
+description: 搜索引擎结果页（SERP）API，用于查询搜索引擎并获取结构化结果。
+icon: Search
+---
+
+## 简介
+
+AnyCrawl 搜索 API 允许你以编程方式从多个搜索引擎获取搜索结果。它专为大语言模型（LLM）构建，返回干净的结构化数据，经过 AI 处理和分析优化。
+
+该 API **即时同步返回数据**——无需轮询或 Webhook。它支持**多个搜索引擎**和**多页结果检索**，可满足全面的数据收集需求。
+
+### 核心功能
+
+- **多引擎支持**：目前支持 Google 搜索，计划支持更多引擎
+- **面向 LLM 优化**：返回非常适合 AI 处理的结构化 JSON 数据
+- **多语言支持**：支持不同语言和地区的搜索
+- **多页结果**：在单次请求中检索多页搜索结果
+- **高性能**：**原生高并发支持**，配合异步处理
+- **即时响应**：**同步 API**——无需轮询即可立即获得结果
+- **全面的结果**：同时返回搜索结果和搜索建议
+
+## API 端点
+
+```
+POST https://api.anycrawl.dev/v1/search
+```
+
+## 使用示例
+
+#### 基础搜索（默认 Google 引擎）
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "OpenAI ChatGPT"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "OpenAI ChatGPT",
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "OpenAI ChatGPT"
+    }
+)
+print(response.json())
+```
+
+#### 多页搜索
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "machine learning tutorials",
+    "pages": 3,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "machine learning tutorials",
+        pages: 3,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "machine learning tutorials",
+        "pages": 3,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### 指定语言/地区搜索
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "AnyCrawl",
+    "lang": "zh",
+    "pages": 2
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "AnyCrawl",
+        lang: "zh",
+        pages: 2,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "AnyCrawl",
+        "lang": "zh",
+        "pages": 2
+    }
+)
+print(response.json())
+```
+
+#### 分页搜索
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "web scraping tools",
+    "offset": 20,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "web scraping tools",
+        offset: 20,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "web scraping tools",
+        "offset": 20,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### 安全搜索
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "educational content",
+    "safe_search": 0
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "educational content",
+        safe_search: 0,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "educational content",
+        "safe_search": 0
+    }
+)
+print(response.json())
+```
+
+## 请求参数
+
+| 参数 | 类型 | 必填 | 默认值 | 描述 |
+| --------------- | -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`         | string         | 是      | -        | 要执行的搜索查询字符串 |
+| `template_id`   | string         | 否       | -        | 用于本次搜索的模板 ID |
+| `variables`     | object         | 否       | -        | 模板变量（仅在提供 `template_id` 时使用） |
+| `engine`        | enum           | 否       | `google` | 使用的搜索引擎。目前支持：`google` |
+| `limit`         | number         | 否       | 10       | 每页最大结果数 |
+| `offset`        | number         | 否       | 0        | 跳过的结果数量（用于分页） |
+| `pages`         | number         | 否       | 1        | 要检索的搜索结果页数（最小：1，最大：20） |
+| `lang`          | string         | 否       | `en`     | 搜索结果的语言区域设置（例如 'en'、'zh'、'es'、'fr'） |
+| `country`       | string         | 否       | -        | 搜索结果的国家/地区设置（例如 'US'、'GB'、'CN'） |
+| `timeRange`     | enum           | 否       | -        | 时间范围过滤器：`day`、`week`、`month`、`year` |
+| `sources`       | enum           | 否       | -        | 搜索来源：`web`、`images`、`news`（SearXNG） |
+| `safe_search`   | number \| null | 否       | null     | Google 安全搜索过滤级别：`0`（关闭）、`1`（中等）、`2`（严格），或 null（默认）。仅适用于 Google 搜索引擎。 |
+
+### 可选：用于结果 URL 的 `scrape_options`
+
+提供后，每个搜索结果 URL 都可使用给定选项进行抓取（字段与 `/v1/scrape` 相同，不含顶层 `url`）。注意：非浏览器抓取时会忽略仅浏览器选项。
+
+| 字段               | 类型                     | 默认值        | 说明                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine`            | enum                     | -              | 结果 URL 的抓取引擎：`auto`、`cheerio`、`playwright`、`puppeteer`                                                                 |
+| `formats`           | array of enum            | `["markdown"]` | 输出格式：`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`、`summary`、`links`                                          |
+| `timeout`           | number                   | `60000`        | 单次请求超时时间（毫秒）                                                                                                                    |
+| `wait_for`          | number                   | -              | 提取前的延迟时间（毫秒）；仅限浏览器引擎；优先级低于 `wait_for_selector`                                                 |
+| `wait_until`        | enum                     | -              | 浏览器引擎的导航等待条件：`load`、`domcontentloaded`、`networkidle`、`commit`                                           |
+| `wait_for_selector` | string, object, or array | -              | 等待一个或多个选择器（仅限浏览器引擎）。接受 CSS 选择器字符串、对象 `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }` 或混合字符串/对象的数组。每个条目按顺序等待。优先级高于 `wait_for`。 |
+| `include_tags`      | array of string          | -              | 仅包含匹配 CSS 选择器的元素                                                                                              |
+| `exclude_tags`      | array of string          | -              | 排除匹配 CSS 选择器的元素                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | 仅提取主要内容，移除页眉、页脚、导航等（`include_tags` 优先级更高）                                  |
+| `proxy`             | string (URI)             | -              | 可选的代理 URL                                                                                                                          |
+| `json_options`      | object                   | -              | 结构化 JSON 提取选项（schema、user_prompt、schema_name、schema_description）                                               |
+| `extract_source`    | enum                     | `markdown`     | JSON 提取的来源：`markdown`（默认）或 `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | 启用仅针对 Markdown 图片的 OCR 增强。影响 Markdown 生成，不影响 `html`/`rawHtml`。                                         |
+| `max_age`           | number                   | -              | 缓存最大有效期（毫秒）。使用 `0` 跳过缓存读取；省略则使用服务器默认值                                                                    |
+| `store_in_cache`    | boolean                  | `true`         | 是否为每个结果的抓取写入页面缓存                                                                                           |
+| `template_id`       | string                   | -              | **Scrape** 类型模板 ID，用于跟抓结果 URL（合并规则同 `/v1/scrape`）。不在模板 `allowedDomains` 内的结果 URL 会跳过跟抓。 |
+| `variables`         | object                   | -              | 上述 scrape 模板的变量（与 `template_id` 同时使用时有效）。 |
+
+### 支持的搜索引擎
+
+#### `google`（默认）
+
+- **适用场景**：通用网络搜索，获取全面的结果
+- **优势**：最全面的搜索结果，支持多语言和多地区
+- **功能**：同时返回搜索结果和搜索建议。支持安全搜索过滤（关闭/中等/严格）
+- **推荐用于**：通用网络搜索、研究、内容发现
+- **安全搜索**：支持 `safe_search` 参数，值为 0（关闭）、1（中等）、2（严格）或 null（默认）
+
+## 响应格式
+
+### 成功响应（HTTP 200）
+
+#### 搜索成功
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "title": "AlsoAsked: People Also Ask keyword research tool",
+            "url": "https://alsoasked.com/",
+            "description": "Find the questions people also ask. Enter a question, brand or search query. e.g. 'keyword research'.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "OpenAI ChatGPT Features and Benefits",
+            "url": "https://openai.com/chatgpt",
+            "description": "ChatGPT is an AI assistant that can help with writing, research, and problem-solving.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "Keyword tool",
+            "source": "Google Suggestions"
+        }
+    ]
+}
+```
+
+#### 搜索结果类型
+
+API 返回两种类型的结果：
+
+1. **搜索结果**：包含标题、URL、描述和来源的完整结果
+2. **搜索建议**：搜索引擎提供的相关查询建议
+
+### 错误响应
+
+#### 400 - 验证错误
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'google', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": ["Invalid enum value. Expected 'google', received 'invalid'"]
+    }
+}
+```
+
+#### 401 - 认证错误
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+#### 402 - 需要付费
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits. Please upgrade your plan or purchase more credits."
+}
+```
+
+## 最佳实践
+
+### 搜索引擎选择指南
+
+1. **通用网络搜索** → 使用 `google`（目前唯一支持的引擎）
+2. **多语言搜索** → 指定合适的 `lang` 参数
+3. **全面研究** → 使用多页获取更多结果
+
+### 性能优化
+
+- **批量请求**：使用 `pages` 参数在单次请求中获取多页，而非发起多次单独请求
+- **语言定向**：指定语言以获取特定地区和本地化结果
+- **查询优化**：使用具体的关键词和短语以提升结果质量
+
+### 错误处理
+
+```javascript
+try {
+    const response = await fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            query: "artificial intelligence",
+            pages: 2,
+        }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+        // Handle successful result
+        console.log("Found results:", result.data.length);
+
+        // Separate search results from suggestions
+        const searchResults = result.data.filter((item) => item.url);
+        const suggestions = result.data.filter((item) => !item.url);
+
+        console.log("Search Results:", searchResults.length);
+        console.log("Suggestions:", suggestions.length);
+    } else {
+        // Handle search failure
+        console.error("Search failed:", result.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## 高并发使用
+
+该 API **原生支持高并发**。你可以同时发起多个搜索请求，无需担心速率限制：
+
+```javascript
+// Concurrent searching example
+const queries = ["machine learning", "artificial intelligence", "data science"];
+
+const searchPromises = queries.map((query) =>
+    fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, engine: "google", pages: 2 }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(searchPromises);
+console.log(`Completed ${results.length} searches simultaneously`);
+```
+
+## 速率限制与积分
+
+- **并发请求无速率限制**——API 原生支持高并发。
+- 通过响应头与扣费流水中的 `BillingChargeDetails` 核对实际消耗。
+
+### 积分模型（搜索 + 可选结果跟抓）
+
+每次 **`POST /v1/search`** 的扣费项（见服务器 `CreditCalculator.buildSearchChargeDetails`，`calculator: "search_v1"`）：
+
+1. **`search_pages`**：等于本次请求的 **`pages`**（省略时通常为 **1**），一般为「每搜索页 1 积分」。
+2. **`template_per_call`**：若请求体顶层带了 **`template_id`**（**search** 类型模板），按其配置的 **`pricing.perCall`（积分）** 收取 **整单一次**（例如 **1** 积分）。
+3. 若提供 **`scrape_options`** 且跟抓 **成功完成**：
+
+   - **`search_result_scrape`**：**`completed_scrape_count × per_result_engine_credits`**。其中 **`per_result_engine_credits`** = 合并后的 `scrape_options` 上计算的 **引擎侧跟抓单价**（`calculateScrapeCredits`：基础 **1** + 隐身代理 / JSON 抽取 / 摘要等加价）。
+   - **`search_result_scrape_template`**：若 **`scrape_options.template_id`** 指向 **scrape** 模板，则 **每条成功跟抓** 再收该模板的 **`pricing.perCall`**。**仅对 search 模板：** 若在 **search** 模板 **`metadata`** 里设 **`charge_scrape_template_credits: false`**，则 **不收** 本行（跟抓仍走 scrape 模板；**`search_result_scrape` 引擎费照收**）。未使用 search 模板时，有 `scrape_options.template_id` 则仍按原逻辑收 scrape 模板费。
+
+**举例（只算模板加价，便于和「10+1」对齐）：** search 模板 **1** 积分/次 + scrape 模板 **1** 积分/次 × **10** 条成功跟抓 ⇒ 模板相关共 **1 + 10 = 11** 积分。**整单总费用**还要加上 **`pages`** 与 **10 × 引擎跟抓单价**（若引擎单价为 **1**，则再至少 **+10**）。
+
+**域名规则：** 使用 `scrape_options.template_id` 时，仅对落在模板 **`allowedDomains`** 内的结果 URL 跟抓；被跳过的条目仍返回 SERP 字段，**不对该条收跟抓费**。
+
+完整公式、账单 `code` 与 Dashboard 展示字段：仓库 **`docs/api/search-scrape-credits-and-templates.md`**。
+
+## 常见问题
+
+### 问：何时应使用不同的语言设置？
+
+答：
+
+- **英语（`en`）**：用于全球搜索结果和国际内容
+- **中文（`zh`）**：用于中文内容和面向中国的结果
+- **地区变体**（例如 `en-GB`、`fr-CA`）：用于特定国家的结果和本地化内容
+
+### 问：为什么某些搜索返回的结果少于预期？
+
+答：可能的原因包括：
+
+- 搜索查询过于具体或使用了不常见的术语
+- 查询语言与 `lang` 参数不匹配
+- 搜索引擎对某些主题或地区的限制
+- 网络连接问题
+
+### 问：如何处理需要特定地区的搜索？
+
+答：目前 API 会根据 `lang` 参数自动选择合适的地区。建议：
+
+- 使用与目标地区匹配的语言代码（例如使用 `en-GB` 获取英国结果）
+- 需要时在搜索查询中加入特定地区的术语
+
+### 问：搜索结果和搜索建议有什么区别？
+
+答：
+
+- **搜索结果**：包含标题、URL、描述和来源的完整条目
+- **搜索建议**：不含 URL 的相关查询建议，适用于查询扩展
+
+### 问：并发搜索请求有速率限制吗？
+
+答：没有，API **原生支持高并发**。你可以同时发起多个搜索请求，无需担心速率限制，所有请求都会立即返回数据。
+
+## 语言和地区支持
+
+搜索 API 通过 `lang` 参数支持多种语言和地区。以下是所有支持的区域设置：
+
+### 主要语言
+
+- `all` - 所有语言
+
+#### **英语** 🌐
+
+- `en` - 全球英语
+- `en-AU` - 英语（澳大利亚）🇦🇺
+- `en-CA` - 英语（加拿大）🇨🇦
+- `en-GB` - 英语（英国）🇬🇧
+- `en-IE` - 英语（爱尔兰）🇮🇪
+- `en-IN` - 英语（印度）🇮🇳
+- `en-NZ` - 英语（新西兰）🇳🇿
+- `en-PH` - 英语（菲律宾）🇵🇭
+- `en-PK` - 英语（巴基斯坦）🇵🇰
+- `en-SG` - 英语（新加坡）🇸🇬
+- `en-US` - 英语（美国）🇺🇸
+- `en-ZA` - 英语（南非）🇿🇦
+
+#### **中文** 🌐
+
+- `zh` - 全球中文
+- `zh-CN` - 中文（中国）🇨🇳
+- `zh-HK` - 中文（香港）🇭🇰
+- `zh-TW` - 中文（台湾）🇹🇼
+
+#### **西班牙语** 🌐
+
+- `es` - 全球西班牙语
+- `es-AR` - 西班牙语（阿根廷）🇦🇷
+- `es-CL` - 西班牙语（智利）🇨🇱
+- `es-CO` - 西班牙语（哥伦比亚）🇨🇴
+- `es-ES` - 西班牙语（西班牙）🇪🇸
+- `es-MX` - 西班牙语（墨西哥）🇲🇽
+- `es-PE` - 西班牙语（秘鲁）🇵🇪
+
+#### **法语** 🌐
+
+- `fr` - 全球法语
+- `fr-BE` - 法语（比利时）🇧🇪
+- `fr-CA` - 法语（加拿大）🇨🇦
+- `fr-CH` - 法语（瑞士）🇨🇭
+- `fr-FR` - 法语（法国）🇫🇷
+
+#### **德语** 🌐
+
+- `de` - 全球德语
+- `de-AT` - 德语（奥地利）🇦🇹
+- `de-BE` - 德语（比利时）🇧🇪
+- `de-CH` - 德语（瑞士）🇨🇭
+- `de-DE` - 德语（德国）🇩🇪
+
+#### **葡萄牙语** 🌐
+
+- `pt` - 全球葡萄牙语
+- `pt-BR` - 葡萄牙语（巴西）🇧🇷
+- `pt-PT` - 葡萄牙语（葡萄牙）🇵🇹
+
+#### **意大利语** 🌐
+
+- `it` - 全球意大利语
+- `it-CH` - 意大利语（瑞士）🇨🇭
+- `it-IT` - 意大利语（意大利）🇮🇹
+
+#### **日语** 🌐
+
+- `ja` - 全球日语
+- `ja-JP` - 日语（日本）🇯🇵
+
+#### **韩语** 🌐
+
+- `ko` - 全球韩语
+- `ko-KR` - 韩语（韩国）🇰🇷
+
+#### **俄语** 🌐
+
+- `ru` - 全球俄语
+- `ru-RU` - 俄语（俄罗斯）🇷🇺
+
+### 欧洲语言
+
+#### **荷兰语** 🌐
+
+- `nl` - 全球荷兰语
+- `nl-BE` - 荷兰语（比利时）🇧🇪
+- `nl-NL` - 荷兰语（荷兰）🇳🇱
+
+#### **波兰语** 🌐
+
+- `pl` - 全球波兰语
+- `pl-PL` - 波兰语（波兰）🇵🇱
+
+#### **捷克语** 🌐
+
+- `cs` - 全球捷克语
+- `cs-CZ` - 捷克语（捷克共和国）🇨🇿
+
+#### **匈牙利语** 🌐
+
+- `hu` - 全球匈牙利语
+- `hu-HU` - 匈牙利语（匈牙利）🇭🇺
+
+#### **罗马尼亚语** 🌐
+
+- `ro` - 全球罗马尼亚语
+- `ro-RO` - 罗马尼亚语（罗马尼亚）🇷🇴
+
+#### **希腊语** 🌐
+
+- `el` - 全球希腊语
+- `el-GR` - 希腊语（希腊）🇬🇷
+
+#### **保加利亚语** 🌐
+
+- `bg` - 全球保加利亚语
+- `bg-BG` - 保加利亚语（保加利亚）🇧🇬
+
+#### **克罗地亚语** 🌐
+
+- `hr` - 全球克罗地亚语
+
+#### **斯洛伐克语** 🌐
+
+- `sk` - 全球斯洛伐克语
+
+#### **斯洛文尼亚语** 🌐
+
+- `sl` - 全球斯洛文尼亚语
+
+#### **爱沙尼亚语** 🌐
+
+- `et` - 全球爱沙尼亚语
+- `et-EE` - 爱沙尼亚语（爱沙尼亚）🇪🇪
+
+#### **拉脱维亚语** 🌐
+
+- `lv` - 全球拉脱维亚语
+
+#### **立陶宛语** 🌐
+
+- `lt` - 全球立陶宛语
+
+#### **芬兰语** 🌐
+
+- `fi` - 全球芬兰语
+- `fi-FI` - 芬兰语（芬兰）🇫🇮
+
+#### **瑞典语** 🌐
+
+- `sv` - 全球瑞典语
+- `sv-SE` - 瑞典语（瑞典）🇸🇪
+
+#### **挪威语** 🌐
+
+- `nb` - 挪威语（书面语）
+- `nb-NO` - 挪威语（书面语，挪威）🇳🇴
+
+#### **丹麦语** 🌐
+
+- `da` - 全球丹麦语
+- `da-DK` - 丹麦语（丹麦）🇩🇰
+
+#### **冰岛语** 🌐
+
+- `is` - 全球冰岛语
+
+### 其他语言
+
+#### **阿拉伯语** 🌐
+
+- `ar` - 全球阿拉伯语
+- `ar-SA` - 阿拉伯语（沙特阿拉伯）🇸🇦
+
+#### **希伯来语** 🇮🇱
+
+- `he` - 希伯来语
+
+#### **土耳其语** 🌐
+
+- `tr` - 全球土耳其语
+- `tr-TR` - 土耳其语（土耳其）🇹🇷
+
+#### **波斯语** 🌐
+
+- `fa` - 波斯语
+
+#### **印地语** 🌐
+
+- `hi` - 印地语
+
+#### **乌尔都语** 🌐
+
+- `ur` - 乌尔都语
+
+#### **泰语** 🌐
+
+- `th` - 全球泰语
+- `th-TH` - 泰语（泰国）🇹🇭
+
+#### **越南语** 🌐
+
+- `vi` - 全球越南语
+- `vi-VN` - 越南语（越南）🇻🇳
+
+#### **印度尼西亚语** 🌐
+
+- `id` - 全球印度尼西亚语
+- `id-ID` - 印度尼西亚语（印度尼西亚）🇮🇩
+
+#### **印度语言**
+
+- `kn` - 卡纳达语 🌐
+- `ml` - 马拉雅拉姆语 🌐
+- `mr` - 马拉地语 🌐
+- `ta` - 泰米尔语 🌐
+- `te` - 泰卢固语 🌐
+
+#### **其他欧洲语言**
+
+- `af` - 南非荷兰语 🌐
+- `be` - 白俄罗斯语 🌐
+- `ca` - 加泰罗尼亚语 🌐
+- `cy` - 威尔士语 🌐
+- `eu` - 巴斯克语 🌐
+- `ga` - 爱尔兰语 🌐
+- `gd` - 苏格兰盖尔语 🌐
+- `gl` - 加利西亚语 🌐
+- `sq` - 阿尔巴尼亚语 🌐
+- `uk` - 乌克兰语 🌐
+
+### 使用说明
+
+- **全球代码**（例如 `en`、`zh`、`es`）提供更广泛的搜索结果，不受国家限制
+- **特定国家代码**（例如 `en-US`、`zh-CN`、`es-MX`）返回特定地区的本地化结果
+- API 会根据你的区域设置自动选择合适的 Google 域名和语言设置
+- 为获得最佳结果，请将 `lang` 参数与搜索查询的语言匹配

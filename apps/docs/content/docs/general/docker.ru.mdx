@@ -1,0 +1,419 @@
+---
+title: Развёртывание в Docker
+description: "Пошаговое руководство по self-host AnyCrawl в Docker: параметры и рекомендации"
+icon: Hammer
+---
+
+## Docker с готовыми образами
+
+AnyCrawl публикует готовые образы в GitHub Container Registry. Можно быстро развернуть AnyCrawl без сборки из исходников.
+
+### Доступные образы
+
+Следующие образы доступны в [GitHub Container Registry](https://github.com/any4ai/AnyCrawl/packages):
+
+- **anycrawl**: монолитный образ со всеми сервисами и зависимостями
+- **anycrawl-api**: основной API
+- **anycrawl-scrape-cheerio**: движок Cheerio
+- **anycrawl-scrape-playwright**: движок Playwright
+- **anycrawl-scrape-puppeteer**: движок Puppeteer
+
+## Быстрый старт
+
+Собран монолитный образ AnyCrawl: `ghcr.io/any4ai/anycrawl:latest`, со всеми сервисами и зависимостями. Запуск:
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+- Примечание: в образе для arm64 нет сервиса `scrape-puppeteer`. Если нужен Puppeteer, укажите платформу `linux/amd64` в команде `docker run`, например:
+
+```bash
+docker run -p 8080:8080 --platform linux/amd64 ghcr.io/any4ai/anycrawl:latest
+```
+
+> Это снижает производительность по сравнению с нативным образом arm64.
+
+Запуск в фоне:
+
+```bash
+docker run -d -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+Для Arm64 без поддержки Puppeteer:
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest-arm64
+```
+
+### С переменными окружения
+
+```bash
+# Run with custom configuration
+docker run -d \
+  -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e ANYCRAWL_API_AUTH_ENABLED=false \
+  -e ANYCRAWL_HEADLESS=true \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+### С файлом `.env`
+
+```bash
+# Run with local .env file
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/.env:/usr/src/app/.env:ro \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+## Сборка Docker
+
+Собственный образ можно собрать по шагам ниже.
+
+### Требования
+
+- **Docker**: 20.10 или новее
+- **Docker Compose**: 2.0 или новее
+
+### Установка Docker и Docker Compose
+
+#### macOS
+
+```bash
+# Install using Homebrew
+brew install docker docker-compose
+
+# Or download Docker Desktop
+# https://www.docker.com/products/docker-desktop
+```
+
+#### Ubuntu/Debian
+
+```bash
+# Install Docker
+# Add Docker's official GPG key:
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the repository to Apt sources:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+## Быстрый старт
+
+### 1. Клонирование репозитория
+
+```bash
+git clone https://github.com/any4ai/AnyCrawl.git
+cd AnyCrawl
+```
+
+### 2. Запуск сервисов
+
+```bash
+# Build and start all services
+docker compose up --build
+
+# Or run in background
+docker compose up --build -d
+```
+
+### 3. Проверка
+
+```bash
+# Check service status
+docker compose ps
+
+# Test if API is running properly
+curl http://localhost:8080/health
+```
+
+## Архитектура сервисов
+
+AnyCrawl — микросервисная архитектура:
+
+### Основные сервисы
+
+| Service Name        | Description                              | Port | Dependencies |
+| ------------------- | ---------------------------------------- | ---- | ------------ |
+| `api`               | API gateway and main service interface   | 8080 | redis        |
+| `scrape-puppeteer`  | Puppeteer scraping engine                | -    | redis        |
+| `scrape-playwright` | Playwright scraping engine               | -    | redis        |
+| `scrape-cheerio`    | Cheerio scraping engine (no SPA support) | -    | redis        |
+| `redis`             | Message queue and cache                  | 6379 | -            |
+
+## Переменные окружения
+
+### Базовые
+
+| Variable Name       | Description         | Default      | Example                     |
+| ------------------- | ------------------- | ------------ | --------------------------- |
+| `NODE_ENV`          | Runtime environment | `production` | `production`, `development` |
+| `ANYCRAWL_API_PORT` | API service port    | `8080`       | `8080`                      |
+
+### Скрейпинг
+
+| Variable Name                    | Description                                          | Default  | Example                          |
+| -------------------------------- | ---------------------------------------------------- | -------- | -------------------------------- |
+| `ANYCRAWL_HEADLESS`              | Use headless mode                                    | `true`   | `true`, `false`                  |
+| `ANYCRAWL_PROXY_URL`             | Base proxy server address                            | -        | `http://proxy:8080`              |
+| `ANYCRAWL_PROXY_STEALTH_URL`     | Stealth proxy server address                         | -        | `http://residential-proxy:8080`  |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | Extra credits charged when stealth proxy is used     | `5`      | `5`                              |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS`    | Default timeout for stealth/auto proxy mode (ms)    | `120000` | `120000`                         |
+| `ANYCRAWL_IGNORE_SSL_ERROR`      | Ignore SSL errors                                    | `true`   | `true`, `false`                  |
+
+### База данных
+
+| Variable Name                | Description              | Default                       |
+| ---------------------------- | ------------------------ | ----------------------------- |
+| `ANYCRAWL_API_DB_TYPE`       | Database type            | `sqlite`                      |
+| `ANYCRAWL_API_DB_CONNECTION` | Database connection path | `/usr/src/app/db/database.db` |
+
+### Redis
+
+| Variable Name        | Description          | Default              |
+| -------------------- | -------------------- | -------------------- |
+| `ANYCRAWL_REDIS_URL` | Redis connection URL | `redis://redis:6379` |
+
+### Аутентификация
+
+| Variable Name               | Description               | Default |
+| --------------------------- | ------------------------- | ------- |
+| `ANYCRAWL_API_AUTH_ENABLED` | Enable API authentication | `false` |
+
+## Дополнительная конфигурация
+
+### Файл окружения
+
+```bash
+# Create .env file
+cp .env.example .env
+```
+
+### Пример `.env`
+
+```bash
+# Basic configuration
+NODE_ENV=production
+ANYCRAWL_API_PORT=8080
+
+# Scraping configuration
+ANYCRAWL_HEADLESS=true
+ANYCRAWL_PROXY_URL=
+ANYCRAWL_PROXY_STEALTH_URL=
+ANYCRAWL_PROXY_STEALTH_CREDITS=5
+ANYCRAWL_STEALTH_TIMEOUT_MS=120000
+ANYCRAWL_IGNORE_SSL_ERROR=true
+
+# Database configuration
+ANYCRAWL_API_DB_TYPE=sqlite
+ANYCRAWL_API_DB_CONNECTION=/usr/src/app/db/database.db
+
+# Redis configuration
+ANYCRAWL_REDIS_URL=redis://redis:6379
+
+# Authentication configuration
+ANYCRAWL_API_AUTH_ENABLED=false
+```
+
+## Персистентность данных
+
+### Тома
+
+```yaml
+volumes:
+    - ./storage:/usr/src/app/storage # Scraping data storage
+    - ./db:/usr/src/app/db # Database files
+    - redis-data:/data # Redis data
+```
+
+### Резервное копирование
+
+```bash
+# Backup database
+docker compose exec api cp /usr/src/app/db/database.db /usr/src/app/storage/backup.db
+
+# Backup Redis data
+docker compose exec redis redis-cli SAVE
+docker compose cp redis:/data/dump.rdb ./backup/
+```
+
+## Частые команды
+
+### Управление сервисами
+
+```bash
+# Start services
+docker compose up -d
+
+# Stop services
+docker compose down
+
+# Restart specific service
+docker compose restart api
+
+# View service logs
+docker compose logs -f api
+```
+
+### Масштабирование
+
+```bash
+# Scale scraping service instances
+docker compose up -d --scale scrape-puppeteer=3
+docker compose up -d --scale scrape-playwright=2
+```
+
+## Мониторинг
+
+```bash
+# View service status
+docker compose ps
+
+# View resource usage
+docker stats
+
+# View specific service logs
+docker compose logs -f --tail=100 api
+```
+
+## Устранение неполадок
+
+### Типичные проблемы
+
+#### 1. Конфликт портов
+
+```bash
+# Check port usage
+lsof -i :8080
+
+# Modify port mapping
+# Change ports configuration in docker-compose.yml
+ports:
+  - "8081:8080"  # Change local port to 8081
+```
+
+#### 2. Нехватка памяти
+
+```bash
+# Check container memory usage
+docker stats
+
+# Increase Docker available memory (Docker Desktop)
+# Docker Desktop -> Settings -> Resources -> Memory
+```
+
+#### 3. Ошибка подключения к БД
+
+```bash
+# Check database file permissions
+ls -la ./db/
+
+# Recreate database volume
+docker compose down -v
+docker compose up --build
+```
+
+#### 4. Ошибка подключения к Redis
+
+```bash
+# Check Redis service status
+docker compose exec redis redis-cli ping
+
+# View Redis logs
+docker compose logs redis
+```
+
+### Режим отладки
+
+```bash
+# Set environment variables to enable debugging
+export NODE_ENV=development
+export DEBUG=anycrawl:*
+
+# Start services
+docker compose up --build
+```
+
+## Production
+
+### Безопасность
+
+1. **Включите аутентификацию**:
+
+```bash
+ANYCRAWL_API_AUTH_ENABLED=true
+```
+
+После включения добавьте ApiKey и передавайте его в заголовках запросов.
+
+### Генерация API-ключа
+
+При `ANYCRAWL_API_AUTH_ENABLED=true` из корня репозитория:
+
+```bash
+pnpm --filter api key:generate
+# optionally name the key
+pnpm --filter api key:generate -- default
+```
+
+Команда выводит `uuid`, `key` и `credits`. Используйте ключ в заголовке `Authorization: Bearer <KEY>`.
+
+#### Внутри контейнера Docker
+
+- Docker Compose:
+
+```bash
+docker compose exec api pnpm --filter api key:generate
+docker compose exec api pnpm --filter api key:generate -- default
+```
+
+- Один контейнер (замените `<container_name_or_id>`):
+
+```bash
+docker exec -it <container_name_or_id> pnpm --filter api key:generate
+docker exec -it <container_name_or_id> pnpm --filter api key:generate -- default
+```
+
+2. **HTTPS**:
+
+Пример:
+
+```yaml
+services:
+    nginx:
+        image: nginx:alpine
+        ports:
+            - "443:443"
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf
+            - ./ssl:/etc/ssl/certs
+```
+
+Используйте `nginx` как reverse proxy.
+
+## Обновления и обслуживание
+
+### Обновление
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Rebuild and start
+docker compose up --build -d
+
+# Clean up old images
+docker image prune -f
+```

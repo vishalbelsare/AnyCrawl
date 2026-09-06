@@ -1,0 +1,110 @@
+---
+title: Claude Code
+description: Thêm thu thập web và tìm kiếm vào Claude Code với AnyCrawl MCP
+icon: Terminal
+---
+
+Thêm khả năng thu thập web và tìm kiếm vào Claude Code với AnyCrawl MCP.
+
+## Thiết lập nhanh
+
+### 1. Lấy API key
+
+Đăng ký tại [anycrawl.dev](https://anycrawl.dev) và sao chép API key từ bảng điều khiển.
+
+### 2. Thêm MCP server AnyCrawl
+
+Chạy lệnh sau trong terminal:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+Thay `your-api-key` bằng API key AnyCrawl thực tế của bạn.
+
+Xong! Bạn có thể tìm kiếm và thu thập web từ Claude Code.
+
+## Demo nhanh
+
+Thử trong Claude Code:
+
+**Tìm kiếm web:**
+
+```
+Search for the latest Next.js 15 features
+```
+
+**Scrape một trang:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Lấy tài liệu:**
+
+```
+Find and scrape the Stripe API docs for payment intents
+```
+
+**Crawl một website:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Claude sẽ tự động dùng các công cụ tìm kiếm, scrape và crawl của AnyCrawl để lấy thông tin.
+
+## Công cụ có sẵn
+
+Sau khi cấu hình, Claude Code có quyền truy cập:
+
+- **anycrawl_scrape** — Scrape một URL và trích nội dung
+- **anycrawl_crawl** — Crawl nhiều trang từ một website
+- **anycrawl_search** — Tìm kiếm web và tùy chọn scrape kết quả
+- **anycrawl_crawl_status** — Kiểm tra trạng thái job crawl
+- **anycrawl_crawl_results** — Lấy kết quả từ job crawl
+- **anycrawl_cancel_crawl** — Hủy job crawl đang chạy
+
+## Xác minh cài đặt
+
+Để kiểm tra MCP server đã cấu hình đúng:
+
+```bash
+claude mcp list
+```
+
+Bạn sẽ thấy `anycrawl` trong danh sách MCP server.
+
+## Xử lý sự cố
+
+### Server không phản hồi
+
+1. Kiểm tra API key có hợp lệ không
+2. Đảm bảo đã cài Node.js 18+
+3. Thử gỡ và thêm lại server:
+
+```bash
+claude mcp remove anycrawl
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+### Lỗi quyền
+
+Đảm bảo npx có quyền thực thi. Có thể cần chạy:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Sau đó cấu hình với gói toàn cục:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- anycrawl-mcp
+```
+
+## Bước tiếp theo
+
+- Tìm hiểu thêm [tùy chọn scrape](../scrape)
+- Khám phá [khả năng crawl](../crawl)
+- Xem [tính năng tìm kiếm](../search)
+- Xem [tài liệu MCP Server đầy đủ](../mcp)

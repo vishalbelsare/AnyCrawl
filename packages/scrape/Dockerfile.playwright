@@ -7,6 +7,8 @@ LABEL org.opencontainers.image.licenses=MIT
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 ENV NODE_ENV=production
+ENV CLOAKBROWSER_CACHE_DIR=/usr/src/app/.cache/cloakbrowser
+ENV CLOAKBROWSER_AUTO_UPDATE=false
 RUN corepack enable pnpm
 
 # Build toolchain for native modules (e.g., better-sqlite3)
@@ -25,7 +27,8 @@ COPY packages/db/package.json ./packages/db/package.json
 COPY packages/ai/package.json ./packages/ai/package.json
 COPY packages/template-client/package.json ./packages/template-client/package.json
 COPY packages/typescript-config/package.json ./packages/typescript-config/package.json
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod=false
+RUN --mount=type=cache,id=pnpm-glibc,target=/pnpm/store \
+    npm_config_build_from_source=true pnpm install --frozen-lockfile --prod=false
 COPY . .
 RUN pnpm build --filter=@anycrawl/libs --filter=@anycrawl/db --filter=@anycrawl/template-client --filter=@anycrawl/ai --filter=@anycrawl/scrape
 RUN rm -rf node_modules
@@ -34,6 +37,7 @@ FROM base AS scrape-playwright
 WORKDIR /usr/src/app/packages/scrape
 
 # 1. copy packages and root
+COPY --from=build /usr/src/app/package.json /usr/src/app/package.json
 COPY --from=build /usr/src/app/pnpm-lock.yaml /usr/src/app/pnpm-lock.yaml
 COPY --from=build /usr/src/app/pnpm-workspace.yaml /usr/src/app/pnpm-workspace.yaml
 COPY --from=build /usr/src/app/packages/eslint-config/package.json /usr/src/app/packages/eslint-config/package.json
@@ -53,12 +57,13 @@ COPY --from=build /usr/src/app/packages/db/package.json /usr/src/app/packages/db
 COPY --from=build /usr/src/app/packages/ai/package.json /usr/src/app/packages/ai/package.json
 COPY --from=build /usr/src/app/packages/template-client/package.json /usr/src/app/packages/template-client/package.json
 
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
-# Ensure native modules rebuilt for current platform
+RUN --mount=type=cache,id=pnpm-glibc,target=/pnpm/store \
+    npm_config_build_from_source=true pnpm install --prod --frozen-lockfile
+RUN npx cloakbrowser install
+# Ensure better-sqlite3 is compiled inside this glibc image (avoid musl prebuild artifacts)
 RUN pnpm rebuild better-sqlite3
 ENV ANYCRAWL_AVAILABLE_ENGINES=playwright
 
 RUN npx -y playwright install chromium
 
 CMD [ "node", "dist/Worker.js" ]
-

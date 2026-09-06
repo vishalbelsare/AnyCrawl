@@ -1,0 +1,361 @@
+---
+title: Map
+description: サイトマップ、検索エンジン、ページリンク解析ですべての URL を取得する
+icon: Map
+---
+
+## はじめに
+
+AnyCrawl Map API は、サイトマップの解析、検索エンジン結果、HTML リンク抽出を組み合わせて Web サイトから URL を取得します。サイトマッピング、コンテンツインデックス、クロール計画のための URL 発見に使えます。
+
+**主な特徴**：API は**即時かつ同期でデータを返します**。ポーリングや Webhook は不要です。最大限の網羅のため、3 つの URL ソースを組み合わせます。
+
+### 主な機能
+
+- **マルチソース発見**：サイトマップ解析、検索エンジン結果、ページリンク抽出を組み合わせる
+- **サイトマップ対応**：`robots.txt` と `sitemap.xml` を解析（サイトマップインデックスと gzip に対応）
+- **検索連携**：URL 発見のため `site:` 演算子で検索エンジンを自動利用
+- **リンク抽出**：対象ページからすべての `<a href>` リンクを抽出
+- **ドメインフィルタ**：完全一致ドメインで絞り込むか、サブドメインを含める
+- **即時応答**：**同期 API** — ポーリングなしですぐ結果を取得
+
+## API エンドポイント
+
+```
+POST https://api.anycrawl.dev/v1/map
+```
+
+## 使用例
+
+### cURL
+
+#### 基本的な URL マッピング
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data); // Array of URLs with metadata
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### サブドメインを含める
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "include_subdomains": true,
+    "limit": 1000
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        include_subdomains: true,
+        limit: 1000,
+    }),
+});
+const result = await response.json();
+// Includes URLs from blog.example.com, docs.example.com, etc.
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'include_subdomains': True,
+        'limit': 1000
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### サイトマップ解析をスキップ
+
+ページリンクと検索結果だけでよく、より速くしたい場合：
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "ignore_sitemap": true
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        ignore_sitemap: true,
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'ignore_sitemap': True
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## リクエストパラメータ
+
+| パラメータ | 型 | 必須 | 既定値 | 説明 |
+| --------- | ---- | -------- | ------- | ----------- |
+| `url` | string | はい | - | マップ対象の URL。有効な HTTP/HTTPS であること |
+| `limit` | number | いいえ | `5000` | 返す URL の最大数（1〜50000） |
+| `include_subdomains` | boolean | いいえ | `false` | サブドメインの URL を含める（例：blog.example.com） |
+| `ignore_sitemap` | boolean | いいえ | `false` | サイトマップ解析をスキップし、検索エンジンとページリンクのみ使う |
+| `max_age` | number | いいえ | - | キャッシュの最大経過時間（ms）。`0` で読み取りをスキップ。省略でサーバー既定 |
+| `use_index` | boolean | いいえ | `true` | ページキャッシュインデックス（`page_cache`）を追加の URL ソースとして使うか |
+
+### キャッシュの挙動
+
+- `max_age` は Map キャッシュの読み取りを制御します。`0` は強制更新です。
+- `use_index=false` はページキャッシュインデックスのソースを無効にします（ページキャッシュが有効なときのみ効果があります）。
+- `/v1/map` のレスポンスには `fromCache` は含まれません（キャッシュ利用は内部挙動です）。
+
+### URL 発見ソース
+
+Map API は次の 3 ソースを組み合わせて URL を発見します。
+
+#### 1. サイトマップ解析
+
+- サイトマップの場所を見つけるため `robots.txt` を解析
+- よくあるパス `/sitemap.xml`、`/sitemap.xml.gz` を試行
+- サイトマップインデックス（他のサイトマップを含むサイトマップ）に対応
+- gzip 圧縮サイトマップに対応
+
+#### 2. 検索エンジン結果
+
+- インデックス済みページを発見するため `site:domain.com` を自動利用
+- 発見した URL にタイトルと説明のメタデータを付与
+
+#### 3. ページリンク抽出
+
+- 対象ページの HTML からすべての `<a href>` を抽出
+- リンクテキストをタイトルメタデータとして取得
+- `title` 属性と `aria-label` を説明として取得
+
+### メタデータの出所
+
+| ソース | タイトル | 説明 |
+| ------ | ----- | ----------- |
+| Sitemap | - | - |
+| Search Engine | 検索結果のタイトル | 検索結果のスニペット |
+| Page Links | リンクテキストまたは title 属性 | aria-label 属性 |
+
+## レスポンス形式
+
+### 成功（HTTP 200）
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "url": "https://example.com/page1",
+            "title": "Page Title",
+            "description": "Page description from search results"
+        },
+        {
+            "url": "https://example.com/page2",
+            "title": "Another Page"
+        },
+        {
+            "url": "https://example.com/page3"
+        }
+    ]
+}
+```
+
+### エラーレスポンス
+
+#### 400 - バリデーションエラー
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid url",
+    "details": {
+        "issues": [
+            {
+                "field": "url",
+                "message": "Invalid url",
+                "code": "invalid_string"
+            }
+        ]
+    }
+}
+```
+
+#### 402 - クレジット不足
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits",
+    "message": "Estimated credits required (1) exceeds available credits (0).",
+    "details": {
+        "estimated_total": 1,
+        "available_credits": 0
+    }
+}
+```
+
+#### 500 - 内部サーバーエラー
+
+```json
+{
+    "success": false,
+    "error": "Internal server error",
+    "message": "Error message details"
+}
+```
+
+## ベストプラクティス
+
+### ユースケース
+
+1. **クロール計画**：フルクロールの前に Map で URL を洗い出す
+2. **コンテンツインデックス**：サイト全体のページ索引を作る
+3. **サイト監査**：SEO やアクセシビリティ監査のため全ページを列挙
+4. **リンク分析**：内部リンク構造を分析する
+
+### パフォーマンス
+
+- サイトマップが不要なときは `ignore_sitemap: true` で高速化
+- 不要な URL を処理しないよう適切な `limit` を設定
+- サブドメイン横断の発見が不要なら `include_subdomains: false`（既定）のまま
+
+### Crawl との組み合わせ
+
+クロール操作の計画に Map が向いています。
+
+```javascript
+// Step 1: Discover URLs with Map
+const mapResponse = await fetch("/v1/map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        limit: 100,
+    }),
+});
+const { data: urls } = await mapResponse.json();
+
+// Step 2: Use discovered URLs to plan crawl
+const crawlResponse = await fetch("/v1/crawl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        include_paths: urls.map((u) => new URL(u.url).pathname),
+        limit: 100,
+    }),
+});
+```
+
+## クレジット
+
+| 操作 | クレジット |
+| --------- | ------- |
+| Map 操作 | 1 |
+
+**合計**：1 リクエストあたり 1 クレジット。
+
+## よくある質問
+
+### Q: Map と Crawl の違いは？
+
+A: **Map** はページ本文を取得せず URL だけを発見します。高速で軽量です。**Crawl** は各ページの実コンテンツを取得・処理します。URL の発見と計画には Map、本文抽出には Crawl を使います。
+
+### Q: 結果に URL が欠けるのはなぜ？
+
+A: 考えられる理由：
+- 別ドメイン／サブドメイン上の URL（`include_subdomains: true` を検討）
+- サイトにサイトマップがない
+- JavaScript で動的に生成される URL
+- `limit` を超えた
+
+### Q: 検索エンジンによる発見はどう動く？
+
+A: Map API は `site:domain.com` で検索エンジンに問い合わせ、インデックス済みページを発見します。サイトマップにない URL やトップページからリンクされていない URL の発見に役立ちます。
+
+### Q: Map はリダイレクトを辿る？
+
+A: Map はサイトマップやページリンクに現れる URL をそのまま抽出します。追加の URL を発見するためにリダイレクトは辿りません。
+
+### Q: レート制限はある？
+
+A: いいえ。API は**高い同時実行をネイティブにサポート**します。複数リクエストを同時に送ってもレート制限の心配は通常ありません。

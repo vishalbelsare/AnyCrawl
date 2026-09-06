@@ -1,11 +1,40 @@
 import { CrawlingContext } from "crawlee";
 import type { TemplateScrapeSchema, TemplateCrawlSchema, TemplateSearchSchema } from "./index.js";
 
+/**
+ * Domain restriction configuration for templates
+ */
+export interface DomainRestriction {
+    type: "glob" | "exact";
+    patterns: string[];
+}
+
+/**
+ * Result of a domain/template validation check
+ */
+export interface DomainValidationResult {
+    isValid: boolean;
+    error?: string;
+    code?: string;
+}
+
+/**
+ * HTTP response structure used across packages
+ */
+export interface HttpResponse<T = any> {
+    status: number;
+    headers: Record<string, string>;
+    data: T;
+    rawText?: string;
+}
+
 // Template configuration types
 export interface TemplateConfig {
     // Basic information
     uuid: string;
     templateId: string;
+    // Optional vanity slug for human-friendly dedicated endpoints. Globally unique when set.
+    slug?: string | null;
     name: string;
     description?: string;
     tags: string[];
@@ -22,6 +51,22 @@ export interface TemplateConfig {
 
     // Request options configuration - structure depends on templateType
     reqOptions: TemplateScrapeSchema | TemplateCrawlSchema | TemplateSearchSchema;
+
+    // ---------------------------------------------------------------------
+    // L3: Orchestrated runtime + output schema + revision pointer
+    // All fields below are OPTIONAL and additive (see design doc §7.2, §8, §9).
+    // ---------------------------------------------------------------------
+
+    // Runtime capability declaration.
+    // Absent runtime is treated as { mode: "single" } (Legacy Run Adapter).
+    runtime?: TemplateRuntimeConfig;
+
+    // Structured output schema for per-item Dataset writes / projections.
+    // Absent outputSchema falls back to the standard result mapping (doc §6.3).
+    outputSchema?: TemplateOutputSchema;
+
+    // Pointer to the current immutable template_revisions row (doc §9.1).
+    currentRevisionId?: string | null;
 
     // Custom handlers code
     customHandlers?: {
@@ -72,6 +117,17 @@ export interface TemplateConfig {
                 compiled?: string;
             };
         };
+        // Orchestrated runtime: seed builder handler (doc §7.2). Mirrors the
+        // requestHandler shape exactly; additive/optional. Absent/disabled in
+        // single (legacy) mode.
+        seedHandler?: {
+            enabled: boolean;
+            code: {
+                language: "javascript" | "typescript";
+                source: string;
+                compiled?: string;
+            };
+        };
         failedRequestHandler?: {
             enabled: boolean;
             code: {
@@ -96,24 +152,33 @@ export interface TemplateConfig {
         allowedDomains?: {
             type: "glob" | "exact";
             patterns: string[];
-        },
+        };
+        /**
+         * **Search templates only.** When `false`, a search that uses `scrape_options.template_id` for
+         * follow-up scrapes still runs those templates but does **not** charge scrape template
+         * per-call credits (`search_result_scrape_template`). Engine scrape credits (`search_result_scrape`) still apply.
+         * When omitted or `true`, scrape template pricing applies as usual.
+         */
+        charge_scrape_template_credits?: boolean;
+        /**
+         * Explicit override for the call-spec `inputs.url_mode` (design doc §5.6). When set to one
+         * of the four valid values, it wins over the derived default in
+         * `TemplateEndpointController.spec()`. Absent for every template today; only needed by
+         * future templates that don't fit the "caller must supply url/query" default (e.g. a
+         * fixed-URL template, or one where the caller may optionally override a generated seed URL).
+         *   - "user": caller must supply `url`/`query` (today's universal default).
+         *   - "fixed": template always scrapes a fixed URL; caller supplies nothing.
+         *   - "generated": template assembles its own seed URL(s) (e.g. orchestrated seedHandler);
+         *     caller supplies nothing.
+         *   - "hybrid": template has a default/generated URL but the caller may optionally override it.
+         */
+        urlMode?: "user" | "fixed" | "generated" | "hybrid";
         [key: string]: any;
     };
 
     // Template variables
     variables?: {
-        [key: string]: {
-            type: "string" | "number" | "boolean" | "url" | "enum";
-            label?: string;
-            description: string;
-            required: boolean;
-            defaultValue?: any;
-            // For enum type variables, define allowed values
-            values?: Array<string | number | boolean>;
-            // Or provide labeled options; value will be used for validation
-            options?: Array<{ label: string; value: string | number | boolean }>;
-            mapping?: TemplateVariableMapping;
-        };
+        [key: string]: TemplateVariableDefinition;
     };
 
     // User information
@@ -140,6 +205,123 @@ export interface TemplateConfig {
 export interface TemplateVariableMapping {
     target: string;
     mode?: "replace";
+}
+
+// ---------------------------------------------------------------------------
+// L3 contract types (design doc §7.2 runtime, §8 variables/outputSchema, §9 revisions)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scalar variable types supported for both top-level variables and array element
+ * shapes. `array` is only valid at the top level (see `TemplateVariableDefinition`).
+ */
+export type TemplateVariableScalarType = "string" | "number" | "boolean" | "url" | "enum";
+
+/**
+ * Top-level variable types. Adds `array` to the historical scalar set so
+ * templates can declare `string[]` / `enum[]` variables (doc §8).
+ */
+export type TemplateVariableType = TemplateVariableScalarType | "array";
+
+/**
+ * Element type / shape for `array` variables (e.g. Craigslist `cities` = `enum[]`,
+ * `searchQueries` = `string[]`).
+ */
+export interface TemplateVariableItems {
+    type: TemplateVariableScalarType;
+    // For enum element types, the allowed values (either `enum` or `values`).
+    enum?: Array<string | number | boolean>;
+    values?: Array<string | number | boolean>;
+    // Or provide labeled options; `value` is used for validation.
+    options?: Array<{ label: string; value: string | number | boolean }>;
+}
+
+/**
+ * A single template variable definition. Backward compatible with the historical
+ * inline shape; `array`, `items`, `enum`, and the numeric/length constraints are
+ * additive (doc §8).
+ */
+export interface TemplateVariableDefinition {
+    type: TemplateVariableType;
+    label?: string;
+    description: string;
+    required: boolean;
+    defaultValue?: any;
+    // For enum type variables, define allowed values.
+    values?: Array<string | number | boolean>;
+    // Alias for `values` accepted by the §9 validation contract.
+    enum?: Array<string | number | boolean>;
+    // Or provide labeled options; `value` is used for validation.
+    options?: Array<{ label: string; value: string | number | boolean }>;
+    // For `array` variables: element type / shape (doc §8: string[], enum[]).
+    items?: TemplateVariableItems;
+    // Numeric range constraints for `number` variables (doc §8: min <= max).
+    min?: number;
+    max?: number;
+    // Length constraints for `array` variables.
+    minItems?: number;
+    maxItems?: number;
+    mapping?: TemplateVariableMapping;
+}
+
+/**
+ * Runtime capability declaration (doc §7.2 / §8). Absent runtime is treated as
+ * `{ mode: "single" }` by the Legacy Run Adapter.
+ */
+export interface TemplateRuntimeConfig {
+    mode: "single" | "orchestrated";
+    // Page/seed handler protocol version, e.g. "1".
+    handlerProtocolVersion?: string;
+    // Orchestrated mode points at the enabled `customHandlers.seedHandler`;
+    // single mode is null/absent.
+    seedBuilder?: { type: "handler"; name: string } | null;
+    // Template-declared default run options (bounded by platform hard caps).
+    defaultRunOptions?: Record<string, unknown>;
+}
+
+/**
+ * Projection type for a structured output field, mirrored by the Dataset
+ * typed-value columns (doc §11.7).
+ */
+export type TemplateProjectionType = "string" | "number" | "boolean" | "timestamptz";
+
+/**
+ * A single filterable/sortable projection declared by an output schema.
+ * `path` is an RFC 6901 JSON Pointer relative to each item.
+ */
+export interface TemplateOutputProjection {
+    field: string;
+    path: string;
+    type: TemplateProjectionType;
+}
+
+/**
+ * Structured output schema (doc §8). `itemsPath`, `itemKeyPath`, and
+ * `hashExcludePaths` use RFC 6901 JSON Pointers.
+ */
+export interface TemplateOutputSchema {
+    name: string;
+    version: string;
+    // JSON Pointer to the array of items within the handler result.
+    itemsPath?: string;
+    // JSON Pointer to the stable key, relative to each item.
+    itemKeyPath?: string;
+    // JSON Pointers excluded from the Dataset document hash (e.g. volatile timestamps).
+    hashExcludePaths?: string[];
+    projections?: TemplateOutputProjection[];
+}
+
+/**
+ * Immutable template revision snapshot (doc §9.1 `template_revisions`).
+ */
+export interface TemplateRevision {
+    uuid: string;
+    templateUuid: string;
+    version: string;
+    configHash: string;
+    configSnapshot: unknown;
+    schemaSnapshot: unknown;
+    createdAt: Date;
 }
 
 // Template client configuration
@@ -188,6 +370,7 @@ export interface TemplateExecutionResult {
     success: boolean;
     data?: any;
     error?: string;
+    logs?: Array<{ level: string; ts: number; message: string }>;
     executionTime: number;
     creditsCharged: number;
     metadata?: Record<string, any>;
@@ -248,8 +431,9 @@ export class TemplateExecutionError extends TemplateError {
 }
 
 export class TemplateValidationError extends TemplateError {
-    constructor(message: string) {
-        super(message, "TEMPLATE_VALIDATION_ERROR");
+    constructor(message: string, code: string = "TEMPLATE_VALIDATION_ERROR") {
+        super(message, code);
+        this.name = "TemplateValidationError";
     }
 }
 

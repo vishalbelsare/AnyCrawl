@@ -1,0 +1,751 @@
+---
+title: Search
+description: 검색 엔진을 조회하고 구조화된 결과를 가져오는 SERP API
+icon: Search
+---
+
+## 소개
+
+AnyCrawl Search API는 여러 검색 엔진의 결과를 프로그래밍 방식으로 가져옵니다. 대규모 언어 모델(LLM)을 위해 설계되었으며 AI 처리·분석에 맞는 깨끗한 구조화 데이터를 반환합니다.
+
+API는 **즉시 동기적으로** 데이터를 반환합니다 — 폴링이나 웹훅이 필요 없습니다. **여러 검색 엔진**과 **다중 페이지 결과**를 한 요청으로 가져와 포괄적으로 수집할 수 있습니다.
+
+### 핵심 기능
+
+- **다중 엔진**: 현재 Google 검색 지원, 추가 엔진 예정
+- **LLM 최적화**: AI 처리에 적합한 구조화 JSON
+- **다국어**: 언어·지역별 검색
+- **다중 페이지**: 한 요청으로 여러 페이지의 검색 결과
+- **고성능**: 비동기 처리와 **네이티브 고동시성**
+- **즉시 응답**: **동기 API** — 폴링 없이 바로 결과
+- **풍부한 결과**: 검색 결과와 검색 제안 모두 반환
+
+## API 엔드포인트
+
+```
+POST https://api.anycrawl.dev/v1/search
+```
+
+## 사용 예
+
+#### 기본 검색(기본 Google 엔진)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "OpenAI ChatGPT"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "OpenAI ChatGPT",
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "OpenAI ChatGPT"
+    }
+)
+print(response.json())
+```
+
+#### 다중 페이지 검색
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "machine learning tutorials",
+    "pages": 3,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "machine learning tutorials",
+        pages: 3,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "machine learning tutorials",
+        "pages": 3,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### 언어·지역 지정 검색
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "AnyCrawl",
+    "lang": "zh",
+    "pages": 2
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "AnyCrawl",
+        lang: "zh",
+        pages: 2,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "AnyCrawl",
+        "lang": "zh",
+        "pages": 2
+    }
+)
+print(response.json())
+```
+
+#### 페이지네이션 검색
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "web scraping tools",
+    "offset": 20,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "web scraping tools",
+        offset: 20,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "web scraping tools",
+        "offset": 20,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### 세이프서치
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "educational content",
+    "safe_search": 0
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "educational content",
+        safe_search: 0,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "educational content",
+        "safe_search": 0
+    }
+)
+print(response.json())
+```
+
+## 요청 파라미터
+
+| 파라미터       | 타입           | 필수 | 기본값  | 설명                                                                                                                           |
+| --------------- | -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`         | string         | 예      | -        | 실행할 검색어 문자열                                                                                                    |
+| `template_id`   | string         | 아니오       | -        | 이번 검색에 사용할 템플릿 ID                                                                                                    |
+| `variables`     | object         | 아니오       | -        | 템플릿 변수(`template_id`가 있을 때만)                                                                         |
+| `engine`        | enum           | 아니오       | `google` | 검색 엔진. 현재 지원: `google`                                                                                   |
+| `limit`         | number         | 아니오       | 10       | 페이지당 최대 결과 수                                                                                                    |
+| `offset`        | number         | 아니오       | 0        | 건너뛸 결과 수(페이지네이션)                                                                                            |
+| `pages`         | number         | 아니오       | 1        | 가져올 검색 결과 페이지 수(최소 1, 최대 20)                                                                           |
+| `lang`          | string         | 아니오       | `en`     | 검색 결과 언어 로캘(예: 'en', 'zh', 'es', 'fr')                                                                     |
+| `country`       | string         | 아니오       | -        | 검색 결과 국가 로캘(예: 'US', 'GB', 'CN')                                                                            |
+| `timeRange`     | enum           | 아니오       | -        | 기간 필터: `day`, `week`, `month`, `year`                                                                                     |
+| `sources`       | enum           | 아니오       | -        | 검색 소스: `web`, `images`, `news`(SearXNG)                                                                                     |
+| `safe_search`   | number \| null | 아니오       | null     | Google 세이프서치: `0`(끔), `1`(보통), `2`(엄격), null(기본). Google에만 적용. |
+
+### 선택: 결과 URL용 `scrape_options`
+
+지정하면 각 검색 결과 URL을 주어진 옵션으로 스크래핑합니다(최상위 `url` 제외하고 `/v1/scrape`과 동일). 브라우저 전용 옵션은 브라우저가 아닌 스크래핑에서는 무시됩니다.
+
+| Field               | Type                     | Default        | Notes                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine`            | enum                     | -              | 결과 URL 스크래프 엔진: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                 |
+| `formats`           | array of enum            | `["markdown"]` | 출력 형식: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                                          |
+| `timeout`           | number                   | `60000`        | 요청당 타임아웃(ms)                                                                                                                    |
+| `wait_for`          | number                   | -              | 추출 전 지연(ms), 브라우저만, `wait_for_selector`보다 낮은 우선순위                                                 |
+| `wait_until`        | enum                     | -              | 브라우저 탐색 대기: `load`, `domcontentloaded`, `networkidle`, `commit`                                           |
+| `wait_for_selector` | string, object, or array | -              | 브라우저에서만. CSS 문자열, 객체, 또는 혼합 배열. 순차 대기. `wait_for`보다 우선. |
+| `include_tags`      | array of string          | -              | CSS 선택자에 맞는 요소만 포함                                                                                              |
+| `exclude_tags`      | array of string          | -              | CSS 선택자에 맞는 요소 제외                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | 본문만 추출(`include_tags` 우선)                                  |
+| `proxy`             | string (URI)             | -              | 선택 프록시 URL                                                                                                                          |
+| `json_options`      | object                   | -              | 구조화 JSON 추출 옵션                                                                                                               |
+| `extract_source`    | enum                     | `markdown`     | JSON 추출 소스: `markdown`(기본) 또는 `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | 마크다운 이미지 OCR만. 마크다운 생성에만 영향.                                         |
+| `max_age`           | number                   | -              | 캐시 최대 수명(ms). `0`이면 캐시 읽기 생략                                                                    |
+| `store_in_cache`    | boolean                  | `true`         | 결과별 스크래핑에 페이지 캐시 쓰기 여부                                                                                           |
+| `template_id`       | string                   | -              | 후속 스크래핑용 **scrape** 템플릿 ID(`/v1/scrape`와 동일). `allowedDomains` 밖 URL은 건너뜀. |
+| `variables`         | object                   | -              | 해당 scrape 템플릿 변수(`template_id` 사용 시). |
+
+### 지원 검색 엔진
+
+#### `google`(기본)
+
+- **용도**: 포괄적인 일반 웹 검색
+- **장점**: 가장 포괄적인 결과, 다국어·다지역 지원
+- **기능**: 검색 결과와 검색 제안 모두 반환. 세이프서치(끔/보통/엄격)
+- **권장**: 일반 검색, 리서치, 콘텐츠 발견
+- **세이프서치**: `safe_search` 0(끔), 1(보통), 2(엄격), null(기본)
+
+## 응답 형식
+
+### 성공 응답(HTTP 200)
+
+#### 검색 성공
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "title": "AlsoAsked: People Also Ask keyword research tool",
+            "url": "https://alsoasked.com/",
+            "description": "Find the questions people also ask. Enter a question, brand or search query. e.g. 'keyword research'.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "OpenAI ChatGPT Features and Benefits",
+            "url": "https://openai.com/chatgpt",
+            "description": "ChatGPT is an AI assistant that can help with writing, research, and problem-solving.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "Keyword tool",
+            "source": "Google Suggestions"
+        }
+    ]
+}
+```
+
+#### 검색 결과 유형
+
+API는 두 가지 유형을 반환합니다.
+
+1. **검색 결과**: 제목, URL, 설명, 소스가 있는 완전한 항목
+2. **검색 제안**: 검색 엔진의 관련 쿼리 제안
+
+### 오류 응답
+
+#### 400 - 유효성 검사 오류
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'google', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": ["Invalid enum value. Expected 'google', received 'invalid'"]
+    }
+}
+```
+
+#### 401 - 인증 오류
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+#### 402 - 결제 필요
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits. Please upgrade your plan or purchase more credits."
+}
+```
+
+## 모범 사례
+
+### 검색 엔진 선택
+
+1. **일반 웹 검색** → `google`(현재 유일 지원 엔진)
+2. **다국어 검색** → 적절한 `lang` 지정
+3. **포괄적 조사** → `pages`로 더 많은 결과
+
+### 성능 최적화
+
+- **배치 요청**: 여러 번 호출 대신 `pages`로 한 번에 여러 페이지
+- **언어 타겟팅**: 지역·로캘 결과를 위해 언어 지정
+- **쿼리 최적화**: 구체적인 키워드·구문 사용
+
+### 오류 처리
+
+```javascript
+try {
+    const response = await fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            query: "artificial intelligence",
+            pages: 2,
+        }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+        console.log("Found results:", result.data.length);
+
+        const searchResults = result.data.filter((item) => item.url);
+        const suggestions = result.data.filter((item) => !item.url);
+
+        console.log("Search Results:", searchResults.length);
+        console.log("Suggestions:", suggestions.length);
+    } else {
+        console.error("Search failed:", result.error);
+    }
+} catch (error) {
+    console.error("Request failed:", error);
+}
+```
+
+## 높은 동시성 사용
+
+API는 **원래부터 높은 동시성**을 지원합니다. 여러 검색 요청을 동시에 보내도 속도 제한 걱정이 없습니다.
+
+```javascript
+// 동시 검색 예
+const queries = ["machine learning", "artificial intelligence", "data science"];
+
+const searchPromises = queries.map((query) =>
+    fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, engine: "google", pages: 2 }),
+    }).then((res) => res.json())
+);
+
+const results = await Promise.all(searchPromises);
+console.log(`Completed ${results.length} searches simultaneously`);
+```
+
+## 속도 제한 및 크레딧
+
+- **동시 요청에 별도 속도 제한 없음** — API가 고동시성을 네이티브로 지원합니다.
+- 사용량은 응답 헤더와 `BillingChargeDetails`로 확인하세요.
+
+### 크레딧 모델(검색 + 선택적 후속 스크래핑)
+
+1. **`search_pages`** — **`pages`**에 해당(기본은 보통 페이지당 1 크레딧).
+2. **`template_per_call`** — 최상위 **`template_id`(**search** 템플릿)가 있으면 요청당 한 번 `pricing.perCall`.
+3. **`scrape_options`**가 있고 후속이 성공한 경우:
+   - **`search_result_scrape`** — `completed_scrape_count ×` 엔진 단가(`calculateScrapeCredits`).
+   - **`search_result_scrape_template`** — **`scrape_options.template_id`**가 있으면 성공마다 scrape 템플릿 `pricing.perCall`. **search 템플릿만:** `metadata.charge_scrape_template_credits: false`이면 이 항목은 과금하지 않음(엔진 항목은 과금).
+
+전체 사양: 저장소 **`docs/api/search-scrape-credits-and-templates.md`**.
+
+## 자주 묻는 질문
+
+### Q: 언제 다른 언어 설정을 써야 하나요?
+
+A:
+
+- **영어(`en`)**: 글로벌 검색·국제 콘텐츠
+- **중국어(`zh`)**: 중국어 콘텐츠·중국 중심 결과
+- **지역 변형**(`en-GB`, `fr-CA` 등): 국가별·로캘 결과
+
+### Q: 기대보다 결과가 적게 나오는 이유는?
+
+A: 가능한 이유:
+
+- 쿼리가 너무 구체적이거나 희귀한 용어
+- 쿼리 언어와 `lang` 불일치
+- 주제·지역에 대한 검색 엔진 제한
+- 네트워크 문제
+
+### Q: 특정 지역이 필요한 검색은?
+
+A: 현재 API는 `lang`에 따라 적절한 지역을 자동 선택합니다.
+
+- 목표 지역에 맞는 언어 코드 사용(예: 영국 결과는 `en-GB`)
+- 필요 시 지역 용어를 쿼리에 포함
+
+### Q: 검색 결과와 제안의 차이는?
+
+A:
+
+- **검색 결과**: 제목, URL, 설명, 소스가 있는 완전한 항목
+- **검색 제안**: URL 없는 관련 쿼리 제안, 쿼리 확장에 유용
+
+### Q: 동시 검색 요청에 속도 제한이 있나요?
+
+A: 없습니다. API는 **원래부터 높은 동시성**을 지원하며, 모든 요청이 즉시 데이터를 반환합니다.
+
+## 언어 및 지역 지원
+
+검색 API는 `lang` 파라미터로 여러 언어·지역을 지원합니다. 아래는 지원 로캘 목록입니다.
+
+### 주요 언어
+
+- `all` - 모든 언어
+
+#### **영어** 🌐
+
+- `en` - 글로벌 영어
+- `en-AU` - 영어 (호주) 🇦🇺
+- `en-CA` - 영어 (캐나다) 🇨🇦
+- `en-GB` - 영어 (영국) 🇬🇧
+- `en-IE` - 영어 (아일랜드) 🇮🇪
+- `en-IN` - 영어 (인도) 🇮🇳
+- `en-NZ` - 영어 (뉴질랜드) 🇳🇿
+- `en-PH` - 영어 (필리핀) 🇵🇭
+- `en-PK` - 영어 (파키스탄) 🇵🇰
+- `en-SG` - 영어 (싱가포르) 🇸🇬
+- `en-US` - 영어 (미국) 🇺🇸
+- `en-ZA` - 영어 (남아프리카) 🇿🇦
+
+#### **중국어** 🌐
+
+- `zh` - 글로벌 중국어
+- `zh-CN` - 중국어 (중국) 🇨🇳
+- `zh-HK` - 중국어 (홍콩) 🇭🇰
+- `zh-TW` - 중국어 (대만) 🇹🇼
+
+#### **스페인어** 🌐
+
+- `es` - 글로벌 스페인어
+- `es-AR` - 스페인어 (아르헨티나) 🇦🇷
+- `es-CL` - 스페인어 (칠레) 🇨🇱
+- `es-CO` - 스페인어 (콜롬비아) 🇨🇴
+- `es-ES` - 스페인어 (스페인) 🇪🇸
+- `es-MX` - 스페인어 (멕시코) 🇲🇽
+- `es-PE` - 스페인어 (페루) 🇵🇪
+
+#### **프랑스어** 🌐
+
+- `fr` - 글로벌 프랑스어
+- `fr-BE` - 프랑스어 (벨기에) 🇧🇪
+- `fr-CA` - 프랑스어 (캐나다) 🇨🇦
+- `fr-CH` - 프랑스어 (스위스) 🇨🇭
+- `fr-FR` - 프랑스어 (프랑스) 🇫🇷
+
+#### **독일어** 🌐
+
+- `de` - 글로벌 독일어
+- `de-AT` - 독일어 (오스트리아) 🇦🇹
+- `de-BE` - 독일어 (벨기에) 🇧🇪
+- `de-CH` - 독일어 (스위스) 🇨🇭
+- `de-DE` - 독일어 (독일) 🇩🇪
+
+#### **포르투갈어** 🌐
+
+- `pt` - 글로벌 포르투갈어
+- `pt-BR` - 포르투갈어 (브라질) 🇧🇷
+- `pt-PT` - 포르투갈어 (포르투갈) 🇵🇹
+
+#### **이탈리아어** 🌐
+
+- `it` - 글로벌 이탈리아어
+- `it-CH` - 이탈리아어 (스위스) 🇨🇭
+- `it-IT` - 이탈리아어 (이탈리아) 🇮🇹
+
+#### **일본어** 🌐
+
+- `ja` - 글로벌 일본어
+- `ja-JP` - 일본어 (일본) 🇯🇵
+
+#### **한국어** 🌐
+
+- `ko` - 글로벌 한국어
+- `ko-KR` - 한국어 (대한민국) 🇰🇷
+
+#### **러시아어** 🌐
+
+- `ru` - 글로벌 러시아어
+- `ru-RU` - 러시아어 (러시아) 🇷🇺
+
+### 유럽 언어
+
+#### **네덜란드어** 🌐
+
+- `nl` - 글로벌 네덜란드어
+- `nl-BE` - 네덜란드어 (벨기에) 🇧🇪
+- `nl-NL` - 네덜란드어 (네덜란드) 🇳🇱
+
+#### **폴란드어** 🌐
+
+- `pl` - 글로벌 폴란드어
+- `pl-PL` - 폴란드어 (폴란드) 🇵🇱
+
+#### **체코어** 🌐
+
+- `cs` - 글로벌 체코어
+- `cs-CZ` - 체코어 (체코) 🇨🇿
+
+#### **헝가리어** 🌐
+
+- `hu` - 글로벌 헝가리어
+- `hu-HU` - 헝가리어 (헝가리) 🇭🇺
+
+#### **루마니아어** 🌐
+
+- `ro` - 글로벌 루마니아어
+- `ro-RO` - 루마니아어 (루마니아) 🇷🇴
+
+#### **그리스어** 🌐
+
+- `el` - 글로벌 그리스어
+- `el-GR` - 그리스어 (그리스) 🇬🇷
+
+#### **불가리아어** 🌐
+
+- `bg` - 글로벌 불가리아어
+- `bg-BG` - 불가리아어 (불가리아) 🇧🇬
+
+#### **크로아티아어** 🌐
+
+- `hr` - 글로벌 크로아티아어
+
+#### **슬로바키아어** 🌐
+
+- `sk` - 글로벌 슬로바키아어
+
+#### **슬로베니아어** 🌐
+
+- `sl` - 글로벌 슬로베니아어
+
+#### **에스토니아어** 🌐
+
+- `et` - 글로벌 에스토니아어
+- `et-EE` - 에스토니아어 (에스토니아) 🇪🇪
+
+#### **라트비아어** 🌐
+
+- `lv` - 글로벌 라트비아어
+
+#### **리투아니아어** 🌐
+
+- `lt` - 글로벌 리투아니아어
+
+#### **핀란드어** 🌐
+
+- `fi` - 글로벌 핀란드어
+- `fi-FI` - 핀란드어 (핀란드) 🇫🇮
+
+#### **스웨덴어** 🌐
+
+- `sv` - 글로벌 스웨덴어
+- `sv-SE` - 스웨덴어 (스웨덴) 🇸🇪
+
+#### **노르웨이어** 🌐
+
+- `nb` - 노르웨이어 (보크말)
+- `nb-NO` - 노르웨이어 보크말 (노르웨이) 🇳🇴
+
+#### **덴마크어** 🌐
+
+- `da` - 글로벌 덴마크어
+- `da-DK` - 덴마크어 (덴마크) 🇩🇰
+
+#### **아이슬란드어** 🌐
+
+- `is` - 글로벌 아이슬란드어
+
+### 기타 언어
+
+#### **아랍어** 🌐
+
+- `ar` - 글로벌 아랍어
+- `ar-SA` - 아랍어 (사우디아라비아) 🇸🇦
+
+#### **히브리어** 🇮🇱
+
+- `he` - 히브리어
+
+#### **터키어** 🌐
+
+- `tr` - 글로벌 터키어
+- `tr-TR` - 터키어 (터키) 🇹🇷
+
+#### **페르시아어** 🌐
+
+- `fa` - 페르시아어
+
+#### **힌디어** 🌐
+
+- `hi` - 힌디어
+
+#### **우르두어** 🌐
+
+- `ur` - 우르두어
+
+#### **태국어** 🌐
+
+- `th` - 글로벌 태국어
+- `th-TH` - 태국어 (태국) 🇹🇭
+
+#### **베트남어** 🌐
+
+- `vi` - 글로벌 베트남어
+- `vi-VN` - 베트남어 (베트남) 🇻🇳
+
+#### **인도네시아어** 🌐
+
+- `id` - 글로벌 인도네시아어
+- `id-ID` - 인도네시아어 (인도네시아) 🇮🇩
+
+#### **인도 언어**
+
+- `kn` - 칸나다어 🌐
+- `ml` - 말라얄람어 🌐
+- `mr` - 마라티어 🌐
+- `ta` - 타밀어 🌐
+- `te` - 텔루구어 🌐
+
+#### **기타 유럽 언어**
+
+- `af` - 아프리칸스어 🌐
+- `be` - 벨라루스어 🌐
+- `ca` - 카탈루냐어 🌐
+- `cy` - 웨일스어 🌐
+- `eu` - 바스크어 🌐
+- `ga` - 아일랜드어 🌐
+- `gd` - 스코틀랜드 게일어 🌐
+- `gl` - 갈리시아어 🌐
+- `sq` - 알바니아어 🌐
+- `uk` - 우크라이나어 🌐
+
+### 사용 시 참고
+
+- **글로벌 코드**(`en`, `zh`, `es` 등)는 국가 제한 없이 넓은 결과를 제공합니다.
+- **국가별 코드**(`en-US`, `zh-CN`, `es-MX` 등)는 해당 지역에 맞춘 결과를 반환합니다.
+- API는 로캘에 맞게 Google 도메인과 언어 설정을 자동 선택합니다.
+- `lang`을 검색 쿼리 언어와 맞추는 것이 가장 좋습니다.

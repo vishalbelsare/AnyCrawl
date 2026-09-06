@@ -1,0 +1,439 @@
+---
+title: Обход (Crawl)
+description: Обход всего сайта и преобразование в структурированные данные для LLM.
+icon: Bug
+---
+
+## Введение
+
+Crawl API AnyCrawl находит и обрабатывает несколько страниц от seed URL, применяя тот же конвейер извлечения на страницу, что и `/v1/scrape`. Работа асинхронная: сразу возвращается `job_id`, затем опрашивается статус и постранично забираются результаты.
+
+**Ключевые возможности**
+
+- **Асинхронные задачи**: поставить обход в очередь и получить результаты позже
+- **Несколько движков**: `auto` (по умолчанию), `cheerio`, `playwright`, `puppeteer`
+- **Гибкая область**: `strategy`, `max_depth`, `include_paths`, `exclude_paths`
+- **Опции на страницу**: те же поля, что у `/v1/scrape`, внутри `scrape_options`
+- **Пагинация**: поток результатов через `skip`, чтобы не раздувать ответ
+
+### Конечные точки API
+
+```
+POST    https://api.anycrawl.dev/v1/crawl
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}/status
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}?skip=0
+DELETE  https://api.anycrawl.dev/v1/crawl/{jobId}
+```
+
+## Примеры
+
+### Создать задачу обхода
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://anycrawl.dev",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 100,
+    "exclude_paths": ["/blog/*"],
+    "scrape_options": {
+      "formats": ["markdown"],
+      "timeout": 60000
+    }
+  }'
+```
+
+### Выборочный скрейп с `scrape_paths`
+
+Используйте `scrape_paths`, чтобы заходить на страницы для поиска ссылок без извлечения контента — экономия кредитов и места:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://shop.example.com",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 200,
+    "include_paths": ["/*"],
+    "scrape_paths": ["/products/*/details", "/products/*/reviews"],
+    "scrape_options": {
+      "formats": ["markdown", "json"]
+    }
+  }'
+```
+
+В этом примере:
+
+- Страницы по шаблону `/*` **посещаются** для обнаружения ссылок
+- Контент извлекается и сохраняется только для URL, подходящих под `/products/*/details` или `/products/*/reviews`
+- Категории, навигация и т.п. обходятся, но не скрейпятся — экономятся кредиты и хранилище
+
+```javascript tab="JavaScript"
+const start = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://anycrawl.dev",
+        engine: "cheerio",
+        strategy: "same-domain",
+        max_depth: 5,
+        limit: 100,
+        exclude_paths: ["/blog/*"],
+        scrape_options: { formats: ["markdown"], timeout: 60000 },
+    }),
+});
+const startResult = await start.json();
+const jobId = startResult.data.job_id;
+```
+
+```python tab="Python"
+import requests
+resp = requests.post(
+    'https://api.anycrawl.dev/v1/crawl',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://anycrawl.dev',
+        'engine': 'cheerio',
+        'strategy': 'same-domain',
+        'max_depth': 5,
+        'limit': 100,
+        'exclude_paths': ['/blog/*'],
+    'scrape_options': { 'formats': ['markdown'], 'timeout': 60000 }
+    }
+)
+start = resp.json()
+job_id = start['data']['job_id']
+```
+
+### Опрос статуса
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396/status"
+```
+
+```javascript tab="JavaScript"
+const statusRes = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}/status`, {
+    headers: { Authorization: "Bearer YOUR_API_KEY" },
+});
+const status = await statusRes.json();
+```
+
+### Получение результатов (постранично)
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=0"
+```
+
+```javascript tab="JavaScript"
+let skip = 0;
+while (true) {
+    const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`, {
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+    });
+    const page = await res.json();
+    // process page.data
+    if (!page.next) break;
+    const nextUrl = new URL(page.next);
+    skip = Number(nextUrl.searchParams.get("skip") || 0);
+}
+```
+
+### Отмена задачи
+
+```bash tab="cURL"
+curl -X DELETE -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396"
+```
+
+## Параметры запроса
+
+| Parameter           | Type            | Required | Default       | Description                                                                                                              |
+| ------------------- | --------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `url`               | string          | Yes      | -             | Seed URL для старта обхода                                                                                               |
+| `template_id`       | string          | No       | -             | ID шаблона для этого crawl                                                                                                |
+| `variables`         | object          | No       | -             | Переменные шаблона (только с `template_id`)                                                                              |
+| `engine`            | enum            | No       | `auto`        | Движок скрейпа на страницу: `auto`, `cheerio`, `playwright`, `puppeteer`                                                   |
+| `exclude_paths`     | array of string | No       | -             | Правила исключения путей (glob), напр. `/blog/*`                                                                         |
+| `include_paths`     | array of string | No       | -             | Правила включения для обхода (после исключений)                                                                          |
+| `scrape_paths`      | array of string | No       | -             | Правила извлечения контента. Сохраняется только для совпавших URL. Если не задано — скрейпятся все включённые             |
+| `max_depth`         | number          | No       | `10`          | Макс. глубина от seed URL                                                                                                |
+| `strategy`          | enum            | No       | `same-domain` | Область обхода: `all`, `same-domain`, `same-hostname`, `same-origin`                                                     |
+| `limit`             | number          | No       | `100`         | Макс. число страниц                                                                                                      |
+| `max_age`           | number          | No       | -             | Макс. возраст кэша (мс). `0` — без чтения кэша; не указано — по умолчанию сервера                                          |
+| `store_in_cache`    | boolean         | No       | `true`        | Записывать ли Page Cache для скрейпов страниц                                                                             |
+| `retry`             | boolean         | No       | `false`       | Повтор при ошибке                                                                                                        |
+| `proxy`             | string (URI)    | No       | -             | Необязательный URL прокси                                                                                                 |
+| `formats`           | array of enum   | No       | `["markdown"]`| Форматы вывода для скрейпа страниц                                                                                        |
+| `timeout`           | number          | No       | `60000`       | Таймаут запроса (мс)                                                                                                     |
+| `wait_for`          | number          | No       | -             | Задержка перед извлечением (мс); только браузерные движки                                                                  |
+| `wait_until`        | enum            | No       | -             | Условие навигации для браузера: `load`, `domcontentloaded`, `networkidle`, `commit`                                      |
+| `wait_for_selector` | string, object, or array | No | -          | Ожидание селекторов (только браузер). Приоритет над `wait_for`.                                                           |
+| `include_tags`      | array of string | No       | -             | Включать только элементы по CSS-селекторам                                                                               |
+| `exclude_tags`      | array of string | No       | -             | Исключать элементы по CSS-селекторам                                                                                     |
+| `only_main_content` | boolean         | No       | `true`        | Только основной контент, без шапки/подвала/навигации                                                                     |
+| `json_options`      | object          | No       | -             | Опции JSON (schema, user_prompt, schema_name, schema_description)                                                       |
+| `extract_source`    | enum            | No       | `markdown`    | Источник для JSON: `markdown` (по умолчанию) или `html`                                                                  |
+| `ocr_options`       | boolean         | No       | `false`       | OCR для картинок в markdown; не затрагивает `html`/`rawHtml`                                                             |
+| `scrape_options`    | object          | No       | -             | Опции скрейпа на страницу (как `/v1/scrape` без верхнеуровневых `url`/`engine`)                                          |
+
+### Поля `scrape_options`
+
+| Field               | Type                     | Default        | Notes                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `formats`           | array of enum            | `["markdown"]` | Output formats: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                               |
+| `timeout`           | number                   | `60000`        | Per-request timeout (ms)                                                                                                                    |
+| `wait_for`          | number                   | -              | Delay before extraction (ms); browser engines only; lower priority than `wait_for_selector`                                                 |
+| `wait_for_selector` | string, object, or array | -              | Wait for one or multiple selectors (browser engines only). Accepts a CSS selector string, an object `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }`, or an array mixing strings/objects. Each entry is awaited sequentially. Takes priority over `wait_for`. |
+| `include_tags`      | array of string          | -              | Only include elements that match CSS selectors                                                                                              |
+| `exclude_tags`      | array of string          | -              | Exclude elements that match CSS selectors                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | Only extract main content, removing headers, footers, navigation, etc.                                                                        |
+| `proxy`             | string (URI)             | -              | Optional proxy URL                                                                                                                          |
+| `json_options`      | object                   | -              | Options for structured JSON extraction (schema, user_prompt, schema_name, schema_description)                                               |
+| `extract_source`    | enum                     | `markdown`     | Source to extract JSON from: `markdown` (default) or `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | Enable OCR enhancement for markdown images only. Affects markdown generation, not `html`/`rawHtml`.                                         |
+| `max_age`           | number                   | -              | Cache max age (ms). Use `0` to skip cache read; omit to use server default                                                                     |
+| `store_in_cache`    | boolean                  | `true`         | Whether to write Page Cache for per-page scrapes                                                                                              |
+
+### Поведение кэша
+
+- Crawl **не читает** Page Cache, но может **писать**.
+- Если передаёте `scrape_options`, задавайте управление кэшем внутри него.
+
+## Формат ответа
+
+### 1) Создание (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "created",
+        "message": "Crawl job has been queued for processing"
+    }
+}
+```
+
+#### Возможные ошибки
+
+- 400 Validation Error
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid enum value...",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            { "field": "engine", "message": "Invalid enum value", "code": "invalid_enum_value" }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+- 401 Authentication Error
+
+```json
+{ "success": false, "error": "Invalid API key" }
+```
+
+### 2) Статус (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job status retrieved successfully",
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "completed",
+        "start_time": "2025-05-25T07:56:44.162Z",
+        "expires_at": "2025-05-26T07:56:44.162Z",
+        "credits_used": 0,
+        "total": 120,
+        "completed": 30,
+        "failed": 2
+    }
+}
+```
+
+### 3) Страница результатов (HTTP 200)
+
+```json
+{
+    "success": true,
+    "status": "pending",
+    "total": 120,
+    "completed": 30,
+    "credits_used": 12,
+    "next": "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=100",
+    "data": [
+        {
+            "url": "https://anycrawl.dev/",
+            "title": "AnyCrawl",
+            "markdown": "# AnyCrawl...",
+            "timestamp": "2025-05-25T07:56:44.162Z"
+        }
+    ]
+}
+```
+
+#### Возможные ошибки
+
+- 400 Invalid job id / Not found
+
+```json
+{ "success": false, "error": "Invalid job ID", "message": "Job ID must be a valid UUID" }
+```
+
+### 4) Отмена (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job cancelled successfully",
+    "data": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396", "status": "cancelled" }
+}
+```
+
+#### Возможные ошибки
+
+- 404 Not found
+- 409 Job already finished
+
+```json
+{
+    "success": false,
+    "error": "Job already finished",
+    "message": "Finished jobs cannot be cancelled"
+}
+```
+
+## Рекомендации
+
+- Для одной страницы — `/v1/scrape` (дешевле); для всего сайта — `/v1/crawl`.
+- Настраивайте `strategy`, `max_depth` и правила путей под объём и стоимость.
+- Используйте `scrape_paths`: обходить навигацию/категории для ссылок, скрейпить только контентные страницы.
+- Ограничивайте `formats` тем, что реально нужно.
+- Листайте результаты через `skip`, чтобы не получать огромный ответ.
+
+### Экономия с `scrape_paths`
+
+Параметр `scrape_paths` помогает снизить стоимость обхода:
+
+**Без `scrape_paths` (по умолчанию)**:
+
+- Все включённые страницы → посещение + извлечение + сохранение
+
+**С `scrape_paths`**:
+
+- Страницы из `include_paths`, но не из `scrape_paths` → только посещение (поиск ссылок)
+- Страницы и в `include_paths`, и в `scrape_paths` → посещение + извлечение + сохранение
+
+Примеры:
+
+- E-commerce: обойти категории, скрейпить только карточки товаров
+- Документация: пройти навигацию, извлечь только статьи
+- Новости: просмотреть разделы, сохранить только полные статьи
+
+## Пример обработки ошибок
+
+```javascript
+async function fetchAllResults(jobId) {
+    let skip = 0;
+    while (true) {
+        const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const page = await res.json();
+        // handle page.data here
+        if (!page.next) break;
+        const next = new URL(page.next);
+        skip = Number(next.searchParams.get("skip") || 0);
+    }
+}
+```
+
+## Высокая параллельность
+
+Очередь crawl допускает параллельные задачи. Отправляйте несколько обходов и опрашивайте их независимо:
+
+```javascript
+const seeds = ["https://site-a.com", "https://site-b.com", "https://site-c.com"];
+const jobs = await Promise.all(
+    seeds.map((url) =>
+        fetch("https://api.anycrawl.dev/v1/crawl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, engine: "cheerio" }),
+        }).then((r) => r.json())
+    )
+);
+```
+
+## FAQ
+
+### Чем `/v1/crawl` отличается от `/v1/scrape`?
+
+`/v1/scrape` синхронно загружает один URL и сразу возвращает контент. `/v1/crawl` находит несколько страниц от seed и выполняется асинхронно.
+
+### Как ограничить объём и стоимость?
+
+Используйте `strategy`, `max_depth`, `limit` и правила путей (`include_paths`, `exclude_paths`, `scrape_paths`).
+
+### Разница между `include_paths` и `scrape_paths`?
+
+- `include_paths`: какие URL **посещать** (поиск ссылок)
+- `scrape_paths`: для каких URL **извлекать и сохранять** контент
+
+Если `scrape_paths` не задан, скрейпятся все включённые URL (обратная совместимость).
+
+### Как снизить стоимость обхода?
+
+Используйте `scrape_paths`: посещать навигацию и категории без сохранения контента; сохранять только страницы, попавшие под шаблоны `scrape_paths`.
+
+### Как пагинировать результаты?
+
+Используйте query-параметр `skip`. Если в ответе есть `next`, переходите по нему за следующей страницей.
+
+### Почему в задаче нет `html`/`markdown`?
+
+Убедитесь, что нужные форматы указаны в `scrape_options.formats` и что выбранный движок их поддерживает.
+
+## Значения status
+
+Поле `status` задачи соответствует модели job:
+
+| Status      | Значение                                              |
+| ----------- | ----------------------------------------------------- |
+| `pending`   | В очереди или выполняется (ещё не завершена)          |
+| `completed` | Успешно завершена                                     |
+| `failed`    | Завершена с ошибкой                                   |
+| `cancelled` | Отменена; дальнейшая обработка не выполняется         |
+
+## OpenAPI (auto-generated)
+
+См. справочник API с автогенерацией:
+
+- `POST /v1/crawl`
+- `GET /v1/crawl/{jobId}/status`
+- `GET /v1/crawl/{jobId}`
+- `DELETE /v1/crawl/{jobId}`

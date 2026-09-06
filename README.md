@@ -32,6 +32,39 @@
 
 </div>
 
+## Sponsors
+
+<div align="center">
+  <p>
+    <a href="https://www.swiftproxy.net/?ref=AnyCrawl">
+      <img src="https://ac-public.anycrawl.dev/sponsors/SWIFTPROXY-1200_628-1.png" alt="SwiftProxy" width="560">
+    </a>
+  </p>
+</div>
+
+Swiftproxy(https://www.swiftproxy.net/?ref=AnyCrawl) — High-performance residential proxies built for scraping, automation, and large-scale data collection. Access 80M+ rotating residential IPs across 195+ countries with stable connections, high anonymity, and developer-friendly integration. Ideal for AI agents, crawlers, browser automation, and anti-bot bypass workflows.
+Free trial available. Use code **PROXY90** for an exclusive 10% discount.
+
+<div align="center">
+  <p>
+    <a href="https://www.rapidproxy.io/?ref=AnyCrawl">
+      <img src="assets/sponsors/rapidproxy.png" alt="Rapidproxy" width="560">
+    </a>
+  </p>
+</div>
+
+[Rapidproxy](https://www.rapidproxy.io/?ref=AnyCrawl) — RapidProxy is a high-performance proxy provider offering clean residential proxies and native static ISP IPs for web scraping, browser automation, social media automation, e-commerce, multi-account management, and large-scale data operations. With 90M+ residential IPs, smart rotation, stable sessions, high concurrency, AI-powered CAPTCHA bypass, and non-expiring traffic, RapidProxy helps developers run reliable automation tasks at scale. Residential proxies start from $0.65/GB. Use code **RAPID10** for 10% off — try it now.
+
+<div align="center">
+  <p>
+    <a href="https://talordata.com/?campaignid=5avLYJ0mVCaOwWWx&utm_source=GitHub&utm_term=anycrawl">
+      <img src="assets/sponsors/black-talordata.png" alt="TalorData" width="300">
+    </a>
+  </p>
+</div>
+
+[TalorData](https://talordata.com/?campaignid=5avLYJ0mVCaOwWWx&utm_source=GitHub&utm_term=anycrawl) provides a fast, reliable SERP API that delivers structured, real-time search data from Google, Bing, Yandex, and DuckDuckGo, built for AI agents and SEO automation. Sign up to receive free trial and a 10% discount.
+
 ## 📖 Overview
 
 AnyCrawl is a high‑performance crawling and scraping toolkit:
@@ -103,17 +136,23 @@ curl -X POST https://api.anycrawl.dev/v1/scrape \
 
 #### Parameters
 
-| Parameter | Type              | Description                                                                                                                                                                       | Default  |
-| --------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| url       | string (required) | The URL to be scraped. Must be a valid URL starting with http:// or https://                                                                                                      | -        |
-| engine    | string            | Scraping engine to use. Options: `cheerio` (static HTML parsing, fastest), `playwright` (JavaScript rendering with modern engine), `puppeteer` (JavaScript rendering with Chrome) | cheerio  |
-| proxy     | string            | Proxy URL for the request. Supports HTTP and SOCKS proxies. Format: `http://[username]:[password]@proxy:port`                                                                     | _(none)_ |
-| max_age   | number            | Cache control (ms). `0` = force refresh (skip cache read); `> 0` = accept cached content within this age; omit to use default.                                                    | _(none)_ |
-| store_in_cache | boolean       | Cache control. Whether to store the result in cache. To bypass cache reads, use `max_age=0`.                                                                                      | true     |
+| Parameter      | Type              | Description                                                                                                                                                                       | Default  |
+| -------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| url            | string (required) | The URL to be scraped. Must be a valid URL starting with http:// or https://                                                                                                      | -        |
+| engine         | string            | Scraping engine to use. Options: `cheerio` (static HTML parsing, fastest), `playwright` (JavaScript rendering with modern engine), `puppeteer` (JavaScript rendering with Chrome) | cheerio  |
+| proxy          | string            | Proxy URL for the request. Supports HTTP and SOCKS proxies. Format: `http://[username]:[password]@proxy:port`                                                                     | _(none)_ |
+| max_age        | number            | Cache control (ms). `0` = force refresh (skip cache read); `> 0` = accept cached content within this age; omit to use default.                                                    | _(none)_ |
+| store_in_cache | boolean           | Cache control. Whether to store the result in cache. To bypass cache reads, use `max_age=0`.                                                                                      | true     |
 
 More parameters: see [Request Parameters](https://docs.anycrawl.dev/en/general/scrape#request-parameters).
 
 Cache details (self-host / S3 / map index): see `docs/cache.md`.
+
+#### Browser Runtime
+
+The public scrape and crawl engine values remain `cheerio`, `playwright`, and `puppeteer`. For self-hosted browser engines, `playwright` and `puppeteer` are launched through CloakBrowser by default; callers should not send a `cloakbrowser` engine value.
+
+CloakBrowser requires Node.js 20 or newer. Docker images pre-install its browser binary during image build. For local or custom deployments, set `CLOAKBROWSER_CACHE_DIR` to a stable writable path and `CLOAKBROWSER_AUTO_UPDATE=false` to avoid browser downloads during worker startup. If you manage the binary yourself, set `CLOAKBROWSER_BINARY_PATH`.
 
 #### LLM Extraction
 
@@ -136,6 +175,23 @@ curl -X POST "https://api.anycrawl.dev/v1/scrape" \
     }
   }'
 ```
+
+#### Atlas Cloud Provider
+
+AnyCrawl supports Atlas Cloud as an OpenAI-compatible LLM provider for extraction and summarization workloads.
+
+- Official site: [Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=AnyCrawl)
+- LLM base URL: `https://api.atlascloud.ai/v1`
+- Recommended env model format: `atlascloud/deepseek-v3`
+
+```bash
+ATLASCLOUD_BASE_URL=https://api.atlascloud.ai/v1
+ATLASCLOUD_API_KEY=your-atlascloud-api-key
+DEFAULT_LLM_MODEL=atlascloud/deepseek-v3
+DEFAULT_EXTRACT_MODEL=atlascloud/deepseek-v3
+```
+
+If you prefer file-based AI config, add an `atlascloud` provider entry in `ai.config.json` and map it to any Atlas Cloud model exposed through the OpenAI-compatible chat API.
 
 ### Site Crawling (Crawl)
 
@@ -170,6 +226,41 @@ curl -X POST https://api.anycrawl.dev/v1/crawl \
 | scrape_options | object            | Per-page scrape options (formats, timeout, json extraction, etc.), same as Scrape options | _(none)_    |
 
 More parameters and endpoints: see [Request Parameters](https://docs.anycrawl.dev/en/general/scrape#request-parameters).
+
+### Batch Scrape
+
+Scrape many known URLs in a single asynchronous job, all sharing the same scrape options. Create a job, then poll status and pull paginated results (like Crawl, but with a fixed URL set and no link discovery).
+
+#### Example
+
+```typescript
+
+curl -X POST https://api.anycrawl.dev/v1/batch/scrape \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' \
+  -d '{
+  "urls": ["https://example.com/a", "https://example.com/b"],
+  "engine": "cheerio",
+  "formats": ["markdown"]
+}'
+# -> { "success": true, "data": { "job_id": "...", "status": "created", "total": 2 } }
+
+# Poll status / fetch results
+curl -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' https://api.anycrawl.dev/v1/batch/scrape/JOB_ID/status
+curl -H 'Authorization: Bearer YOUR_ANYCRAWL_API_KEY' https://api.anycrawl.dev/v1/batch/scrape/JOB_ID
+
+```
+
+#### Parameters
+
+| Parameter           | Type                | Description                                                             | Default |
+| ------------------- | ------------------- | ---------------------------------------------------------------------- | ------- |
+| urls                | array<string> (req) | URLs to scrape (de-duplicated; up to `ANYCRAWL_BATCH_SCRAPE_MAX_URLS`) | -       |
+| engine              | string              | Scrape engine: `auto`, `cheerio`, `playwright`, `puppeteer`            | auto    |
+| ignore_invalid_urls | boolean             | Skip malformed URLs (returned in `invalid_urls`) instead of erroring   | true    |
+| _scrape options_    | -                   | All single-scrape options (`formats`, `proxy`, `json_options`, ...) shared across every URL | -       |
+
+Credits are charged per successfully scraped URL (failed URLs are not charged). Full reference: [Batch Scrape API](./docs/api/batch-scrape.md).
 
 ### Search Engine Results (SERP)
 
@@ -208,6 +299,12 @@ curl -X POST https://api.anycrawl.dev/v1/search \
 ## 🤝 Contributing
 
 We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md).
+
+## Backers
+
+Support us with a monthly donation and help us continue our activities. [[Become a backer](https://opencollective.com/anycrawl)]
+
+<a href="https://opencollective.com/anycrawl"><img alt="Mocha's backers on Open Collective" src="https://opencollective.com/anycrawl/tiers/backers.svg?limit=30&button=false&avatarHeight=46&width=750"></a>
 
 ## 📄 License
 

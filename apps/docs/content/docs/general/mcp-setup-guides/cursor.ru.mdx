@@ -1,0 +1,107 @@
+---
+title: Cursor
+description: Добавьте веб-скрапинг и поиск в Cursor с помощью AnyCrawl MCP
+icon: MousePointer
+---
+
+# Веб-поиск и скрапинг через MCP в Cursor
+
+Добавьте в Cursor возможности веб-скрапинга и поиска с помощью AnyCrawl MCP.
+
+## Быстрая настройка
+
+### 1. Получите API-ключ
+
+Зарегистрируйтесь на [anycrawl.dev](https://anycrawl.dev) и скопируйте API-ключ в панели управления.
+
+### 2. Добавьте в Cursor
+
+Откройте настройки (`Cmd+,` на Mac, `Ctrl+,` в Windows), найдите «MCP» и добавьте:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Замените `your-api-key` на ваш настоящий API-ключ AnyCrawl.
+
+### 3. Перезапустите Cursor
+
+Готово! Теперь можно искать и скрапить веб из Cursor.
+
+## Быстрое демо
+
+Попробуйте в чате Cursor (`Cmd+K`):
+
+**Поиск в интернете:**
+
+```
+Search for TypeScript best practices 2025
+```
+
+**Скрапинг страницы:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Документация:**
+
+```
+Scrape the React hooks documentation and explain useEffect
+```
+
+**Обход сайта:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Cursor автоматически будет использовать инструменты поиска, скрапинга и обхода AnyCrawl.
+
+## Устранение неполадок
+
+### Сервер не отвечает
+
+1. Проверьте, что API-ключ действителен
+2. Убедитесь, что установлен Node.js 18+
+3. Перезапустите Cursor после изменения конфигурации
+
+### Ошибки прав
+
+Убедитесь, что `npx` может выполняться. Возможно, потребуется глобальная установка пакета:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Затем обновите конфигурацию для использования глобального пакета:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Дальше
+
+- Подробнее об [опциях скрапинга](../scrape)
+- [Возможности обхода](../crawl)
+- [Поиск](../search)
+- Полная [документация MCP-сервера](../mcp)

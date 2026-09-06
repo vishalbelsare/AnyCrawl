@@ -1,0 +1,415 @@
+---
+title: テンプレート
+description: 変数とカスタムロジック付きの、再利用可能なスクレイプ・クロール・検索レシピ
+icon: Puzzle
+---
+
+## はじめに
+
+テンプレートは、スクレイプ・クロール・検索の再利用可能な設定です。API 呼び出しごとに同じオプションを繰り返す代わりに、テンプレートに一度定義する（または AnyCrawl テンプレートストアから取得する）だけで、`template_id` で参照できます。
+
+**利点：**
+
+- **シンプル**：`template_id` と最小限の入力だけで API を呼べる
+- **一貫性**：チームやプロジェクト全体で挙動を標準化できる
+- **安全性**：許可ドメインを制限し、必要な変数だけを公開できる
+- **拡張性**：高度な変換のための任意のカスタムハンドラ
+
+**対応タイプ：**
+
+- `scrape`：`/v1/scrape` による単一ページの抽出
+- `crawl`：`/v1/crawl` による複数ページのクロール
+- `search`：`/v1/search` による検索エンジン結果の取得
+
+## テンプレートマーケットプレイス
+
+利用可能なテンプレートは **[anycrawl.dev/template](https://anycrawl.dev/template)** から閲覧できます。
+
+**使い方：**
+
+1. マーケットを開き、用途に合うテンプレートを探す
+2. テンプレート詳細ページから `template_id` をコピーする
+3. その `template_id` と必要な入力で API を呼ぶ
+
+**例：**
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "content-extractor",
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "content-extractor",
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'template_id': 'content-extractor',
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## API 呼び出しでのテンプレート利用
+
+### リクエストパラメータ
+
+`template_id` を使う場合、許可されるのは最小限のフィールドだけです。
+
+| エンドポイント     | 必須フィールド | 任意フィールド      |
+| ------------ | -------------- | -------------------- |
+| `/v1/scrape` | `template_id`  | `url`, `variables`   |
+| `/v1/crawl`  | `template_id`  | `url`, `variables`   |
+| `/v1/search` | `template_id`  | `query`, `variables` |
+
+**注意：**
+
+- テンプレート側で `url` や `query` が事前定義されていれば、省略できる場合があります。テンプレートの説明を確認してください。
+- `variables` は、テンプレートが期待する動的入力を渡します（下記の「変数」を参照）。
+- `engine`、`formats`、`timeout` などその他のフィールドはテンプレート由来であり、上書きできません。
+- 許可されていないフィールドを送ると **400 バリデーションエラー**になります。
+
+### テンプレートでスクレイプ
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-scrape-template",
+    "url": "https://example.com",
+    "variables": { "category": "tech" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-scrape-template",
+        url: "https://example.com",
+        variables: { category: "tech" },
+    }),
+});
+const data = await res.json();
+```
+
+### テンプレートでクロール
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-crawl-template",
+    "url": "https://docs.example.com",
+    "variables": { "maxPages": 50 }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-crawl-template",
+        url: "https://docs.example.com",
+        variables: { maxPages: 50 },
+    }),
+});
+const { job_id } = (await res.json()).data;
+// 結果をポーリング…
+```
+
+### テンプレートで検索
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-search-template",
+    "query": "machine learning tutorials",
+    "variables": { "lang": "en" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-search-template",
+        query: "machine learning tutorials",
+        variables: { lang: "en" },
+    }),
+});
+const data = await res.json();
+console.log(data.data);
+```
+
+## 変数
+
+テンプレートは**変数**を宣言し、呼び出し時に動的入力を受け取れます。
+
+- 各変数には `type` があります：`string`、`number`、`boolean`、`url`
+- 変数は `required` にするか、`defaultValue` を持つ任意にできます
+- テンプレートが期待する変数は説明を確認してください
+
+**変数付きリクエストの例：**
+
+```json
+{
+    "template_id": "blog-scraper",
+    "url": "https://example.com/blog/post-123",
+    "variables": {
+        "author": "john-doe",
+        "includeComments": true,
+        "maxComments": 50
+    }
+}
+```
+
+必須変数を欠いたり、型が合わない値を渡すと **400 バリデーションエラー**になります。
+
+## レスポンス形式
+
+テンプレートのレスポンスは通常の API 呼び出しと同じ形式です。
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "markdown": "# Page Title\n\nContent...",
+        "metadata": { ... },
+        // Additional fields from custom handlers (if any)
+        "extractedData": { ... }
+    }
+}
+```
+
+カスタムハンドラ付きテンプレートは、レスポンスに追加フィールドを含められることがあります。
+
+## エラー処理
+
+テンプレート利用時によくあるエラー：
+
+| エラー                        | HTTP ステータス | 説明                                         |
+| ---------------------------- | ----------- | --------------------------------------------------- |
+| Template not found           | 404         | `template_id` が存在しないかアクセス権がない      |
+| Validation error             | 400         | 必須変数の欠落や型の不一致           |
+| Domain restriction violation | 403         | テンプレートのドメインポリシーで URL が許可されない         |
+| Invalid fields               | 400         | テンプレート利用時に許可されていないトップレベルフィールド |
+
+**エラーレスポンスの例：**
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "When using template_id, only template_id, url, variables are allowed. Invalid fields: engine, formats",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Field 'engine' is not allowed when using template_id",
+                "code": "invalid_field"
+            }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+## ベストプラクティス
+
+### API 呼び出し側
+
+- 必須変数と許可ドメイン／キーワードはテンプレート説明を必ず確認する
+- 利用可能ならマーケットのテンプレートで時間を節約する
+- 404（テンプレート削除・アーカイブの可能性）に対応する
+- テンプレート設定（engine、formats など）の上書きは試さない（失敗します）
+
+### テンプレート作者
+
+- テンプレートは一つのユースケースに絞る
+- 変数は説明付きで明確に文書化する
+- 悪用防止にドメイン制限を使う
+- 複雑さに応じた価格設定をする
+- 公開前に十分にテストする
+
+## テンプレートの作成（上級）
+
+独自テンプレートを作る場合、次を設定できます。
+
+### ドメイン制限
+
+テンプレートを使える場所を制限します。
+
+```json
+{
+    "allowedDomains": {
+        "type": "glob",
+        "patterns": ["*.example.com", "docs.mysite.com"]
+    }
+}
+```
+
+- `type`：`"exact"`（完全一致）または `"glob"`（パターンマッチ）
+- `patterns`：許可するドメインまたはパターンの配列
+
+### キーワード制限（検索テンプレート）
+
+検索テンプレートで使えるクエリを制限します。
+
+```json
+{
+    "allowedKeywords": {
+        "type": "glob",
+        "patterns": ["*tutorial*", "*documentation*"]
+    }
+}
+```
+
+- `allowedKeywords` はクエリ実行前に検証されます。
+- `type`：`"exact"` または `"glob"`
+- `patterns`：許可するキーワード値／パターン
+- クエリの検証は `queryTransform` より前に行われます。
+
+### 価格
+
+1 回あたりのクレジットコストを設定します。
+
+```json
+{
+    "pricing": {
+        "perCall": 10,
+        "currency": "credits"
+    }
+}
+```
+
+### カスタムハンドラ
+
+JavaScript／TypeScript で次を記述できます。
+
+- **`requestHandler`**：スクレイプ結果を後処理し、カスタムフィールドを追加
+- **`failedRequestHandler`**：カスタム再試行ロジックで失敗を処理
+- **`queryTransform`**（検索のみ）：検索前にクエリを変換
+- **`urlTransform`**（スクレイプ／クロールのみ）：処理前に URL を変換
+
+両方の変換で次をサポートします。
+
+- プレースホルダ付きテンプレートモード（query: `{{query}}`、url: `{{url}}`）
+- `prefix` と `suffix` による追記モード
+- モード適用前に部分文字列を取り出す任意の `regexExtract`
+
+TikTok プロフィール向けの正規表現抽出の例：
+
+```json
+{
+    "customHandlers": {
+        "urlTransform": {
+            "enabled": true,
+            "mode": "append",
+            "prefix": "",
+            "suffix": "",
+            "regexExtract": {
+                "pattern": "^(https?:\\/\\/www\\.tiktok\\.com\\/@[^\\/?#]+)",
+                "flags": "i",
+                "group": 1
+            }
+        }
+    }
+}
+```
+
+次のような入力から `https://www.tiktok.com/@piperrockelle` を抽出します。
+
+- `https://www.tiktok.com/@piperrockelle?abb=ccc`
+- `https://www.tiktok.com/@piperrockelle`
+
+`requestHandler` の例：
+
+```javascript
+// Extract structured data from page context
+const title = context.data.title;
+const content = context.data.markdown;
+
+return {
+    extractedTitle: title,
+    wordCount: content.split(/\s+/).length,
+    customMetric: calculateMetric(content),
+};
+```
+
+### セキュリティモデル
+
+- **非信頼テンプレート**：強化された VM サンドボックスで厳しい制限下で実行
+- **信頼テンプレート**：非同期関数と制御されたブラウザページアクセスが可能
+
+AnyCrawl がレビュー・承認したテンプレートのみを信頼としてマークできます。
+
+## よくある質問
+
+### engine や formats などテンプレート設定を上書きできますか？
+
+はい、できません。テンプレートは不変の設定として設計されています。指定できるのは `url`／`query` と `variables` です。
+
+### マーケットプレイスのテンプレートを使うとどうなりますか？
+
+マーケットのテンプレートは公開されています。テンプレート作者が定めたクレジットを支払います。
+
+### テンプレートは API キーを見られますか？
+
+いいえ。テンプレートは隔離されたサンドボックスで動き、認証情報にはアクセスできません。
+
+### 自分でテンプレートを作るには？
+
+AnyCrawl のプレイグラウンドで作成・テストを行います。公開後、API 経由で利用できます。
+
+## 関連リンク
+
+- [Scrape API](./scrape)
+- [Crawl API](./crawl)
+- [Search API](./search)
+- [テンプレートマーケットプレイス](https://anycrawl.dev/template)

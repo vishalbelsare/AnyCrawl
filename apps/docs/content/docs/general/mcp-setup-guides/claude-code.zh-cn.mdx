@@ -1,0 +1,110 @@
+---
+title: Claude Code
+description: 通过 AnyCrawl MCP 为 Claude Code 添加网页抓取和搜索功能
+icon: Terminal
+---
+
+通过 AnyCrawl MCP 为 Claude Code 添加网页抓取和搜索功能。
+
+## 快速设置
+
+### 1. 获取 API 密钥
+
+在 [anycrawl.dev](https://anycrawl.dev) 注册并从控制面板复制您的 API 密钥。
+
+### 2. 添加 AnyCrawl MCP 服务器
+
+在终端中运行以下命令：
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+将 `your-api-key` 替换为您实际的 AnyCrawl API 密钥。
+
+完成！现在您可以在 Claude Code 中搜索和抓取网页了。
+
+## 快速演示
+
+在 Claude Code 中尝试以下操作：
+
+**搜索网页：**
+
+```
+Search for the latest Next.js 15 features
+```
+
+**抓取页面：**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**获取文档：**
+
+```
+Find and scrape the Stripe API docs for payment intents
+```
+
+**爬取网站：**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Claude 将自动使用 AnyCrawl 的搜索、抓取和爬取工具来获取信息。
+
+## 可用工具
+
+配置完成后，Claude Code 将可以使用以下工具：
+
+- **anycrawl_scrape** - 抓取单个 URL 并提取内容
+- **anycrawl_crawl** - 爬取网站的多个页面
+- **anycrawl_search** - 搜索网页并可选择抓取结果
+- **anycrawl_crawl_status** - 检查爬取任务状态
+- **anycrawl_crawl_results** - 获取爬取任务的结果
+- **anycrawl_cancel_crawl** - 取消正在运行的爬取任务
+
+## 验证安装
+
+要验证 MCP 服务器是否配置正确：
+
+```bash
+claude mcp list
+```
+
+您应该会在已配置的 MCP 服务器列表中看到 `anycrawl`。
+
+## 故障排除
+
+### 服务器无响应
+
+1. 检查您的 API 密钥是否有效
+2. 确保已安装 Node.js 18+
+3. 尝试移除并重新添加服务器：
+
+```bash
+claude mcp remove anycrawl
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+### 权限错误
+
+确保 npx 有执行权限。您可能需要运行：
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+然后使用全局安装的包进行配置：
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- anycrawl-mcp
+```
+
+## 下一步
+
+- 了解更多关于[抓取选项](../scrape)
+- 探索[爬取功能](../crawl)
+- 查看[搜索功能](../search)
+- 查看完整的 [MCP 服务器文档](../mcp)

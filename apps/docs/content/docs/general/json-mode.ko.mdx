@@ -1,0 +1,328 @@
+---
+title: JSON 모드
+description: JSON 스키마 검증과 함께 LLM으로 웹 페이지에서 구조화된 데이터 추출
+icon: Database
+---
+
+## 소개
+
+JSON 모드를 사용하면 대규모 언어 모델(LLM)로 어떤 웹페이지에서든 구조화된 데이터를 추출할 수 있습니다.
+
+AnyCrawl에서는 추출 과정을 안내하기 위해 JSON 스키마와 프롬프트를 정의할 수 있으며, 출력이 원하는 형식에 맞도록 할 수 있습니다.
+
+## 사용 예시
+
+JSON 모드는 세 가지 구조화 추출 방식을 지원합니다.
+
+1. **프롬프트만**: 추출할 내용을 자연어 프롬프트로 설명합니다. LLM이 출력 구조를 결정합니다.
+2. **스키마만**: JSON 스키마로 출력 구조를 엄격히 제한합니다. LLM이 내용을 채웁니다.
+3. **프롬프트 + 스키마**: 스키마와 프롬프트를 함께 써서 구조와 내용을 정밀하게 제어합니다.
+
+팁: `extract_source`로 구조화 추출이 생성된 `markdown`을 읽을지 원본 `html`을 읽을지 제어합니다. 기본은 `markdown`이며, 마크다운에서 중요한 구조가 사라지는 경우 `html`을 사용하세요.
+
+중요: `json_options`를 사용할 때 `formats`에 `"json"`을 포함해야 합니다. 그렇지 않으면 응답에 추출된 JSON이 없습니다.
+
+---
+
+### 1. 프롬프트만(유연한 구조)
+
+**단계:**
+
+1. 대상 페이지 URL 설정
+2. 추출할 정보를 설명하는 프롬프트 작성
+3. 요청 전송
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "user_prompt": "Extract the company mission, open source status, and employee count."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            user_prompt: "Extract the company mission, open source status, and employee count.",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'user_prompt': 'Extract the company mission, open source status, and employee count.'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 2. 스키마만(엄격한 구조)
+
+**단계:**
+
+1. 대상 페이지 URL 설정
+2. 원하는 필드와 타입에 맞는 JSON 스키마 정의
+3. 요청 전송
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      }
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 3. 프롬프트 + 스키마(구조·내용 동시 안내)
+
+**단계:**
+
+1. 대상 페이지 URL 설정
+2. 출력 구조를 위한 JSON 스키마 정의
+3. 추출을 안내하는 프롬프트 작성
+4. 요청 전송
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      },
+      "user_prompt": "Extract the company mission (string), open source status (boolean), and employee count (number)."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+            user_prompt:
+                "Extract the company mission (string), open source status (boolean), and employee count (number).",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema,
+            'user_prompt': 'Extract the company mission (string), open source status (boolean), and employee count (number).'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+## json_options 객체
+
+`json_options` 파라미터는 다음을 받는 객체입니다.
+
+- `schema`: 추출에 사용할 스키마
+- `user_prompt`: 추출에 사용할 사용자 프롬프트
+- `schema_name`: 생성할 출력의 선택적 이름
+- `schema_description`: 생성할 출력의 선택적 설명
+
+### JSON 스키마
+
+추출에 사용할 스키마입니다. 흔히 쓰는 필드는 다음과 같습니다.
+
+- `type`: 값의 타입(아래 지원 타입 참고)
+- `properties`: (`object`인 경우) 필드와 각 필드 스키마를 지정하는 객체
+- `required`: (`object`인 경우) 필수 필드 이름 배열
+
+#### 지원 타입
+
+| Type      | 설명                | 예                                 |
+| --------- | ------------------ | ----------------------------------- |
+| `string`  | 텍스트              | 회사명, 설명, 제목                  |
+| `number`  | 숫자                | 가격, 수량, 평점                    |
+| `boolean` | 참/거짓             | 재고 여부, 기능 플래그              |
+| `object`  | 중첩 구조           | 주소, 제품 사양                     |
+| `array`   | 값 또는 객체 목록   | 태그, 카테고리, 기능 목록           |
+
+### 스키마 예시
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "company_name": {
+            "type": "string"
+        },
+        "is_open_source": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "employee_count": {
+            "type": "number"
+        }
+    },
+    "required": ["company_name"]
+}
+```
+
+
+## 관련 문서
+
+- [Scrape API](./scrape) — JSON 추출이 포함된 기본 스크래핑
+- [Crawl API](./crawl) — JSON 추출 옵션이 있는 크롤
+- [템플릿 시스템](./template) — 고급 데이터 추출 템플릿

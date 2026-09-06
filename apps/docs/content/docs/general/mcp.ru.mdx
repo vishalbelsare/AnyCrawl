@@ -1,0 +1,458 @@
+---
+title: MCP-сервер
+description: Интеграция веб-скрейпинга AnyCrawl в Cursor, Claude и VS Code через Model Context Protocol (MCP)
+icon: Zap
+---
+
+**AnyCrawl MCP Server** — мощный веб-скрейпинг и обход для Cursor, Claude и других LLM-клиентов через Model Context Protocol (MCP).
+
+## Возможности
+
+- Скрейпинг, обход и извлечение контента
+- Поиск и обнаружение
+- Пакетная обработка и параллелизм
+- Облако и self-hosted
+- Отслеживание прогресса в реальном времени
+- Поддержка SSE
+
+## Установка
+
+### Запуск через npx
+
+```bash
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### Hosted API
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/mcp"
+        }
+    }
+}
+```
+
+### Ручная установка
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
+```
+
+## Запуск в Cursor
+
+Добавьте MCP-сервер AnyCrawl в Cursor:
+
+1. Откройте настройки Cursor
+2. Перейдите в Features > MCP Servers
+3. Нажмите «+ Add new global MCP server»
+4. Вставьте конфигурацию:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl-mcp": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+            }
+        }
+    }
+}
+```
+
+## Запуск в VS Code
+
+Добавьте следующий JSON в User Settings (JSON) в VS Code:
+
+```json
+{
+    "mcp": {
+        "inputs": [
+            {
+                "type": "promptString",
+                "id": "apiKey",
+                "description": "AnyCrawl API Key",
+                "password": true
+            }
+        ],
+        "servers": {
+            "anycrawl": {
+                "command": "npx",
+                "args": ["-y", "anycrawl-mcp"],
+                "env": {
+                    "ANYCRAWL_API_KEY": "${input:apiKey}"
+                }
+            }
+        }
+    }
+}
+```
+
+## Запуск в Claude Desktop
+
+Добавьте в конфиг Claude:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/sse"
+        }
+    }
+}
+```
+
+## Конфигурация
+
+### Переменные окружения
+
+#### Для облачного API
+
+- `ANYCRAWL_API_KEY`: ключ API AnyCrawl
+    - Обязателен при использовании облачного API (по умолчанию)
+    - Необязателен при self-hosted
+- `ANYCRAWL_BASE_URL`: базовый URL API AnyCrawl
+    - Необязателен
+    - Обязателен для self-hosted
+
+### Примеры конфигурации
+
+#### Базовая облачная конфигурация
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key-here"
+npx -y anycrawl-mcp
+```
+
+#### Self-hosted
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key"
+export ANYCRAWL_BASE_URL="https://your-instance.com"
+npx -y anycrawl-mcp
+```
+
+## Доступные инструменты
+
+### 1. Scrape (`anycrawl_scrape`)
+
+Скрейпинг одного URL; контент в разных форматах.
+
+**Когда использовать:**
+
+- Одна страница
+- Быстрое извлечение данных
+- Проверка конкретных URL
+
+**Параметры:**
+
+- `url` (required): URL для скрейпинга
+- `engine` (optional): движок (`auto`, `playwright`, `cheerio`, `puppeteer`). По умолчанию `auto`
+- `formats` (optional): форматы (`markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`)
+- `timeout` (optional): таймаут в мс (по умолчанию: 300000)
+- `wait_for` (optional): ожидание загрузки страницы
+- `include_tags` (optional): HTML-теги для включения
+- `exclude_tags` (optional): HTML-теги для исключения
+- `json_options` (optional): опции JSON-извлечения
+- `ocr_options` (optional): OCR для изображений в markdown; не меняет `html`/`rawHtml`
+
+**Пример:**
+
+```json
+{
+    "name": "anycrawl_scrape",
+    "arguments": {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "formats": ["markdown", "html"],
+        "timeout": 30000
+    }
+}
+```
+
+### 2. Crawl (`anycrawl_crawl`)
+
+Запуск задачи обхода сайта. По умолчанию ожидает завершения и возвращает агрегированный результат через SDK `client.crawl` (опрос каждые 3 с, таймаут ожидания 60 с).
+
+**Когда использовать:**
+
+- Несколько связанных страниц
+- Анализ сайта целиком
+- Массовый сбор данных
+
+**Параметры:**
+
+- `url` (required): базовый URL обхода
+- `engine` (optional): движок (`auto`, `playwright`, `cheerio`, `puppeteer`). По умолчанию `auto`
+- `max_depth` (optional): макс. глубина (по умолчанию: 10)
+- `limit` (optional): макс. число страниц (по умолчанию: 100)
+- `strategy` (optional): стратегия (`all`, `same-domain`, `same-hostname`, `same-origin`)
+- `exclude_paths` (optional): шаблоны исключения URL
+- `include_paths` (optional): шаблоны включения URL
+- `scrape_options` (optional): опции скрейпа по страницам
+- `poll_seconds` (optional): интервал опроса в секундах (по умолчанию: 3)
+- `timeout_ms` (optional): общий таймаут ожидания в мс (по умолчанию: 60000)
+
+**Пример:**
+
+```json
+{
+    "name": "anycrawl_crawl",
+    "arguments": {
+        "url": "https://example.com/blog",
+        "engine": "playwright",
+        "max_depth": 2,
+        "limit": 50,
+        "strategy": "same-domain",
+        "poll_seconds": 3,
+        "timeout_ms": 60000
+    }
+}
+```
+
+Возвращает: `{ "job_id": "...", "status": "completed", "total": N, "completed": N, "credits_used": N, "data": [...] }`.
+
+### 3. Crawl Status (`anycrawl_crawl_status`)
+
+Статус задачи обхода.
+
+**Параметры:**
+
+- `job_id` (required): ID задачи
+
+**Пример:**
+
+```json
+{
+    "name": "anycrawl_crawl_status",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 4. Crawl Results (`anycrawl_crawl_results`)
+
+Результаты задачи обхода.
+
+**Параметры:**
+
+- `job_id` (required): ID задачи
+- `skip` (optional): пропуск для пагинации
+
+**Пример:**
+
+```json
+{
+    "name": "anycrawl_crawl_results",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "skip": 0
+    }
+}
+```
+
+### 5. Cancel Crawl (`anycrawl_cancel_crawl`)
+
+Отмена ожидающей задачи обхода.
+
+**Параметры:**
+
+- `job_id` (required): ID задачи для отмены
+
+**Пример:**
+
+```json
+{
+    "name": "anycrawl_cancel_crawl",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 6. Search (`anycrawl_search`)
+
+Поиск в интернете через AnyCrawl.
+
+**Когда использовать:**
+
+- Поиск информации по многим сайтам
+- Исследования
+- Когда неизвестно, на каком сайте есть ответ
+
+**Параметры:**
+
+- `query` (required): поисковый запрос
+- `engine` (optional): поисковая система (`google`)
+- `limit` (optional): макс. число результатов (по умолчанию: 5)
+- `offset` (optional): смещение (по умолчанию: 0)
+- `pages` (optional): число страниц выдачи
+- `lang` (optional): код языка
+- `country` (optional): код страны
+- `scrape_options` (optional): опции скрейпа результатов
+- `safeSearch` (optional): уровень безопасного поиска (0=выкл, 1=умеренный, 2=строгий)
+
+**Пример:**
+
+```json
+{
+    "name": "anycrawl_search",
+    "arguments": {
+        "query": "latest AI research papers 2024",
+        "engine": "google",
+        "limit": 5,
+        "scrape_options": {
+            "engine": "cheerio",
+            "formats": ["markdown"]
+        }
+    }
+}
+```
+
+## Форматы вывода
+
+### Markdown
+
+Чистый структурированный markdown для LLM.
+
+### HTML
+
+Исходный HTML с сохранением форматирования.
+
+### Text
+
+Простой текст с минимальной разметкой.
+
+### Screenshot
+
+Скриншот видимой области страницы.
+
+### Screenshot@fullPage
+
+Полная страница, включая область ниже сгиба.
+
+### Raw HTML
+
+Необработанный HTML.
+
+### JSON
+
+Структурированное извлечение по своей схеме.
+
+## Движки
+
+### Auto (по умолчанию)
+
+- Умный выбор движка
+- Оптимальный движок на URL
+- Универсальный скрейпинг
+
+### Cheerio
+
+- Быстрый и лёгкий
+- Статический контент
+- Рендеринг на сервере
+
+### Playwright
+
+- Полноценный браузер
+- JavaScript
+- Динамический контент
+
+### Puppeteer
+
+- Автоматизация Chrome/Chromium
+- Баланс возможностей и скорости
+
+## Обработка ошибок
+
+Сервер возвращает понятные ошибки:
+
+- **Validation Errors**: неверные параметры или отсутствуют обязательные поля
+- **API Errors**: ошибки API AnyCrawl с подробностями
+- **Network Errors**: сеть и таймауты
+
+## Логирование
+
+Уровни логов:
+
+- **Debug**: подробности операций
+- **Info**: общий статус
+- **Warn**: некритичные проблемы
+- **Error**: критические сбои
+
+Уровень через переменную окружения:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## Разработка
+
+### Требования
+
+- Node.js 18+
+- npm
+
+### Установка
+
+```bash
+git clone https://github.com/any4ai/anycrawl-mcp-server.git
+cd anycrawl-mcp-server
+npm ci
+```
+
+### Сборка
+
+```bash
+npm run build
+```
+
+### Тесты
+
+```bash
+npm test
+```
+
+### Линт
+
+```bash
+npm run lint
+```
+
+### Форматирование
+
+```bash
+npm run format
+```
+
+## Участие в разработке
+
+1. Форкните репозиторий
+2. Создайте ветку фичи
+3. Запустите тесты: `npm test`
+4. Отправьте pull request
+
+## Лицензия
+
+MIT — см. файл LICENSE
+
+## Поддержка
+
+- GitHub Issues: [сообщения об ошибках и пожелания](https://github.com/any4ai/anycrawl-mcp-server/issues)
+- Документация: [AnyCrawl API Docs](https://docs.anycrawl.dev)
+- Email: help@anycrawl.dev
+
+## О AnyCrawl
+
+AnyCrawl — мощный краулер на Node.js/TypeScript: сайты превращаются в данные для LLM, из SERP извлекается структурированный контент (Google/Bing/Baidu и др.). Нативная многопоточность для массовых задач и несколько форматов вывода.
+
+- **Сайт**: https://anycrawl.dev
+- **GitHub**: https://github.com/any4ai/anycrawl
+- **API**: https://api.anycrawl.dev

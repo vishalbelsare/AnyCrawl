@@ -1,0 +1,415 @@
+---
+title: เทมเพลต
+description: สูตรการดึงข้อมูล การครอล และการค้นหาที่ใช้ซ้ำได้ พร้อมตัวแปรและตรรกะแบบกำหนดเอง
+icon: Puzzle
+---
+
+## บทนำ
+
+เทมเพลตคือการตั้งค่าที่ใช้ซ้ำได้สำหรับการดึงข้อมูล การครอล หรือการค้นหา แทนที่จะซ้ำตัวเลือกเดิมในทุกคำขอ คุณกำหนดครั้งเดียวในเทมเพลต (หรือได้จาก AnyCrawl Template Store) แล้วอ้างอิงด้วย `template_id`
+
+**ประโยชน์:**
+
+- **ความเรียบง่าย**: เรียก API ด้วย `template_id` + อินพุตน้อยๆ
+- **ความสอดคล้อง**: มาตรฐานพฤติกรรมในทีมหรือโปรเจกต์
+- **ความปลอดภัย**: เทมเพลตจำกัดโดเมนที่อนุญาตและเปิดเผยเฉพาะตัวแปรที่จำเป็น
+- **ความยืดหยุ่น**: ตัวจัดการแบบกำหนดเองสำหรับการแปลงขั้นสูง (ถ้ามี)
+
+**ประเภทที่รองรับ:**
+
+- `scrape`: ดึงหน้าเดียวผ่าน `/v1/scrape`
+- `crawl`: ครอลหลายหน้าผ่าน `/v1/crawl`
+- `search`: ผลเครื่องมือค้นหาผ่าน `/v1/search`
+
+## Template Marketplace
+
+เรียกดูเทมเพลตพร้อมใช้ที่ **[anycrawl.dev/template](https://anycrawl.dev/template)**
+
+**วิธีใช้:**
+
+1. เรียกดู marketplace แล้วเลือกเทมเพลตที่ตรงความต้องการ
+2. คัดลอก `template_id` จากหน้ารายละเอียดเทมเพลต
+3. เรียก API ด้วย `template_id` และอินพุตที่จำเป็น
+
+**ตัวอย่าง:**
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "content-extractor",
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "content-extractor",
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'template_id': 'content-extractor',
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## การใช้เทมเพลตในคำขอ API
+
+### พารามิเตอร์คำขอ
+
+เมื่อใช้ `template_id` อนุญาตเฉพาะฟิลด์ขั้นต่ำ:
+
+| เอนด์พอยต์     | ฟิลด์จำเป็น | ฟิลด์ไม่บังคับ      |
+| ------------ | -------------- | -------------------- |
+| `/v1/scrape` | `template_id`  | `url`, `variables`   |
+| `/v1/crawl`  | `template_id`  | `url`, `variables`   |
+| `/v1/search` | `template_id`  | `query`, `variables` |
+
+**หมายเหตุสำคัญ:**
+
+- `url` หรือ `query` อาจไม่จำเป็นหากเทมเพลตกำหนดไว้แล้ว ตรวจดูคำอธิบายเทมเพลต
+- `variables` ส่งอินพุตไดนามิกที่เทมเพลตต้องการ (ดูส่วนตัวแปรด้านล่าง)
+- ฟิลด์อื่น (เช่น `engine`, `formats`, `timeout`) มาจากเทมเพลตและไม่สามารถแทนที่ได้
+- ส่งฟิลด์ที่ไม่อนุญาตจะได้ **400 validation error**
+
+### Scrape ด้วยเทมเพลต
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-scrape-template",
+    "url": "https://example.com",
+    "variables": { "category": "tech" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-scrape-template",
+        url: "https://example.com",
+        variables: { category: "tech" },
+    }),
+});
+const data = await res.json();
+```
+
+### Crawl ด้วยเทมเพลต
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-crawl-template",
+    "url": "https://docs.example.com",
+    "variables": { "maxPages": 50 }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-crawl-template",
+        url: "https://docs.example.com",
+        variables: { maxPages: 50 },
+    }),
+});
+const { job_id } = (await res.json()).data;
+// Poll for results...
+```
+
+### Search ด้วยเทมเพลต
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-search-template",
+    "query": "machine learning tutorials",
+    "variables": { "lang": "en" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-search-template",
+        query: "machine learning tutorials",
+        variables: { lang: "en" },
+    }),
+});
+const data = await res.json();
+console.log(data.data);
+```
+
+## ตัวแปร
+
+เทมเพลตสามารถประกาศ **ตัวแปร** เพื่อรับอินพุตไดนามิกตอนเรียก
+
+- แต่ละตัวแปรมี `type`: `string`, `number`, `boolean`, หรือ `url`
+- ตัวแปรอาจ `required` หรือไม่บังคับพร้อม `defaultValue`
+- ดูคำอธิบายเทมเพลตว่าต้องการตัวแปรอะไร
+
+**ตัวอย่างคำขอพร้อมตัวแปร:**
+
+```json
+{
+    "template_id": "blog-scraper",
+    "url": "https://example.com/blog/post-123",
+    "variables": {
+        "author": "john-doe",
+        "includeComments": true,
+        "maxComments": 50
+    }
+}
+```
+
+หากขาดตัวแปรที่จำเป็นหรือชนิดไม่ผิด จะได้ **400 validation error**
+
+## รูปแบบการตอบกลับ
+
+การตอบกลับเทมเพลตเป็นรูปแบบเดียวกับ API มาตรฐาน:
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "markdown": "# Page Title\n\nContent...",
+        "metadata": { ... },
+        // Additional fields from custom handlers (if any)
+        "extractedData": { ... }
+    }
+}
+```
+
+เทมเพลตที่มี custom handler อาจเพิ่มฟิลด์ในการตอบกลับ
+
+## การจัดการข้อผิดพลาด
+
+ข้อผิดพลาดทั่วไปเมื่อใช้เทมเพลต:
+
+| ข้อผิดพลาด                        | HTTP Status | คำอธิบาย                                         |
+| ---------------------------- | ----------- | --------------------------------------------------- |
+| ไม่พบเทมเพลต           | 404         | `template_id` ไม่มีอยู่หรือไม่มีสิทธิ์      |
+| ข้อผิดพลาดการตรวจสอบ             | 400         | ขาดตัวแปรที่จำเป็นหรือชนิดไม่ถูกต้อง           |
+| ละเมิดข้อจำกัดโดเมน | 403         | URL ไม่อยู่ในนโยบายโดเมนของเทมเพลต         |
+| ฟิลด์ไม่ถูกต้อง               | 400         | ฟิลด์ระดับบนสุดเกินที่อนุญาตเมื่อใช้เทมเพลต |
+
+**ตัวอย่างการตอบกลับข้อผิดพลาด:**
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "When using template_id, only template_id, url, variables are allowed. Invalid fields: engine, formats",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Field 'engine' is not allowed when using template_id",
+                "code": "invalid_field"
+            }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+## แนวทางปฏิบัติที่ดี
+
+### สำหรับผู้เรียก API
+
+- ตรวจคำอธิบายเทมเพลตเสมอสำหรับตัวแปรที่จำเป็นและโดเมน/คีย์เวิร์ดที่อนุญาต
+- ใช้เทมเพลตจาก marketplace เมื่อมีเพื่อประหยัดเวลา
+- จัดการ 404 (เทมเพลตอาจถูกลบหรือเก็บถาวร)
+- อย่าพยายามแทนที่การตั้งค่าเทมเพลต (engine, formats ฯลฯ) — จะล้มเหลว
+
+### สำหรับผู้เขียนเทมเพลต
+
+- โฟกัสกรณีใช้งานเดียวต่อเทมเพลต
+- เอกสารตัวแปรทั้งหมดด้วยคำอธิบายชัดเจน
+- ใช้ข้อจำกัดโดเมนเพื่อป้องกันการใช้งานผิด
+- กำหนดราคาเครดิตให้เหมาะกับความซับซ้อน
+- ทดสอบเทมเพลตก่อนเผยแพร่
+
+## การสร้างเทมเพลต (ขั้นสูง)
+
+หากคุณสร้างเทมเพลตเอง สามารถตั้งค่า:
+
+### ข้อจำกัดโดเมน
+
+จำกัดว่าเทมเพลตใช้ได้ที่ไหน:
+
+```json
+{
+    "allowedDomains": {
+        "type": "glob",
+        "patterns": ["*.example.com", "docs.mysite.com"]
+    }
+}
+```
+
+- `type`: `"exact"` (ตรงตัว) หรือ `"glob"` (จับคู่รูปแบบ)
+- `patterns`: อาร์เรย์ของโดเมนหรือรูปแบบที่อนุญาต
+
+### ข้อจำกัดคีย์เวิร์ด (เทมเพลต Search)
+
+จำกัดคำค้นที่ใช้ได้กับเทมเพลต search:
+
+```json
+{
+    "allowedKeywords": {
+        "type": "glob",
+        "patterns": ["*tutorial*", "*documentation*"]
+    }
+}
+```
+
+- `allowedKeywords` ตรวจก่อนรันคำค้น
+- `type`: `"exact"` หรือ `"glob"`
+- `patterns`: ค่าหรือรูปแบบคีย์เวิร์ดที่อนุญาต
+- การตรวจคำค้นเกิดก่อน `queryTransform`
+
+### ราคา
+
+ตั้งเครดิตต่อการเรียก:
+
+```json
+{
+    "pricing": {
+        "perCall": 10,
+        "currency": "credits"
+    }
+}
+```
+
+### Custom Handlers
+
+เขียนโค้ด JavaScript/TypeScript เพื่อ:
+
+- **`requestHandler`**: หลังประมวลผลผล scrape และเพิ่มฟิลด์แบบกำหนดเอง
+- **`failedRequestHandler`**: จัดการความล้มเหลวด้วยตรรกะแบบกำหนดเอง
+- **`queryTransform`** (search เท่านั้น): แปลงคำค้นก่อนค้นหา
+- **`urlTransform`** (scrape/crawl เท่านั้น): แปลง URL ก่อนประมวลผล
+
+ทั้งสองแปลงรองรับ:
+
+- โหมดเทมเพลตพร้อม placeholder (query: `{{query}}`, url: `{{url}}`)
+- โหมด append ด้วย `prefix` และ `suffix`
+- `regexExtract` ไม่บังคับ เพื่อดึง substring ก่อนใช้โหมด
+
+ตัวอย่าง regex สำหรับโปรไฟล์ TikTok:
+
+```json
+{
+    "customHandlers": {
+        "urlTransform": {
+            "enabled": true,
+            "mode": "append",
+            "prefix": "",
+            "suffix": "",
+            "regexExtract": {
+                "pattern": "^(https?:\\/\\/www\\.tiktok\\.com\\/@[^\\/?#]+)",
+                "flags": "i",
+                "group": 1
+            }
+        }
+    }
+}
+```
+
+ดึง `https://www.tiktok.com/@piperrockelle` จากอินพุตเช่น:
+
+- `https://www.tiktok.com/@piperrockelle?abb=ccc`
+- `https://www.tiktok.com/@piperrockelle`
+
+ตัวอย่าง `requestHandler`:
+
+```javascript
+// Extract structured data from page context
+const title = context.data.title;
+const content = context.data.markdown;
+
+return {
+    extractedTitle: title,
+    wordCount: content.split(/\s+/).length,
+    customMetric: calculateMetric(content),
+};
+```
+
+### โมเดลความปลอดภัย
+
+- **เทมเพลตที่ไม่ได้รับความไว้วางใจ**: รันใน VM sandbox ที่เข้มงวด
+- **เทมเพลตที่ไว้วางใจ**: ใช้ async function พร้อมการเข้าถึงหน้าเบราว์เซอร์ที่ควบคุม
+
+เฉพาะเทมเพลตที่ AnyCrawl ตรวจและอนุมัติได้เครื่องหมาย trusted
+
+## FAQ
+
+### ถาม: แทนที่การตั้งค่าเทมเพลต (engine, formats) ได้หรือไม่?
+
+ตอบ: ไม่ได้ เทมเพลตออกแบบมาให้เป็นการตั้งค่าคงที่ คุณส่งได้เฉพาะ `url`/`query` และ `variables`
+
+### ถาม: ถ้าใช้เทมเพลตจาก marketplace จะเกิดอะไรขึ้น?
+
+ตอบ: เทมเพลต marketplace เปิดให้สาธารณะ คุณจ่ายเครดิตตามที่ผู้เขียนกำหนด
+
+### ถาม: เทมเพลตเห็น API key ของฉันหรือไม่?
+
+ตอบ: ไม่ เทมเพลตรันใน sandbox แยกและไม่เข้าถึงข้อมูลรับรองของคุณ
+
+### ถาม: สร้างเทมเพลตเองได้อย่างไร?
+
+ตอบ: ไปที่ playground ของ AnyCrawl เพื่อสร้างและทดสอบ เมื่อเผยแพร่แล้วใช้ผ่าน API ได้
+
+## ดูเพิ่มเติม
+
+- [เอกสาร Scrape API](./scrape)
+- [เอกสาร Crawl API](./crawl)
+- [เอกสาร Search API](./search)
+- [Template Marketplace](https://anycrawl.dev/template)

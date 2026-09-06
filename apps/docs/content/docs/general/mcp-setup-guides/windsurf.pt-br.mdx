@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: Adicione web scraping e busca ao Windsurf com o AnyCrawl MCP
+icon: Wind
+---
+
+# Busca na web e scraping com MCP no Windsurf
+
+Adicione capacidades de scraping e busca na web ao Windsurf com o AnyCrawl MCP.
+
+## Configuração rápida
+
+### 1. Obtenha sua chave de API
+
+Cadastre-se em [anycrawl.dev](https://anycrawl.dev) e copie sua chave de API no painel.
+
+### 2. Adicione ao Windsurf
+
+Adicione isto ao arquivo `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Substitua `your-api-key` pela sua chave real do AnyCrawl.
+
+### 3. Reinicie o Windsurf
+
+Pronto. O Windsurf pode buscar e fazer scraping da web.
+
+## Demonstração rápida
+
+Experimente no Windsurf:
+
+**Buscar na web:**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**Fazer scraping de uma página:**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**Obter documentação:**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**Rastrear um site:**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Os agentes de IA do Windsurf usarão automaticamente as ferramentas do AnyCrawl.
+
+## Solução de problemas
+
+### Servidor não responde
+
+1. Verifique se a chave de API é válida
+2. Certifique-se de ter Node.js 18+
+3. Reinicie o Windsurf após alterar a configuração
+
+### Erros de permissão
+
+Garanta que o `npx` possa executar. Pode ser necessário instalar o pacote globalmente:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Depois atualize a configuração para usar o pacote global:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Próximos passos
+
+- Saiba mais sobre [opções de scraping](../scrape)
+- Explore [recursos de crawling](../crawl)
+- Veja [recursos de busca](../search)
+- Consulte a [documentação completa do servidor MCP](../mcp)

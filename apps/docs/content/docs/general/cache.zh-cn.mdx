@@ -1,0 +1,61 @@
+---
+title: 缓存
+description: Scrape、Crawl 和 Map API 的缓存行为。
+icon: Database
+---
+
+## 概述
+
+AnyCrawl 使用两层缓存：
+
+- **页面缓存**：用于 `/v1/scrape` 以及 `/v1/crawl` 中的单页处理
+- **Map 缓存**：用于 `/v1/map` 的 URL 发现结果
+
+## 通用参数
+
+### `max_age`（毫秒）
+
+- 控制缓存**读取**行为。
+- `0`：强制刷新（跳过缓存读取）
+- `> 0`：允许使用指定时间范围内的缓存数据
+- 省略：使用服务器默认值
+
+### `store_in_cache`
+
+- 适用于 scrape/crawl 的页面输出。
+- `true`（默认）：写入缓存
+- `false`：跳过缓存写入
+
+### `use_index`（仅 Map）
+
+- `true`（默认）：允许 Map 使用页面缓存索引作为额外数据来源
+- `false`：禁用该来源
+
+## 端点行为
+
+### `/v1/scrape`
+
+- 可在创建新任务之前读取页面缓存。
+- 命中缓存时，响应中会包含缓存元数据（例如 `cachedAt` / `maxAge`）。
+
+### `/v1/crawl`
+
+- 目前**不会**为完整爬取请求读取页面缓存。
+- 仍支持在单页抓取选项中使用缓存相关的写入控制。
+
+### `/v1/map`
+
+- 可读取 Map 缓存。
+- 响应中不包含公开的 `fromCache` 字段（缓存使用为内部行为）。
+
+## 实用技巧
+
+- 当需要立即获取最新数据时，使用 `max_age: 0`。
+- 对于高度动态的页面，使用 `store_in_cache: false` 以避免写入不稳定的快照。
+- 对于 Map，如果希望发现仅依赖 sitemap/搜索引擎/页面链接，可禁用 `use_index`。
+
+## 相关文档
+
+- [Scrape API](./scrape)
+- [Crawl API](./crawl)
+- [Map API](./map)

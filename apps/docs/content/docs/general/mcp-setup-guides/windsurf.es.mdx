@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: Añade rastreo web y búsqueda a Windsurf con AnyCrawl MCP
+icon: Wind
+---
+
+# Búsqueda web y extracción con MCP en Windsurf
+
+Añade capacidades de rastreo web y búsqueda a Windsurf con AnyCrawl MCP.
+
+## Configuración rápida
+
+### 1. Obtén tu clave API
+
+Regístrate en [anycrawl.dev](https://anycrawl.dev) y copia tu clave API desde el panel.
+
+### 2. Añadir a Windsurf
+
+Añade esto a `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Sustituye `your-api-key` por tu clave API real de AnyCrawl.
+
+### 3. Reinicia Windsurf
+
+¡Listo! Windsurf ya puede buscar y rastrear la web.
+
+## Demostración rápida
+
+Prueba esto en Windsurf:
+
+**Buscar en la web:**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**Extraer una página:**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**Obtener documentación:**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**Rastrear un sitio:**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Los agentes de IA de Windsurf usarán automáticamente las herramientas de AnyCrawl.
+
+## Solución de problemas
+
+### El servidor no responde
+
+1. Comprueba que tu clave API sea válida
+2. Asegúrate de tener Node.js 18 o superior instalado
+3. Reinicia Windsurf tras cambiar la configuración
+
+### Errores de permisos
+
+Asegúrate de que npx pueda ejecutarse. Puede que necesites instalar el paquete globalmente:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Luego actualiza la configuración para usar el paquete global:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Próximos pasos
+
+- Más sobre [opciones de extracción](../scrape)
+- Explora [capacidades de rastreo](../crawl)
+- Consulta [funciones de búsqueda](../search)
+- Lee la [documentación completa del servidor MCP](../mcp)

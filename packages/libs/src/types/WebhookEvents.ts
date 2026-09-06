@@ -18,6 +18,14 @@ export enum WebhookEventType {
     CRAWL_FAILED = "crawl.failed",
     CRAWL_CANCELLED = "crawl.cancelled",
 
+    // Batch scrape job events
+    BATCH_SCRAPE_CREATED = "batch_scrape.created",
+    BATCH_SCRAPE_STARTED = "batch_scrape.started",
+    BATCH_SCRAPE_PAGE = "batch_scrape.page",
+    BATCH_SCRAPE_COMPLETED = "batch_scrape.completed",
+    BATCH_SCRAPE_FAILED = "batch_scrape.failed",
+    BATCH_SCRAPE_CANCELLED = "batch_scrape.cancelled",
+
     // Search job events
     SEARCH_CREATED = "search.created",
     SEARCH_STARTED = "search.started",
@@ -35,6 +43,12 @@ export enum WebhookEventType {
     TASK_FAILED = "task.failed",
     TASK_PAUSED = "task.paused",
     TASK_RESUMED = "task.resumed",
+
+    // Monitor events
+    MONITOR_CHECK_COMPLETED = "monitor.check.completed",
+    MONITOR_CHANGED = "monitor.changed",
+    MONITOR_PRICE_CHANGED = "monitor.price.changed",
+    MONITOR_ERROR = "monitor.error",
 
     // Webhook test event
     WEBHOOK_TEST = "webhook.test",
@@ -77,4 +91,46 @@ export interface WebhookTestPayload {
     webhook_id: string;
 }
 
-export type WebhookPayload = JobEventPayload | TaskEventPayload | WebhookTestPayload;
+export interface MonitorFieldDiff {
+    path: string;
+    from: any;
+    to: any;
+    delta?: number;
+}
+
+export interface MonitorCheckSummary {
+    total: number;
+    same: number;
+    changed: number;
+    new: number;
+    removed: number;
+    error: number;
+}
+
+/**
+ * Monitor event payload. Unlike JobEventPayload, monitor events carry the change
+ * content inline (diff text / field diffs / AI judgment) so consumers can act
+ * without a callback fetch.
+ */
+export interface MonitorEventPayload {
+    monitor_id: string;
+    monitor_name: string;
+    monitor_type: string;
+    url?: string;
+    change_type?: string;
+    summary?: MonitorCheckSummary;
+    diff_text?: string;
+    diff_json?: MonitorFieldDiff[];
+    judgment?: { meaningful: boolean | null; confidence: string; reason: string; status?: "complete" | "unavailable" | "incomplete" };
+    check_id?: string;
+    change_id?: string;
+    // Present on monitor.error events only
+    error?: { message: string; code?: string };
+    captured_at: string;
+}
+
+export type WebhookPayload =
+    | JobEventPayload
+    | TaskEventPayload
+    | MonitorEventPayload
+    | WebhookTestPayload;

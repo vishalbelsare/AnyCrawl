@@ -1,0 +1,361 @@
+---
+title: Map
+description: ดึง URL ทั้งหมดจากเว็บไซต์ด้วย sitemap, เครื่องมือค้นหา และการวิเคราะห์ลิงก์ในหน้า
+icon: Map
+---
+
+## บทนำ
+
+AnyCrawl Map API ดึง URL จากเว็บไซต์โดยรวมหลายแหล่งการค้นพบ: แยกวิเคราะห์ sitemap, ผลลัพธ์จากเครื่องมือค้นหา และลิงก์จาก HTML ช่วยให้ค้นพบ URL ได้ครอบคลุมสำหรับการทำแผนที่เว็บ การจัดทำดัชนีเนื้อหา และการวางแผนการครอล
+
+**คุณสมบัติหลัก**: API **คืนข้อมูลทันทีแบบซิงโครนัส** — ไม่ต้อง polling หรือ webhook รวมสามแหล่ง URL เพื่อความครอบคลุมสูงสุด
+
+### คุณสมบัติหลัก
+
+- **ค้นพบหลายแหล่ง**: รวม sitemap, ผลค้นหา และลิงก์จากหน้า
+- **รองรับ Sitemap**: แยก robots.txt และ sitemap.xml (รวมดัชนี sitemap และ gzip)
+- **รวมการค้นหา**: ใช้เครื่องมือค้นหาอัตโนมัติด้วยตัวดำเนินการ `site:` เพื่อค้นพบ URL
+- **แยกลิงก์**: ดึงลิงก์ `<a href>` ทั้งหมดจากหน้าเป้าหมาย
+- **กรองโดเมน**: กรองตามโดเมนตรงหรือรวม subdomain
+- **ตอบกลับทันที**: **API แบบซิงโครนัส** — ได้ผลทันทีโดยไม่ต้อง polling
+
+## เอนด์พอยต์ API
+
+```
+POST https://api.anycrawl.dev/v1/map
+```
+
+## ตัวอย่างการใช้งาน
+
+### cURL
+
+#### การแมป URL พื้นฐาน
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data); // Array of URLs with metadata
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### รวม Subdomain
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "include_subdomains": true,
+    "limit": 1000
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        include_subdomains: true,
+        limit: 1000,
+    }),
+});
+const result = await response.json();
+// Includes URLs from blog.example.com, docs.example.com, etc.
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'include_subdomains': True,
+        'limit': 1000
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### ข้ามการแยก Sitemap
+
+เมื่อต้องการผลเร็วและใช้เฉพาะลิงก์ในหน้ากับผลค้นหา:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "ignore_sitemap": true
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        ignore_sitemap: true,
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'ignore_sitemap': True
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## พารามิเตอร์คำขอ
+
+| พารามิเตอร์ | ชนิด | จำเป็น | ค่าเริ่มต้น | คำอธิบาย |
+| --------- | ---- | -------- | ------- | ----------- |
+| `url` | string | ใช่ | - | URL เป้าหมาย ต้องเป็น HTTP/HTTPS ที่ถูกต้อง |
+| `limit` | number | ไม่ | `5000` | จำนวน URL สูงสุดที่คืน (1–50000) |
+| `include_subdomains` | boolean | ไม่ | `false` | รวม URL จาก subdomain (เช่น blog.example.com) |
+| `ignore_sitemap` | boolean | ไม่ | `false` | ข้าม sitemap ใช้เฉพาะเครื่องมือค้นหาและลิงก์ในหน้า |
+| `max_age` | number | ไม่ | - | อายุแคชสูงสุด (มิลลิวินาที) ใช้ `0` เพื่อข้ามการอ่านแคช ไม่ระบุใช้ค่าเริ่มต้นของเซิร์ฟเวอร์ |
+| `use_index` | boolean | ไม่ | `true` | ใช้ดัชนี Page Cache (`page_cache`) เป็นแหล่ง URL เพิ่มเติมหรือไม่ |
+
+### พฤติกรรมแคช
+
+- `max_age` ควบคุมการอ่าน Map Cache `0` บังคับรีเฟรช
+- `use_index=false` ปิดแหล่งดัชนี Page Cache (ต้องเปิด Page Cache ถึงจะมีผล)
+- `/v1/map` ไม่คืน `fromCache` ในการตอบกลับ (การใช้แคชเป็นภายใน)
+
+### แหล่งค้นพบ URL
+
+Map API รวมสามแหล่ง:
+
+#### 1. แยก Sitemap
+
+- แยก `robots.txt` เพื่อหาตำแหน่ง sitemap
+- ลองพาธทั่วไป: `/sitemap.xml`, `/sitemap.xml.gz`
+- รองรับดัชนี sitemap (sitemap ที่ชี้ไปยัง sitemap อื่น)
+- รองรับ sitemap ที่บีบอัดด้วย gzip
+
+#### 2. ผลลัพธ์จากเครื่องมือค้นหา
+
+- ใช้ตัวดำเนินการ `site:domain.com` อัตโนมัติเพื่อค้นพบหน้าที่ถูกจัดทำดัชนี
+- ให้เมตadata ชื่อเรื่องและคำอธิบายสำหรับ URL ที่พบ
+
+#### 3. การแยกลิงก์จากหน้า
+
+- ดึงลิงก์ `<a href>` ทั้งหมดจาก HTML ของหน้าเป้าหมาย
+- จับข้อความลิงก์เป็นเมตadata ชื่อเรื่อง
+- จับแอตทริบิวต์ `title` และ `aria-label` เป็นคำอธิบาย
+
+### แหล่งของเมตadata
+
+| แหล่ง | ชื่อเรื่อง | คำอธิบาย |
+| ------ | ----- | ----------- |
+| Sitemap | - | - |
+| เครื่องมือค้นหา | ชื่อผลค้นหา | ข้อความ snippet |
+| ลิงก์ในหน้า | ข้อความลิงก์หรือแอตทริบิวต์ title | แอตทริบิวต์ aria-label |
+
+## รูปแบบการตอบกลับ
+
+### การตอบกลับสำเร็จ (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "url": "https://example.com/page1",
+            "title": "Page Title",
+            "description": "Page description from search results"
+        },
+        {
+            "url": "https://example.com/page2",
+            "title": "Another Page"
+        },
+        {
+            "url": "https://example.com/page3"
+        }
+    ]
+}
+```
+
+### การตอบกลับเมื่อผิดพลาด
+
+#### 400 — ข้อผิดพลาดการตรวจสอบ
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid url",
+    "details": {
+        "issues": [
+            {
+                "field": "url",
+                "message": "Invalid url",
+                "code": "invalid_string"
+            }
+        ]
+    }
+}
+```
+
+#### 402 — เครดิตไม่พอ
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits",
+    "message": "Estimated credits required (1) exceeds available credits (0).",
+    "details": {
+        "estimated_total": 1,
+        "available_credits": 0
+    }
+}
+```
+
+#### 500 — ข้อผิดพลาดภายในเซิร์ฟเวอร์
+
+```json
+{
+    "success": false,
+    "error": "Internal server error",
+    "message": "Error message details"
+}
+```
+
+## แนวทางปฏิบัติที่ดี
+
+### กรณีการใช้งาน
+
+1. **วางแผนการครอล**: ใช้ Map ค้นพบ URL ก่อนเริ่มครอลเต็มรูปแบบ
+2. **จัดทำดัชนีเนื้อหา**: สร้างดัชนีหน้าทั้งหมดของเว็บ
+3. **ตรวจสอบเว็บ**: หาหน้าทั้งหมดเพื่อ SEO หือการตรวจการเข้าถึง
+4. **วิเคราะห์ลิงก์**: วิเคราะห์โครงสร้างลิงก์ภายใน
+
+### เคล็ดลับประสิทธิภาพ
+
+- ใช้ `ignore_sitemap: true` เมื่อไม่ต้องการ sitemap เพื่อความเร็ว
+- ตั้ง `limit` ให้เหมาะสมเพื่อไม่ประมวลผล URL เกินจำเป็น
+- ใช้ `include_subdomains: false` (ค่าเริ่มต้น) เว้นแต่ต้องค้นพ้นโดเมนย่อย
+
+### ใช้ร่วมกับ Crawl
+
+Map เหมาะกับการวางแผนการครอล:
+
+```javascript
+// ขั้นตอน 1: ค้นพบ URL ด้วย Map
+const mapResponse = await fetch("/v1/map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        limit: 100,
+    }),
+});
+const { data: urls } = await mapResponse.json();
+
+// ขั้นตอน 2: ใช้ URL ที่พบเพื่อวางแผน crawl
+const crawlResponse = await fetch("/v1/crawl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        include_paths: urls.map((u) => new URL(u.url).pathname),
+        limit: 100,
+    }),
+});
+```
+
+## เครดิต
+
+| การดำเนินการ | เครดิต |
+| --------- | ------- |
+| การทำ Map | 1 |
+
+**รวม**: 1 เครดิตต่อคำขอ
+
+## คำถามที่พบบ่อย
+
+### ถาม: Map ต่างจาก Crawl อย่างไร?
+
+ตอบ: **Map** ค้นพบ URL โดยไม่ดึงเนื้อหาหน้า — เร็วและเบา **Crawl** ดึงและประมวลผลเนื้อหาจริงของแต่ละหน้า ใช้ Map เพื่อค้นพบ URL และวางแผน ใช้ Crawl เพื่อดึงเนื้อหา
+
+### ถาม: ทำไมบาง URL หายจากผลลัพธ์?
+
+ตอบ: สาเหตุที่เป็นไปได้:
+- URL อยู่คนละโดเมน/subdomain (ใช้ `include_subdomains: true`)
+- เว็บไม่มี sitemap
+- URL สร้างด้วย JavaScript แบบไดนามิก
+- เกินพารามิเตอร์ `limit`
+
+### ถาม: การค้นพบผ่านเครื่องมือค้นหาทำงานอย่างไร?
+
+ตอบ: Map API สอบถามเครื่องมือค้นหาด้วย `site:domain.com` เพื่อค้นหาหน้าที่ถูกจัดทำดัชนี ช่วยพบ URL ที่อาจไม่อยู่ใน sitemap หรือไม่ลิงก์จากหน้าหลัก
+
+### ถาม: Map ตาม redirect หรือไม่?
+
+ตอบ: Map ดึง URL ตามที่ปรากฏใน sitemap และลิงก์ในหน้า ไม่ตาม redirect เพื่อค้นพบ URL เพิ่ม
+
+### ถาม: มี rate limit หรือไม่?
+
+ตอบ: ไม่ API **รองรับ concurrency สูงโดยธรรมชาติ** คุณส่งคำขอพร้อมกันหลายรายการได้โดยไม่ต้องกังวลเรื่อง rate limit

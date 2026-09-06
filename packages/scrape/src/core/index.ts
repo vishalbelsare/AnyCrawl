@@ -8,6 +8,11 @@ export { ConfigValidator } from "./ConfigValidator.js";
 export { DataExtractor, ExtractionError } from "./DataExtractor.js";
 export { JobManager } from "./JobManager.js";
 export { EngineConfigurator, ConfigurableEngineType } from "./EngineConfigurator.js";
+export {
+    CLOAKBROWSER_RUNTIME,
+    getCloakBrowserPlaywrightLauncher,
+    getCloakBrowserPuppeteerLauncher,
+} from "./CloakBrowserLauncher.js";
 
 // Re-export types for convenience
 export type { MetadataEntry, BaseContent } from "./DataExtractor.js";

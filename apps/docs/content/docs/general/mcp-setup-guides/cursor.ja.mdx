@@ -1,0 +1,107 @@
+---
+title: Cursor
+description: AnyCrawl MCP で Cursor に Web スクレイピングと検索を追加する
+icon: MousePointer
+---
+
+# Cursor で MCP による Web 検索とスクレイピング
+
+AnyCrawl MCP を使って、Cursor に Web スクレイピングと検索機能を追加します。
+
+## クイックセットアップ
+
+### 1. API キーを取得する
+
+[anycrawl.dev](https://anycrawl.dev) にサインアップし、ダッシュボードから API キーをコピーします。
+
+### 2. Cursor に追加する
+
+設定を開き（Mac は `Cmd+,`、Windows は `Ctrl+,`）、「MCP」で検索して次を追加します。
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+`your-api-key` を実際の AnyCrawl API キーに置き換えてください。
+
+### 3. Cursor を再起動する
+
+以上です。Cursor から Web の検索とスクレイピングができるようになります。
+
+## すぐ試せるデモ
+
+Cursor チャット（`Cmd+K`）で次を試してください。
+
+**Web 検索：**
+
+```
+Search for TypeScript best practices 2025
+```
+
+**ページをスクレイプ：**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**ドキュメントを取得：**
+
+```
+Scrape the React hooks documentation and explain useEffect
+```
+
+**サイトをクロール：**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Cursor は AnyCrawl の search、scrape、crawl ツールを自動で使います。
+
+## トラブルシューティング
+
+### サーバーが応答しない
+
+1. API キーが有効か確認する
+2. Node.js 18 以上が入っているか確認する
+3. 設定を変更したあと Cursor を再起動する
+
+### 権限エラー
+
+`npx` が実行できるか確認してください。パッケージをグローバルに入れる必要がある場合があります。
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+グローバルパッケージを使う設定例：
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## 次のステップ
+
+- [スクレイプのオプション](../scrape)の詳細
+- [クロールの機能](../crawl)を試す
+- [検索の機能](../search)を確認する
+- 完全な [MCP サーバーのドキュメント](../mcp)を読む

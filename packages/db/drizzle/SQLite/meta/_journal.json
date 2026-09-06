@@ -71,6 +71,97 @@
       "when": 1770710400000,
       "tag": "0009_billing_charge_details",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1783783436192,
+      "tag": "0010_sturdy_thunderbolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1785941967773,
+      "tag": "0011_add_template_slug",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1785945315488,
+      "tag": "0012_dataset_core_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1785954257079,
+      "tag": "0013_template_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1785958653688,
+      "tag": "0014_template_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1786005145277,
+      "tag": "0015_template_run_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1786011935628,
+      "tag": "0016_template_runtime_output_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1786082588599,
+      "tag": "0017_dataset_jsonb_query",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1786099835030,
+      "tag": "0018_modern_mandrill",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1786351147665,
+      "tag": "0019_backfill_missing_user_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1786469378185,
+      "tag": "0020_backfill_scheduler_webhook_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1788676882528,
+      "tag": "0021_monitor_workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1788683877889,
+      "tag": "0022_repair_sqlite_job_billing",
+      "breakpoints": true
     }
   ]
 }

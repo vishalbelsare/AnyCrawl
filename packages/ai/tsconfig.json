@@ -3,10 +3,12 @@
     "compilerOptions": {
         "outDir": "dist",
         "rootDir": "src",
-        "jsx": "react", // Check this line if missing.
         "lib": [
-            "dom",
-            "es2015"
+            "es2022"
+        ],
+        "types": [
+            "node",
+            "jest"
         ]
     },
     "include": [

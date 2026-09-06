@@ -1,0 +1,415 @@
+---
+title: Шаблоны
+description: Переиспользуемые сценарии скрейпинга, обхода и поиска с переменными и своей логикой.
+icon: Puzzle
+---
+
+## Введение
+
+Шаблоны — это переиспользуемые настройки для скрейпинга, обхода или поиска. Вместо повторения одних и тех же опций в каждом вызове API вы один раз задаёте их в шаблоне (или берёте шаблон из AnyCrawl Template Store) и ссылаетесь на него через `template_id`.
+
+**Преимущества:**
+
+- **Простота**: вызовы API только с `template_id` и минимальными полями
+- **Единообразие**: одинаковое поведение в команде и проектах
+- **Безопасность**: шаблоны могут ограничивать домены и открывать только нужные переменные
+- **Гибкость**: опциональные обработчики для сложных преобразований
+
+**Поддерживаемые типы:**
+
+- `scrape`: одна страница через `/v1/scrape`
+- `crawl`: многостраничный обход через `/v1/crawl`
+- `search`: результаты поиска через `/v1/search`
+
+## Витрина шаблонов
+
+Готовые шаблоны: **[anycrawl.dev/template](https://anycrawl.dev/template)**.
+
+**Как пользоваться:**
+
+1. Найдите подходящий шаблон на витрине
+2. Скопируйте `template_id` со страницы шаблона
+3. Вызывайте API с этим `template_id` и нужными полями
+
+**Пример:**
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "content-extractor",
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "content-extractor",
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'template_id': 'content-extractor',
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## Шаблоны в вызовах API
+
+### Параметры запроса
+
+При использовании `template_id` разрешены только минимальные поля:
+
+| Endpoint     | Required Field | Optional Fields      |
+| ------------ | -------------- | -------------------- |
+| `/v1/scrape` | `template_id`  | `url`, `variables`   |
+| `/v1/crawl`  | `template_id`  | `url`, `variables`   |
+| `/v1/search` | `template_id`  | `query`, `variables` |
+
+**Важно:**
+
+- `url` или `query` могут быть необязательны, если заданы в шаблоне. Смотрите описание шаблона.
+- `variables` передаёт динамические входы, которые ожидает шаблон (см. раздел Variables).
+- Остальные поля (`engine`, `formats`, `timeout` и т.д.) берутся из шаблона и переопределить их нельзя.
+- Лишние поля дают **ошибку валидации 400**.
+
+### Scrape с шаблоном
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-scrape-template",
+    "url": "https://example.com",
+    "variables": { "category": "tech" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-scrape-template",
+        url: "https://example.com",
+        variables: { category: "tech" },
+    }),
+});
+const data = await res.json();
+```
+
+### Crawl с шаблоном
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-crawl-template",
+    "url": "https://docs.example.com",
+    "variables": { "maxPages": 50 }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-crawl-template",
+        url: "https://docs.example.com",
+        variables: { maxPages: 50 },
+    }),
+});
+const { job_id } = (await res.json()).data;
+// Poll for results...
+```
+
+### Search с шаблоном
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-search-template",
+    "query": "machine learning tutorials",
+    "variables": { "lang": "en" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-search-template",
+        query: "machine learning tutorials",
+        variables: { lang: "en" },
+    }),
+});
+const data = await res.json();
+console.log(data.data);
+```
+
+## Variables
+
+Шаблоны могут объявлять **variables** для динамических входов при вызове.
+
+- У каждой переменной есть `type`: `string`, `number`, `boolean` или `url`
+- Переменные могут быть `required` или необязательными с `defaultValue`
+- Список переменных смотрите в описании шаблона
+
+**Пример запроса с variables:**
+
+```json
+{
+    "template_id": "blog-scraper",
+    "url": "https://example.com/blog/post-123",
+    "variables": {
+        "author": "john-doe",
+        "includeComments": true,
+        "maxComments": 50
+    }
+}
+```
+
+Если пропустить обязательную переменную или передать неверный тип — будет **ошибка валидации 400**.
+
+## Формат ответа
+
+Ответы с шаблонами совпадают с обычными вызовами API:
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "markdown": "# Page Title\n\nContent...",
+        "metadata": { ... },
+        // Additional fields from custom handlers (if any)
+        "extractedData": { ... }
+    }
+}
+```
+
+Шаблоны с custom handlers могут добавлять дополнительные поля.
+
+## Обработка ошибок
+
+Типичные ошибки при шаблонах:
+
+| Error                        | HTTP Status | Описание                                            |
+| ---------------------------- | ----------- | --------------------------------------------------- |
+| Template not found           | 404         | `template_id` отсутствует или нет доступа           |
+| Validation error             | 400         | Нет обязательных переменных или неверные типы       |
+| Domain restriction violation | 403         | URL не разрешён политикой домена шаблона            |
+| Invalid fields               | 400         | Лишние поля верхнего уровня при использовании шаблонов |
+
+**Пример ответа с ошибкой:**
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "When using template_id, only template_id, url, variables are allowed. Invalid fields: engine, formats",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Field 'engine' is not allowed when using template_id",
+                "code": "invalid_field"
+            }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+## Рекомендации
+
+### Для вызывающих API
+
+- Проверяйте описание шаблона: обязательные переменные, домены и ключевые слова
+- По возможности используйте шаблоны с витрины
+- Обрабатывайте 404 (шаблон удалён или архивирован)
+- Не пытайтесь переопределять настройки шаблона (`engine`, `formats` и т.д.) — запрос не пройдёт
+
+### Для авторов шаблонов
+
+- Один шаблон — один сценарий
+- Документируйте все variables
+- Ограничивайте домены от злоупотреблений
+- Выставляйте цену в кредитах по сложности
+- Тестируйте перед публикацией
+
+## Создание шаблонов (продвинутый уровень)
+
+При создании своих шаблонов можно настроить:
+
+### Ограничения по доменам
+
+Где разрешено использовать шаблон:
+
+```json
+{
+    "allowedDomains": {
+        "type": "glob",
+        "patterns": ["*.example.com", "docs.mysite.com"]
+    }
+}
+```
+
+- `type`: `"exact"` или `"glob"`
+- `patterns`: массив доменов или шаблонов
+
+### Ограничения по ключевым словам (поисковые шаблоны)
+
+Какие запросы разрешены:
+
+```json
+{
+    "allowedKeywords": {
+        "type": "glob",
+        "patterns": ["*tutorial*", "*documentation*"]
+    }
+}
+```
+
+- `allowedKeywords` проверяется до выполнения запроса
+- `type`: `"exact"` или `"glob"`
+- `patterns`: допустимые значения/шаблоны
+- Проверка запроса выполняется до `queryTransform`
+
+### Ценообразование
+
+Стоимость в кредитах за вызов:
+
+```json
+{
+    "pricing": {
+        "perCall": 10,
+        "currency": "credits"
+    }
+}
+```
+
+### Custom Handlers
+
+Код на JavaScript/TypeScript:
+
+- **`requestHandler`**: постобработка результата скрейпа и свои поля
+- **`failedRequestHandler`**: своя логика при ошибках и повторах
+- **`queryTransform`** (только search): преобразование запроса перед поиском
+- **`urlTransform`** (scrape/crawl): преобразование URL перед обработкой
+
+Оба transform поддерживают:
+
+- Режим с плейсхолдерами (query: `{{query}}`, url: `{{url}}`)
+- Режим append с `prefix` и `suffix`
+- Опционально `regexExtract` для выделения подстроки до применения режима
+
+Пример regex для профилей TikTok:
+
+```json
+{
+    "customHandlers": {
+        "urlTransform": {
+            "enabled": true,
+            "mode": "append",
+            "prefix": "",
+            "suffix": "",
+            "regexExtract": {
+                "pattern": "^(https?:\\/\\/www\\.tiktok\\.com\\/@[^\\/?#]+)",
+                "flags": "i",
+                "group": 1
+            }
+        }
+    }
+}
+```
+
+Из таких входов извлекается `https://www.tiktok.com/@piperrockelle`:
+
+- `https://www.tiktok.com/@piperrockelle?abb=ccc`
+- `https://www.tiktok.com/@piperrockelle`
+
+Пример `requestHandler`:
+
+```javascript
+// Extract structured data from page context
+const title = context.data.title;
+const content = context.data.markdown;
+
+return {
+    extractedTitle: title,
+    wordCount: content.split(/\s+/).length,
+    customMetric: calculateMetric(content),
+};
+```
+
+### Модель безопасности
+
+- **Недоверенные шаблоны**: изолированная песочница VM с жёсткими ограничениями
+- **Доверенные шаблоны**: async-функции с контролируемым доступом к странице браузера
+
+Пометку trusted получают только шаблоны, проверенные AnyCrawl.
+
+## FAQ
+
+### Можно ли переопределить engine или formats?
+
+Нет. Шаблон — неизменяемая конфигурация. Разрешены только `url`/`query` и `variables`.
+
+### Что с шаблоном с витрины?
+
+Они публичные; вы платите кредиты по тарифу автора.
+
+### Видят ли шаблоны мой API-ключ?
+
+Нет. Шаблоны выполняются в изоляции без доступа к учётным данным.
+
+### Как создать свой шаблон?
+
+Используйте песочницу AnyCrawl для создания и тестов. После публикации шаблон доступен через API.
+
+## См. также
+
+- [Документация Scrape API](./scrape)
+- [Документация Crawl API](./crawl)
+- [Документация Search API](./search)
+- [Витрина шаблонов](https://anycrawl.dev/template)

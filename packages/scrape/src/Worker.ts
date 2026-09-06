@@ -1,15 +1,15 @@
 import { WorkerManager } from "./managers/Worker.js";
 import { QueueManager } from "./managers/Queue.js";
 import { Job } from "bullmq";
-import { log } from "crawlee";
 import { Utils } from "./Utils.js";
 // Removed unused imports to keep startup lean
 import { ProgressManager } from "./managers/Progress.js";
-import { ALLOWED_ENGINES, JOB_TYPE_CRAWL, JOB_TYPE_SCRAPE } from "@anycrawl/libs";
+import { ALLOWED_ENGINES, JOB_TYPE_CRAWL, JOB_TYPE_SCRAPE, log, appConfig, config } from "@anycrawl/libs";
 import { ensureAIConfigLoaded } from "@anycrawl/ai/utils/config.js";
 import { refreshAIConfig, getDefaultLLModelId, getEnabledProviderModels } from "@anycrawl/ai/utils/helper.js";
 import { getDB, schemas, eq } from "@anycrawl/db";
 import { finalizeExecution } from "./managers/ExecutionLifecycle.js";
+import { MonitorManager } from "./monitor/MonitorManager.js";
 
 // Helper function to update execution status
 // Note: Metrics (credits_used, items_processed, etc.) are stored in jobs table
@@ -97,7 +97,27 @@ function parseQueueArgs(): { queues: string[], schedulerOnly: boolean } {
     return { queues, schedulerOnly };
 }
 
+// Engine-independent queues (no browser engine required). These can be started
+// on their own via --queues=<name> without initializing any scrape/crawl engine.
+const ENGINE_INDEPENDENT_QUEUES = new Set<string>(["scheduler", "monitor", "template-run", "dataset-export"]);
+
 const { queues: requestedQueues, schedulerOnly } = parseQueueArgs();
+
+// Engines are only brought up when at least one requested queue actually needs a
+// scrape/crawl engine. An empty request means "all queues" (engines needed);
+// a request naming only engine-independent queues (scheduler / template-run)
+// skips engine bring-up entirely.
+const enginesEnabled = !schedulerOnly
+    && (requestedQueues.length === 0 || requestedQueues.some(q => !ENGINE_INDEPENDENT_QUEUES.has(q)));
+
+// The orchestrated Template Run worker (L3) is engine-independent: it enqueues
+// plain scrape jobs onto the existing scrape-<engine> queues (consumed by the
+// scrape workers) rather than driving an engine itself.
+const shouldStartTemplateRun = requestedQueues.length === 0 || requestedQueues.includes('template-run');
+
+// The Dataset export worker is engine-independent: it reads dataset items and
+// uploads a JSONL/CSV file to storage, never touching a scrape/crawl engine.
+const shouldStartDatasetExport = requestedQueues.length === 0 || requestedQueues.includes('dataset-export');
 
 // Initialize Utils first
 const utils = Utils.getInstance();
@@ -122,16 +142,14 @@ try {
         log.warning(`[ai] validation: ${msg}. Check provider credentials (apiKey/baseURL) for the configured provider.`);
     }
 } catch { }
-const authEnabled = process.env.ANYCRAWL_API_AUTH_ENABLED === "true";
-const creditsEnabled = process.env.ANYCRAWL_API_CREDITS_ENABLED === "true";
-log.info(`🔐 Auth enabled: ${authEnabled}`);
-log.info(`💳 Credits deduction enabled: ${creditsEnabled}`);
+log.info(`🔐 Auth enabled: ${appConfig.authEnabled}`);
+log.info(`💳 Credits deduction enabled: ${appConfig.creditsEnabled}`);
 
 // Determine which engines to initialize based on requested queues
 let AVAILABLE_ENGINES: string[] = [];
 let engineQueueManager: any;
 
-if (!schedulerOnly) {
+if (enginesEnabled) {
     log.info("Initializing queues and engines...");
     // Dynamically import after AI config is ready to ensure @anycrawl/ai is initialized with config
     const { EngineQueueManager, AVAILABLE_ENGINES: ALL_ENGINES } = await import("./managers/EngineQueue.js");
@@ -144,10 +162,10 @@ if (!schedulerOnly) {
                 .filter(q => q !== 'scheduler')
                 .map(q => q.replace(/^(scrape-|crawl-)/, ''))
         );
-        AVAILABLE_ENGINES = [...ALL_ENGINES].filter((engine: string) => requestedEngines.has(engine));
+        AVAILABLE_ENGINES = [...ALL_ENGINES].filter((engine: string) => engine !== 'auto' && requestedEngines.has(engine));
         log.info(`🎯 Starting selected queues: ${Array.from(requestedEngines).join(', ')}`);
     } else {
-        AVAILABLE_ENGINES = [...ALL_ENGINES];
+        AVAILABLE_ENGINES = [...ALL_ENGINES].filter((engine: string) => engine !== 'auto');
         log.info("🚀 Starting all available queues");
     }
 
@@ -159,11 +177,14 @@ if (!schedulerOnly) {
     QueueManager.getInstance();
     log.info("All queues and engines initialized and started");
 } else {
-    log.info("🎯 Starting scheduler only (no browser queues)");
+    // Engine-independent mode (scheduler and/or template-run only): still need
+    // the QueueManager singleton so engine-independent workers can enqueue jobs.
+    QueueManager.getInstance();
+    log.info("🎯 Starting engine-independent queues only (no browser engines)");
 }
 
 // Initialize Scheduler Manager (if enabled and requested)
-const shouldStartScheduler = process.env.ANYCRAWL_SCHEDULER_ENABLED === "true" &&
+const shouldStartScheduler = config.scheduler.enabled &&
     (requestedQueues.length === 0 || requestedQueues.includes('scheduler'));
 
 if (shouldStartScheduler) {
@@ -173,14 +194,23 @@ if (shouldStartScheduler) {
 }
 
 // Initialize Webhook Manager (if enabled)
-if (process.env.ANYCRAWL_WEBHOOKS_ENABLED === "true") {
+if (config.webhooks.enabled) {
     const { WebhookManager } = await import("./managers/Webhook.js");
     await WebhookManager.getInstance().initialize();
     log.info("✅ Webhook Manager initialized");
 }
 
+const shouldProcessMonitors = requestedQueues.length === 0 || requestedQueues.includes("monitor") || shouldStartScheduler;
+if (shouldProcessMonitors) MonitorManager.getInstance().start();
+
 async function runJob(job: Job) {
-    const engineType = job.data.engine || "cheerio";
+    // Resolve "auto" to the actual engine from _autoResolvedEngine or queue name
+    let engineType = job.data.engine || "cheerio";
+    if (engineType === "auto") {
+        engineType = job.data._autoResolvedEngine
+            || job.data.queueName?.replace(/^scrape-|^crawl-/, "")
+            || "playwright";
+    }
     if (!ALLOWED_ENGINES.includes(engineType)) {
         throw new Error(`Unsupported engine type: ${engineType}`);
     }
@@ -248,8 +278,33 @@ async function runJob(job: Job) {
             );
         }
 
-        // Workers for scrape and crawl jobs (only if not scheduler-only mode)
-        if (!schedulerOnly) {
+        // Worker for the orchestrated Template Run queue (L3). Engine-independent:
+        // each job drives the whole run (seed expansion → drain → finalize) via
+        // OrchestratedRunner, enqueuing plain scrape jobs for page fetches.
+        if (shouldStartTemplateRun) {
+            workers.push(
+                WorkerManager.getInstance().getWorker('template-run', async (job: Job) => {
+                    const { OrchestratedRunner } = await import("./template/OrchestratedRunner.js");
+                    await new OrchestratedRunner().run(job.data);
+                })
+            );
+            log.info("✅ Template Run (orchestrated) worker registered");
+        }
+
+        // Worker for the Dataset export queue (async JSONL/CSV export jobs —
+        // platform §11 exports / master-plan §3.2). Engine-independent.
+        if (shouldStartDatasetExport) {
+            workers.push(
+                WorkerManager.getInstance().getWorker('dataset-export', async (job: Job) => {
+                    const { DatasetExportProcessor } = await import("./dataset/DatasetExportProcessor.js");
+                    await new DatasetExportProcessor().run(job.data);
+                })
+            );
+            log.info("✅ Dataset Export worker registered");
+        }
+
+        // Workers for scrape and crawl jobs (only when engines are enabled)
+        if (enginesEnabled) {
             // Workers for scrape jobs
             const scrapeWorkers = await Promise.all(
                 AVAILABLE_ENGINES.map(async (engineType: any) => {
@@ -273,14 +328,20 @@ async function runJob(job: Job) {
                         await runJob(job);
                     });
 
-                    // Add event listeners for scheduled task executions
-                    worker.on('completed', async (job: Job) => {
-                        if (job.data.scheduled_execution_id) {
-                            await updateExecutionStatus(job.data.scheduled_execution_id, 'completed', job);
-                        }
-                    });
-
+                    // NOTE: BullMQ 'completed' fires when runJob resolves, which is the
+                    // moment the URL is handed to the crawler's request queue — NOT when
+                    // the page has actually been scraped. Scheduled scrape executions are
+                    // therefore finalized at real scrape completion/failure inside
+                    // engines/Base.ts (markCompleted / handleFailedRequest), never here.
+                    // Finalizing here ran the monitor post-processor before job_results
+                    // existed, so monitors could never produce a snapshot.
                     worker.on('failed', async (job: Job | undefined, error: Error) => {
+                        // Only queue-level failures (runJob threw before handoff) land here.
+                        // BullMQ emits 'failed' on EVERY attempt; jobs are dispatched with
+                        // attempts: 3, so finalize only when no retries remain — otherwise a
+                        // transient first-attempt failure permanently fails the execution
+                        // while the retry then succeeds (and bills).
+                        if (job && (job.attemptsMade ?? 0) < (job.opts?.attempts ?? 1)) return;
                         if (job?.data.scheduled_execution_id) {
                             await updateExecutionStatus(job.data.scheduled_execution_id, 'failed', job, error);
                         }
@@ -307,14 +368,21 @@ async function runJob(job: Job) {
                         await runJob(job);
                     });
 
-                    // Add event listeners for scheduled task executions
-                    worker.on('completed', async (job: Job) => {
-                        if (job.data.scheduled_execution_id) {
-                            await updateExecutionStatus(job.data.scheduled_execution_id, 'completed', job);
-                        }
-                    });
-
+                    // NOTE: BullMQ 'completed' fires when runJob resolves, which is the
+                    // moment the seed URL is handed to the crawler's request queue — NOT
+                    // when the crawl has actually finished. Scheduled crawl executions
+                    // are therefore finalized at real crawl completion inside
+                    // managers/Progress.ts (tryFinalize's winner branch), never here.
+                    // Finalizing here marked executions completed while the crawl was
+                    // still running, so success/failure stats were wrong and monitor
+                    // post-processing ran before results existed.
                     worker.on('failed', async (job: Job | undefined, error: Error) => {
+                        // Only queue-level failures (runJob threw before handoff) land here.
+                        // BullMQ emits 'failed' on EVERY attempt; jobs are dispatched with
+                        // attempts: 3, so finalize only when no retries remain — otherwise a
+                        // transient first-attempt failure permanently fails the execution
+                        // while the retry then succeeds (and bills).
+                        if (job && (job.attemptsMade ?? 0) < (job.opts?.attempts ?? 1)) return;
                         if (job?.data.scheduled_execution_id) {
                             await updateExecutionStatus(job.data.scheduled_execution_id, 'failed', job, error);
                         }
@@ -331,8 +399,8 @@ async function runJob(job: Job) {
 
         log.info("Worker started successfully");
 
-        // Check queue status periodically for all engines (only if not scheduler-only)
-        if (!schedulerOnly) {
+        // Check queue status periodically for all engines (only when engines enabled)
+        if (enginesEnabled) {
             setInterval(async () => {
                 for (const engineType of AVAILABLE_ENGINES) {
                     try {
@@ -349,8 +417,8 @@ async function runJob(job: Job) {
             }, 3000); // Check every 3 seconds
         }
 
-        // Log current browser instances for browser engines (controlled by env, only if not scheduler-only)
-        if (!schedulerOnly && process.env.ANYCRAWL_LOG_BROWSER_STATUS === "true") {
+        // Log current browser instances for browser engines (controlled by env, only when engines enabled)
+        if (enginesEnabled && process.env.ANYCRAWL_LOG_BROWSER_STATUS === "true") {
             setInterval(async () => {
                 for (const engineType of AVAILABLE_ENGINES) {
                     try {
@@ -428,7 +496,7 @@ async function runJob(job: Job) {
         setInterval(async () => {
             try {
                 log.debug("[CLEANUP] Starting periodic cleanup check for expired jobs...");
-                const { getDB, schemas, eq, sql } = await import("@anycrawl/db");
+                const { getDB, schemas, eq, sql, and, lt } = await import("@anycrawl/db");
                 const progressManager = ProgressManager.getInstance();
                 const db = await getDB();
 
@@ -444,7 +512,7 @@ async function runJob(job: Job) {
                     .from(schemas.jobs)
                     .limit(1000)
                     .where(
-                        sql`${schemas.jobs.status} = 'pending' AND ${schemas.jobs.jobExpireAt} < NOW()`
+                        and(eq(schemas.jobs.status, "pending"), lt(schemas.jobs.jobExpireAt, new Date()))
                     );
 
                 if (expiredJobs.length > 0) {
@@ -519,14 +587,19 @@ async function runJob(job: Job) {
         }, 60000); // Check every 60 seconds
 
         // Handle graceful shutdown
-        process.on("SIGINT", async () => {
-            log.warning("Received SIGINT signal, stopping all services...");
+        let shuttingDown = false;
+        const shutdown = async () => {
+            if (shuttingDown) return;
+            shuttingDown = true;
+            log.warning("Received shutdown signal, stopping all services...");
             // Temporarily disable console.warn to prevent the pause message
             const originalWarn = console.warn;
             console.warn = () => { };
 
+            if (shouldProcessMonitors) await MonitorManager.getInstance().stop();
+
             // Stop Scheduler Manager (if enabled)
-            if (process.env.ANYCRAWL_SCHEDULER_ENABLED === "true") {
+            if (config.scheduler.enabled) {
                 try {
                     const { SchedulerManager } = await import("./managers/Scheduler.js");
                     await SchedulerManager.getInstance().stop();
@@ -537,7 +610,7 @@ async function runJob(job: Job) {
             }
 
             // Stop Webhook Manager (if enabled)
-            if (process.env.ANYCRAWL_WEBHOOKS_ENABLED === "true") {
+            if (config.webhooks.enabled) {
                 try {
                     const { WebhookManager } = await import("./managers/Webhook.js");
                     await WebhookManager.getInstance().stop();
@@ -548,7 +621,7 @@ async function runJob(job: Job) {
             }
 
             // Stop all engines (if initialized)
-            if (!schedulerOnly) {
+            if (enginesEnabled) {
                 await engineQueueManager.stopEngines();
             }
 
@@ -556,7 +629,9 @@ async function runJob(job: Job) {
             console.warn = originalWarn;
 
             process.exit(0);
-        });
+        };
+        process.on("SIGINT", shutdown);
+        process.on("SIGTERM", shutdown);
 
         // Keep the process running
         process.stdin.resume();
@@ -565,7 +640,7 @@ async function runJob(job: Job) {
         process.exit(1);
     }
 })();
-// Start engines (only if not scheduler-only)
-if (!schedulerOnly) {
+// Start engines (only when engines are enabled)
+if (enginesEnabled) {
     await engineQueueManager.startEngines();
 }

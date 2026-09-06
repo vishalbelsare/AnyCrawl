@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: Ajoutez le scraping web et la recherche à Windsurf avec AnyCrawl MCP
+icon: Wind
+---
+
+# Recherche web et scraping MCP dans Windsurf
+
+Ajoutez des capacités de scraping web et de recherche à Windsurf avec AnyCrawl MCP.
+
+## Configuration rapide
+
+### 1. Obtenir votre clé API
+
+Inscrivez-vous sur [anycrawl.dev](https://anycrawl.dev) et copiez votre clé API depuis le tableau de bord.
+
+### 2. Ajouter à Windsurf
+
+Ajoutez ceci à votre fichier `~/.codeium/windsurf/mcp_config.json` :
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+Remplacez `your-api-key` par votre véritable clé API AnyCrawl.
+
+### 3. Redémarrer Windsurf
+
+Terminé ! Windsurf peut désormais rechercher et scraper le web.
+
+## Démo rapide
+
+Essayez ceci dans Windsurf :
+
+**Rechercher sur le web :**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**Scraper une page :**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**Obtenir de la documentation :**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**Crawler un site :**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Les agents IA de Windsurf utiliseront automatiquement les outils AnyCrawl.
+
+## Dépannage
+
+### Le serveur ne répond pas
+
+1. Vérifiez que votre clé API est valide
+2. Assurez-vous d’avoir Node.js 18+ installé
+3. Redémarrez Windsurf après modification de la configuration
+
+### Erreurs de permissions
+
+Assurez-vous que `npx` peut s’exécuter. Vous pouvez installer le package globalement :
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Puis mettez à jour votre configuration pour utiliser le package global :
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## Étapes suivantes
+
+- En savoir plus sur les [options de scraping](../scrape)
+- Explorer les [capacités de crawl](../crawl)
+- Consulter les [fonctionnalités de recherche](../search)
+- Voir la [documentation complète du serveur MCP](../mcp)

@@ -1,0 +1,604 @@
+---
+title: Scrape
+description: Thu thập một URL và chuyển thành dữ liệu có cấu trúc sẵn sàng cho LLM.
+icon: Crosshair
+---
+
+## Giới thiệu
+
+API scrape của AnyCrawl chuyển mọi trang web thành dữ liệu có cấu trúc, tối ưu cho mô hình ngôn ngữ lớn (LLM). Hỗ trợ nhiều engine gồm Cheerio, Playwright, Puppeteer và đầu ra HTML, Markdown, JSON, v.v.
+
+**Điểm nổi bật**: API **trả dữ liệu ngay và đồng bộ** — không cần polling hay webhook. **Hỗ trợ đồng thời cao gốc** cho thao tác thu thập quy mô lớn.
+
+### Tính năng cốt lõi
+
+- **Đa engine**: `auto` (chọn engine thông minh, mặc định), `cheerio` (phân tích HTML tĩnh, nhanh nhất), `playwright` (render JavaScript đa trình duyệt), `puppeteer` (render JavaScript tối ưu Chrome)
+- **Tối ưu LLM**: Tự trích và định dạng nội dung, tạo Markdown thuận tiện cho LLM
+- **Hỗ trợ proxy**: Cấu hình proxy HTTP/HTTPS
+- **Xử lý lỗi vững**: Xử lý lỗi và cơ chế thử lại đầy đủ
+- **Hiệu năng cao**: **Đồng thời cao gốc** với xử lý hàng đợi bất đồng bộ
+- **Phản hồi tức thì**: **API đồng bộ** — nhận kết quả ngay không cần polling
+
+## Endpoint API
+
+```
+POST https://api.anycrawl.dev/v1/scrape
+```
+
+## Ví dụ sử dụng
+
+### cURL
+
+#### Thu thập cơ bản (engine auto mặc định)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### Thu thập nội dung động bằng engine Playwright
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://spa-example.com",
+    "engine": "playwright"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://spa-example.com",
+        engine: "playwright",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://spa-example.com',
+        'engine': 'playwright'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### Thu thập qua proxy
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://proxy.example.com:8080"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        engine: "playwright",
+        proxy: "http://proxy.example.com:8080",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'engine': 'playwright',
+        'proxy': 'http://proxy.example.com:8080'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+## Tham số request
+
+| Parameter           | Type                     | Required | Default        | Description                                                                                                                                 |
+| ------------------- | ------------------------ | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | string                   | Yes      | -              | URL cần scrape, phải là địa chỉ HTTP/HTTPS hợp lệ                                                                                           |
+| `template_id`       | string                   | No       | -              | `template_id` dùng cho lần scrape này                                                                                                          |
+| `variables`         | object                   | No       | -              | Biến template (chỉ khi có `template_id`)                                                                               |
+| `engine`            | enum                     | No       | `auto`         | Loại engine scrape: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                 |
+| `formats`           | array                    | No       | `["markdown"]` | Định dạng đầu ra: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                      |
+| `timeout`           | number                   | No       | `60000`        | Timeout (ms). Nếu bỏ trống: `120000` khi `proxy=stealth` / `proxy=auto`; ngược lại `60000`. |
+| `retry`             | boolean                  | No       | `false`        | Có thử lại khi lỗi hay không                                                                                                                 |
+| `max_age`           | number                   | No       | -              | Tuổi tối đa cache (ms). `0` bỏ đọc cache; bỏ trống: mặc định máy chủ                                                                     |
+| `store_in_cache`    | boolean                  | No       | `true`         | Có ghi Page Cache cho lần scrape này hay không                                                                                                  |
+| `wait_for`          | number                   | No       | -              | Trễ trước khi trích (ms); chỉ engine trình duyệt; thấp hơn `wait_for_selector`                                                 |
+| `wait_until`        | enum                     | No       | -              | Điều kiện chờ điều hướng (engine trình duyệt): `load`, `domcontentloaded`, `networkidle`, `commit`                                           |
+| `wait_for_selector` | string, object, or array | No       | -              | Chờ một hoặc nhiều selector (chỉ engine trình duyệt). Chuỗi CSS selector, object `{ selector: string, state?: "attached" \| "visible" \| "hidden" \| "detached", timeout?: number }`, hoặc mảng. Mỗi mục chờ lần lượt. Ưu tiên hơn `wait_for`. |
+| `include_tags`      | array                    | No       | -              | Gồm thẻ, ví dụ: `h1`                                                                                                                    |
+| `exclude_tags`      | array                    | No       | -              | Loại thẻ, ví dụ: `h1`                                                                                                                    |
+| `only_main_content` | boolean                  | No       | `true`         | Chỉ trích nội dung chính, bỏ header/footer/nav, v.v. (`include_tags` ưu tiên hơn)                                     |
+| `proxy`             | string (URI)             | No       | -              | Địa chỉ proxy: `http://proxy:port` hoặc `https://proxy:port`                                                                   |
+| `json_options`      | json                     | No       | -              | Tùy chọn JSON, ví dụ: `{"schema": {}, "user_prompt": "Extract key fields"}`                                                                  |
+| `extract_source`    | enum                     | No       | `markdown`     | Nguồn trích JSON: `markdown` (mặc định) hoặc `html`                                                                                 |
+| `ocr_options`       | boolean                  | No       | `false`        | Bật OCR cho ảnh markdown. Thêm khối OCR vào markdown; không đổi `html`/`rawHtml`.                |
+
+### Hành vi cache
+
+- `max_age` điều khiển đọc cache. `0` buộc làm mới.
+- `store_in_cache=false` bỏ qua ghi cache.
+- Khi trúng cache, phản hồi kèm `cachedAt` và `maxAge` (ms).
+
+### Loại engine
+
+**Lưu ý**: `playwright` và `puppeteer` đều có thể dùng Chromium (phiên bản mã nguồn mở của Chrome), nhưng mục đích và khả năng khác nhau.
+
+#### `auto` (mặc định)
+
+- **Khi nào dùng**: Chưa biết engine nào tốt nhất cho trang đích
+- **Ưu điểm**: Tự phân tích trang và chọn engine tối ưu — `cheerio` cho trang tĩnh, `playwright` cho trang nhiều JavaScript
+- **Cách hoạt động**: HTTP nhẹ trước; nếu cần render JavaScript thì nâng lên engine trình duyệt
+- **Nên dùng**: Scrape đa mục đích, muốn hiệu năng tốt mà không chọn engine thủ công
+
+#### `cheerio`
+
+- **Khi nào dùng**: Nội dung HTML tĩnh
+- **Ưu điểm**: Nhanh nhất, tiêu thụ tài nguyên thấp nhất
+- **Hạn chế**: Không chạy JavaScript, không xử lý nội dung động
+- **Nên dùng**: Bài báo, blog, site tĩnh
+
+#### `playwright`
+
+- **Khi nào dùng**: Site hiện đại cần render JavaScript, kiểm thử đa trình duyệt
+- **Ưu điểm**: Tự động chờ vững, ổn định hơn
+- **Hạn chế**: Tiêu thụ tài nguyên cao hơn
+- **Nên dùng**: Ứng dụng web phức tạp
+
+#### `puppeteer`
+
+- **Ưu điểm**: Tích hợp Chrome DevTools sâu, chỉ số hiệu năng tốt, thực thi nhanh
+- **Hạn chế**: **Không hỗ trợ kiến trúc CPU ARM**
+
+### Định dạng đầu ra
+
+Chỉ định định dạng trong phản hồi bằng tham số `formats`:
+
+#### `markdown`
+
+- **Mô tả**: Chuyển HTML sang Markdown sạch, có cấu trúc
+- **Khi nào**: Tối ưu cho LLM, tài liệu, phân tích nội dung
+- **Nên dùng**: Nội dung nhiều chữ, bài viết, blog
+
+#### `html`
+
+- **Mô tả**: Trả HTML đã làm sạch và định dạng
+- **Khi nào**: Cần HTML có cấu trúc và giữ định dạng
+- **Nên dùng**: Nội dung web cần giữ cấu trúc HTML
+
+#### `text`
+
+- **Mô tả**: Trích văn bản thuần, không định dạng
+- **Khi nào**: Trích văn bản đơn giản để phân tích cơ bản
+- **Nên dùng**: Xử lý chỉ văn bản, trích từ khóa
+
+#### `screenshot`
+
+- **Mô tả**: Chụp vùng nhìn thấy của trang
+- **Khi nào**: Minh họa trực quan trang
+- **Hạn chế**: Chỉ với engine `playwright` và `puppeteer`
+- **Nên dùng**: Xác minh trực quan, kiểm thử UI
+
+#### `screenshot@fullPage`
+
+- **Mô tả**: Chụp toàn trang, gồm phần dưới fold
+- **Khi nào**: Bắt toàn bộ trang trực quan
+- **Hạn chế**: Chỉ với `playwright` và `puppeteer`
+- **Nên dùng**: Tài liệu hóa toàn trang, lưu trữ
+
+#### `rawHtml`
+
+- **Mô tả**: Trả HTML gốc chưa xử lý
+- **Khi nào**: Cần đúng HTML nhận từ server
+- **Nên dùng**: Phân tích kỹ thuật, gỡ lỗi, giữ cấu trúc gốc
+
+#### `summary`
+
+- **Mô tả**: Dùng AI để tóm tắt nội dung trang
+- **Khi nào**: Hiểu nhanh, tóm tắt tài liệu, bản tin
+- **Nên dùng**: Tổng hợp tin, nghiên cứu, tuyển chọn nội dung, tóm tắt
+
+#### `links`
+
+- **Mô tả**: Trích mọi liên kết (URL) thành mảng chuỗi
+- **Khi nào**: Khám phá liên kết, tạo sitemap, chuẩn bị crawl, phân tích liên kết
+- **Tính năng**: Tự đổi URL tương đối → tuyệt đối, loại trùng và fragment
+- **Nên dùng**: Xây crawler, phân tích cấu trúc site, tìm trang liên quan
+
+### Đối tượng json_options
+
+Tham số `json_options` là object nhận:
+
+- `schema`: Schema dùng cho trích xuất.
+- `user_prompt`: Prompt người dùng cho trích xuất.
+- `schema_name`: Tùy chọn — tên đầu ra cần tạo.
+- `schema_description`: Tùy chọn — mô tả đầu ra cần tạo.
+
+#### Ví dụ
+
+```json
+{
+    "schema": {},
+    "user_prompt": "Extract the title and content of the page"
+}
+```
+
+hoặc
+
+```json
+{
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string"
+            },
+            "company_name": {
+                "type": "string"
+            },
+            "summary": {
+                "type": "string"
+            },
+            "is_open_source": {
+                "type": "boolean"
+            }
+        },
+        "required": ["company_name", "summary"]
+    },
+    "user_prompt": "Extract the company name, summary, and if it is open source"
+}
+```
+
+## Định dạng phản hồi
+
+### Phản hồi thành công (HTTP 200)
+
+#### Thu thập thành công
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://mock.httpstatus.io/200",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "title": "",
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">200 OK</pre></body></html>",
+        "screenshot": "http://localhost:8080/v1/public/storage/file/screenshot-c9fb76c4-2d7b-41f9-9141-b9ec9af58b39.jpeg",
+        "timestamp": "2025-07-01T04:38:02.951Z"
+    }
+}
+```
+
+#### Phản hồi trúng cache
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "cachedAt": "2026-02-08T12:34:56.000Z",
+        "maxAge": 172800000
+    }
+}
+```
+
+### Phản hồi lỗi
+
+#### 400 - Lỗi xác thực
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": [
+            "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'"
+        ]
+    }
+}
+```
+
+#### 401 - Không được xác thực (API key)
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+### Thu thập thất bại
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 404 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/404",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 404 ",
+        "code": 404,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "34cd1d26-eb83-40ce-9d63-3be1a901f4a3",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">404 Not Found</pre></body></html>",
+        "screenshot": "screenshot-34cd1d26-eb83-40ce-9d63-3be1a901f4a3.jpeg",
+        "timestamp": "2025-07-01T04:36:20.978Z",
+        "statusCode": 404,
+        "statusMessage": ""
+    }
+}
+```
+
+hoặc
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 502 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/502",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 502 ",
+        "code": 502,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "5fc50008-07e0-4913-a6af-53b0b3e0214b",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">502 Bad Gateway</pre></body></html>",
+        "screenshot": "screenshot-5fc50008-07e0-4913-a6af-53b0b3e0214b.jpeg",
+        "timestamp": "2025-07-01T04:39:59.981Z",
+        "statusCode": 502,
+        "statusMessage": ""
+    }
+}
+```
+
+hoặc
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 400 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/400",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 400 ",
+        "code": 400,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "0081747c-1fc5-44f9-800c-e27b24b55a2c",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">400 Bad Request</pre></body></html>",
+        "screenshot": "screenshot-0081747c-1fc5-44f9-800c-e27b24b55a2c.jpeg",
+        "timestamp": "2025-07-01T04:38:24.136Z",
+        "statusCode": 400,
+        "statusMessage": ""
+    }
+}
+```
+
+hoặc
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available",
+    "data": {
+        "url": "https://httpstat.us/401",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available"
+    }
+}
+```
+
+## Thực hành tốt
+
+### Hướng dẫn chọn engine
+
+1. **Chưa chắc / đa mục đích** → Dùng `auto` (mặc định) — máy chủ tự chọn engine tối ưu
+2. **Site nội dung tĩnh** (tin, blog, tài liệu) → Dùng `cheerio`
+3. **Ứng dụng web phức tạp** (SPA cần render JS) → Dùng `playwright` hoặc `puppeteer`
+
+### Tối ưu hiệu năng
+
+- Thu thập hàng loạt nội dung tĩnh: ưu tiên `cheerio`
+- Chỉ dùng `playwright` hoặc `puppeteer` khi cần render JavaScript
+- Nên dùng proxy xoay vòng để tránh chặn IP và giới hạn tốc độ; đảm bảo proxy ổn định
+- **Tận dụng đồng thời cao gốc** — API xử lý nhiều request đồng thời hiệu quả
+
+### Xử lý lỗi
+
+```javascript
+try {
+    const response = await fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.data.status === "completed") {
+        // Handle successful result
+        console.log(result.data.markdown);
+    } else {
+        // Handle scraping failure
+        console.error("Scraping failed:", result.data.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## Dùng đồng thời cao
+
+API **hỗ trợ đồng thời cao gốc**. Bạn có thể gửi nhiều request đồng thời mà không lo giới hạn tốc độ:
+
+```javascript
+// Concurrent scraping example
+const urls = ["https://example1.com", "https://example2.com", "https://example3.com"];
+
+const scrapePromises = urls.map((url) =>
+    fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, engine: "cheerio" }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(scrapePromises);
+```
+
+## Câu hỏi thường gặp
+
+### Hỏi: Khi nào nên dùng engine khác nhau?
+
+**Đáp**: Mỗi engine có ưu điểm riêng:
+
+- **Auto** (mặc định): Chọn engine tốt nhất theo URL — bắt đầu nhanh với Cheerio, nâng Playwright khi cần render JavaScript
+- **Cheerio**: HTML tĩnh, nhanh nhất, không chạy JavaScript
+- **Playwright**: App phức tạp, ổn định và tự chờ tốt; sau này hỗ trợ thêm loại trình duyệt
+- **Puppeteer**: Chỉ Chrome/Chromium, không chạy trên CPU ARM và không có Docker image liên quan
+
+### Hỏi: Vì sao một số site scrape thất bại?
+
+**Đáp**: Có thể do:
+
+- Site chặn crawler (403/404)
+- Cần render JS nhưng đang dùng cheerio
+- Site cần đăng nhập hoặc header đặc biệt
+- Sự cố mạng
+
+### Hỏi: Xử lý site cần đăng nhập?
+
+**Đáp**: Hiện API không hỗ trợ xác thực. Gợi ý:
+
+- Scrape trang công khai
+- Dùng phương án khác để lấy nội dung sau đăng nhập
+
+### Hỏi: Yêu cầu cấu hình proxy?
+
+**Đáp**:
+
+- Mặc định có proxy chất lượng cao. Không có nhu cầu đặc biệt thì không cần tự cấu hình proxy.
+- Hỗ trợ proxy HTTP/HTTPS
+- Định dạng: `http://host:port` hoặc `https://host:port`
+- Đảm bảo proxy ổn định, khả dụng
+
+### Hỏi: Có giới hạn tốc độ cho request đồng thời không?
+
+**Đáp**: Không, API **hỗ trợ đồng thời cao gốc**. Có thể gửi nhiều request đồng thời không lo rate limit; mọi request trả dữ liệu ngay.

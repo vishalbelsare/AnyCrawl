@@ -1,0 +1,284 @@
+---
+title: プロキシ設定
+description: AnyCrawl の URL ベースのプロキシルーティングを設定する
+icon: Waypoints
+---
+
+# プロキシ設定
+
+AnyCrawl は URL パターンに基づく柔軟なプロキシルーティングをサポートします。Web サイトや API エンドポイントごとに異なるプロキシを設定できます。
+
+## プロキシモード
+
+API リクエストでは次の 4 つのプロキシモードを指定できます。
+
+| モード | 説明 |
+|------|-------------|
+| `auto` | ベースプロキシとステルスプロキシを自動選択。ベースが使えるときはベースから開始し、利用不可や再試行／失敗時にはステルスへ切り替え／フォールバックします。 |
+| `base` | `ANYCRAWL_PROXY_URL` に設定したプロキシを使う（既定） |
+| `stealth` | `ANYCRAWL_PROXY_STEALTH_URL` に設定したプロキシを使う（通常はレジデンシャルやプレミアム） |
+| カスタム URL | 完全なプロキシ URL 文字列（例：`http://user:pass@proxy:8080`）。レスポンスでは `custom` として返ります |
+
+### 使用例
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "auto"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "stealth"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://custom-proxy:8080"
+}
+```
+
+## タイムアウトの挙動（Scrape API）
+
+- リクエストレベルの `timeout` が常に最優先です。
+- `proxy` が `stealth` または `auto` で、`timeout` を省略した場合、AnyCrawl は `ANYCRAWL_STEALTH_TIMEOUT_MS`（既定：`120000`）を使います。
+- `base` モード、または明示的な `timeout` のないカスタムプロキシ URL の場合、AnyCrawl は `60000` を使います。
+
+## 設定方法
+
+### 方法 1：シンプルなプロキシ（`ANYCRAWL_PROXY_URL`）
+
+すべてのリクエストで同じプロキシを使う場合は、環境変数 `ANYCRAWL_PROXY_URL` を設定します。
+
+```bash
+# 単一プロキシ
+export ANYCRAWL_PROXY_URL=http://username:password@proxy.example.com:8080
+
+# 複数プロキシ（ティアードモード）
+export ANYCRAWL_PROXY_URL=http://proxy1:8080,http://proxy2:8080,http://proxy3:8080
+```
+
+複数プロキシ（カンマ区切り）を指定すると、AnyCrawl は**ティアードプロキシ**戦略を使います。
+
+- すべてのリクエストは最初のプロキシ（ティア 0）から開始
+- ドメインに対してプロキシが失敗すると、そのドメインは次のティアへ自動で切り替え
+- インテリジェントなフェイルオーバーとプロキシ利用の最適化が可能
+
+URL ベースのルーティングが不要な場合の最も簡単な設定です。
+
+### 方法 2：高度な設定ファイル（`ANYCRAWL_PROXY_CONFIG`）
+
+URL ベースのルーティングには、JSON 設定ファイル（例：`proxy-config.json`）を作成し、`ANYCRAWL_PROXY_CONFIG` にそのパスを設定します。
+
+```bash
+ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+**注意**：`ANYCRAWL_PROXY_URL` と `ANYCRAWL_PROXY_CONFIG` の両方を設定した場合、設定ファイルのルールが優先され、ルールに一致しない URL には `ANYCRAWL_PROXY_URL` がフォールバックになります。
+
+## ルールの種類
+
+AnyCrawl は次の 3 種類のプロキシルールを優先順で適用します。
+
+### 1. URL ルール（最優先）
+
+完全一致の URL。特定エンドポイント専用のプロキシが必要なときに使います。
+
+```json
+{
+    "url": "https://api.example.com/v1/data",
+    "proxy": "http://username:password@proxy1.example.com:8080"
+}
+```
+
+### 2. パターンルール（中）
+
+ワイルドカード付きの完全 URL パターン。パスやプロトコルが特定の URL にマッチさせたいときに便利です。
+
+```json
+{
+    "pattern": "https://*.github.com/api/*",
+    "proxy": "http://username:password@proxy2.example.com:8080"
+}
+```
+
+### 3. ドメインルール（低）
+
+ドメインのみのパターン。ドメインへのすべてのリクエストを特定プロキシに振り分けます。
+
+```json
+{
+    "domain": "*.gov.au",
+    "proxy": "http://username:password@proxy3.example.com:8080"
+}
+```
+
+## ワイルドカードパターン
+
+- `*` 任意の文字数にマッチ
+- `?` ちょうど 1 文字にマッチ
+- パターンは大文字小文字を区別しません
+
+### 例
+
+- `*.example.com` — `api.example.com`、`www.example.com`、`test.example.com` にマッチ
+- `api-?.example.com` — `api-1.example.com`、`api-2.example.com` にマッチ、`api-10.example.com` にはマッチしない
+- `https://*.example.com/api/*` — example.com の任意サブドメインで `/api/` パスを含む HTTPS URL にマッチ
+
+## 設定の完全例
+
+```json
+{
+    "rules": [
+        {
+            "url": "https://api.example.com/v1/users",
+            "proxy": "http://premium-proxy.example.com:8080"
+        },
+        {
+            "pattern": "https://api.github.com/*",
+            "proxy": "http://github-proxy.example.com:8080"
+        },
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-proxy.example.com:8080"
+        }
+    ]
+}
+```
+
+## プロキシ URL の形式
+
+AnyCrawl は次のようなプロキシ URL 形式をサポートします。
+
+- HTTP：`http://username:password@proxy.example.com:8080`
+- HTTPS：`https://username:password@proxy.example.com:8443`
+
+## デバッグ
+
+ログに次のようなメッセージが出ます。
+
+```
+Using proxy from request userData: http://custom-proxy:8080
+Found proxy for URL https://example.com: http://proxy.example.com:8080 By matching a rule.
+Proxy matched by domain pattern: *.gov.au → http://proxy.example.com:8080
+Using tiered proxy: http://default-proxy:8080
+```
+
+## 優先順位の例
+
+URL `https://api.github.com/repos/owner/repo` の場合、次の順でルールが評価されます。
+
+1. **URL 一致**：`"url": "https://api.github.com/repos/owner/repo"`
+2. **パターン一致**：`"pattern": "https://api.github.com/*"`
+3. **ドメイン一致**：`"domain": "*.github.com"`
+
+最初に一致したルールが採用されます。
+
+## ベストプラクティス
+
+1. **ドメインルール**は広い要件（例：国の政府サイト全体）に使う
+2. **パターンルール**は特定パスやプロトコルにマッチさせたいときに使う
+3. **URL ルール**は厳密なエンドポイント向けの特別扱いに使う
+4. 設定ファイル内の**並び順は無関係** — 優先度はルールタイプで決まる
+5. **パターンを**デバッグログで確認し、意図どおりにマッチするか検証する
+
+## ティアードプロキシ
+
+`ANYCRAWL_PROXY_URL` に複数プロキシを指定すると、AnyCrawl はインテリジェントなティアードプロキシを使います。
+
+### 仕組み
+
+1. **初期状態**：すべてのドメインは最初のプロキシ（ティア 0）から開始
+2. **エラー検出**：ドメインに対してプロキシが失敗すると、そのドメインは次のティアへ
+3. **ドメイン単位**：ドメインごとにティアは独立して維持される
+
+### シナリオ例
+
+```bash
+export ANYCRAWL_PROXY_URL=http://fast-proxy:8080,http://stable-proxy:8080,http://backup-proxy:8080
+```
+
+- `example.com` への最初のリクエスト → `fast-proxy:8080`（ティア 0）
+- `example.com` で `fast-proxy` が失敗 → `stable-proxy:8080`（ティア 1）へ
+- 一方 `github.com` は問題なければ引き続き `fast-proxy:8080` のまま
+- システムは `example.com` について `fast-proxy` の復旧を定期的に確認し、回復すれば最適なプロキシへ戻します
+
+### 利点
+
+- **自動フェイルオーバー**：プロキシ障害時に手動介入が不要
+- **ドメイン最適化**：ドメインごとに利用可能な最良のプロキシを使用
+- **リソース効率**：失敗したプロキシを完全に捨てない
+- **自己修復**：プロキシが復旧すると最適なものへ戻る
+
+## 完全例：両方の方法を併用
+
+一般的な用途のデフォルトと、特定サイト向けの URL ルーティングを組み合わせる例です。
+
+```bash
+# 汎用のデフォルトプロキシ
+export ANYCRAWL_PROXY_URL=http://default-proxy:8080
+
+# 特定サイト向けの URL ベースルーティング
+export ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+`proxy-config.json` の例：
+
+```json
+{
+    "rules": [
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-residential-proxy:8080"
+        },
+        {
+            "pattern": "https://api.*.com/*",
+            "proxy": "http://api-optimized-proxy:3128"
+        }
+    ]
+}
+```
+
+結果：
+
+- `https://www.homeaffairs.gov.au/` → `au-residential-proxy:8080`（ドメインルール）
+- `https://api.github.com/repos` → `api-optimized-proxy:3128`（パターンルール）
+- `https://example.com/` → `default-proxy:8080`（`ANYCRAWL_PROXY_URL`）
+
+## 環境変数一覧
+
+| 変数名                      | 用途                                         | 例                                                |
+| ----------------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| `ANYCRAWL_PROXY_URL`          | ベースプロキシ（単一または複数）   | `http://proxy:8080` または `http://p1:8080,http://p2:8080` |
+| `ANYCRAWL_PROXY_STEALTH_URL`  | ステルス／プレミアム（レジデンシャル等）     | `http://residential-proxy:8080`                        |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | ステルス利用時の追加クレジット | `5`                                                  |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS` | リクエストに `timeout` がなく `proxy=stealth` または `proxy=auto` のときの既定タイムアウト | `120000` |
+| `ANYCRAWL_PROXY_CONFIG`       | URL ルーティング用 JSON ファイルのパス  | `/path/to/proxy-config.json`                           |
+
+### 優先順位
+
+1. **最優先**：リクエストオプションで指定したプロキシモードまたはカスタム URL
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "playwright",
+        "proxy": "stealth"
+    }
+    ```
+    カスタム URL の例：
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "proxy": "http://custom-proxy:8080"
+    }
+    ```
+2. **高**：`ANYCRAWL_PROXY_CONFIG` の URL ベースルール
+3. **低**：`ANYCRAWL_PROXY_URL` のティアードプロキシ（フォールバック）

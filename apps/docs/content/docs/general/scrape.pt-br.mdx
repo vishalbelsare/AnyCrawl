@@ -1,0 +1,602 @@
+---
+title: Scrape
+description: Raspe uma URL e converta o conteúdo em dados estruturados prontos para LLM.
+icon: Crosshair
+---
+
+## Introdução
+
+A API Scrape do AnyCrawl converte qualquer página em dados estruturados otimizados para LLMs. Suporta Cheerio, Playwright, Puppeteer e vários formatos (HTML, Markdown, JSON etc.).
+
+**Destaques**: a API **responde de imediato, de forma síncrona** — sem polling nem webhooks. Há **suporte nativo a alta concorrência** para scraping em escala.
+
+### Recursos principais
+
+- **Vários motores**: `auto` (seleção inteligente, padrão), `cheerio` (HTML estático, mais rápido), `playwright` (JS em vários navegadores), `puppeteer` (JS otimizado para Chrome)
+- **Otimizado para LLM**: extração e formatação automáticas; Markdown para facilitar o uso em LLMs
+- **Proxy**: HTTP/HTTPS
+- **Erros e retry**: tratamento abrangente
+- **Desempenho**: **alta concorrência nativa** com fila assíncrona
+- **Resposta imediata**: API **síncrona** — resultado na hora
+
+## Endpoint da API
+
+```
+POST https://api.anycrawl.dev/v1/scrape
+```
+
+## Exemplos de uso
+
+### cURL
+
+#### Scraping básico (motor `auto` padrão)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### Conteúdo dinâmico com Playwright
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://spa-example.com",
+    "engine": "playwright"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://spa-example.com",
+        engine: "playwright",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://spa-example.com',
+        'engine': 'playwright'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### Scraping com proxy
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://proxy.example.com:8080"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        engine: "playwright",
+        proxy: "http://proxy.example.com:8080",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'engine': 'playwright',
+        'proxy': 'http://proxy.example.com:8080'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+## Parâmetros da requisição
+
+| Parâmetro           | Tipo                     | Obrigatório | Padrão        | Descrição                                                                                                                                 |
+| ------------------- | ------------------------ | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | string                   | Sim      | -              | URL HTTP/HTTPS válida                                                                                           |
+| `template_id`       | string                   | Não       | -              | ID do template para este scrape                                                                                                          |
+| `variables`         | object                   | Não       | -              | Variáveis do template (com `template_id`)                                                                               |
+| `engine`            | enum                     | Não       | `auto`         | Motor: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                 |
+| `formats`           | array                    | Não       | `["markdown"]` | Formatos: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                      |
+| `timeout`           | number                   | Não       | `60000`        | Timeout (ms). Se omitido: `120000` com `proxy=stealth` / `proxy=auto`; senão `60000`. |
+| `retry`             | boolean                  | Não       | `false`        | Tentar novamente em falha                                                                                                                 |
+| `max_age`           | number                   | Não       | -              | Idade máxima do cache (ms). `0` força atualização; omita para o padrão                                                                     |
+| `store_in_cache`    | boolean                  | Não       | `true`         | Gravar Page Cache neste scrape                                                                                                  |
+| `wait_for`          | number                   | Não       | -              | Atraso antes da extração (ms); só navegadores; prioridade menor que `wait_for_selector`                                                 |
+| `wait_until`        | enum                     | Não       | -              | Espera da navegação: `load`, `domcontentloaded`, `networkidle`, `commit`                                           |
+| `wait_for_selector` | string, object, or array | Não       | -              | Esperar seletores (só navegadores). String CSS, objeto `\{ selector: string, state?: "attached" \| "visible" \| "hidden" \| "detached", timeout?: number \}` ou array. Em sequência. Prioridade sobre `wait_for`. |
+| `include_tags`      | array                    | Não       | -              | Incluir tags, ex.: `h1`                                                                                                                    |
+| `exclude_tags`      | array                    | Não       | -              | Excluir tags, ex.: `h1`                                                                                                                    |
+| `only_main_content` | boolean                  | Não       | `true`         | Só conteúdo principal (`include_tags` tem precedência)                                     |
+| `proxy`             | string (URI)             | Não       | -              | Proxy: `http://proxy:port` ou `https://proxy:port`                                                                   |
+| `json_options`      | json                     | Não       | -              | Opções JSON, ex.: `{"schema": {}, "user_prompt": "Extract key fields"}`                                                                  |
+| `extract_source`    | enum                     | Não       | `markdown`     | Origem do JSON: `markdown` (padrão) ou `html`                                                                                 |
+| `ocr_options`       | boolean                  | Não       | `false`        | OCR só em imagens do markdown; afeta markdown, não `html`/`rawHtml`.                |
+
+### Comportamento de cache
+
+- `max_age` controla leituras do cache. `0` força atualização.
+- `store_in_cache=false` não grava no cache.
+- Em cache hit, a resposta inclui `cachedAt` e `maxAge` (ms).
+
+### Tipos de motor
+
+**Observação**: `playwright` e `puppeteer` podem usar Chromium, mas têm propósitos e capacidades diferentes.
+
+#### `auto` (padrão)
+
+- **Caso de uso**: quando não sabe qual motor usar
+- **Vantagens**: analisa a página e escolhe — `cheerio` para estático, `playwright` para muito JS
+- **Funcionamento**: HTTP leve primeiro; se precisar de JS, sobe para navegador
+- **Recomendado para**: scraping geral sem escolher motor manualmente
+
+#### `cheerio`
+
+- **Caso de uso**: HTML estático
+- **Vantagens**: mais rápido; menos recursos
+- **Limitações**: sem executar JavaScript; sem conteúdo dinâmico
+- **Recomendado para**: notícias, blogs, sites estáticos
+
+#### `playwright`
+
+- **Caso de uso**: sites modernos com JS; testes cross-browser
+- **Vantagens**: esperas automáticas; boa estabilidade
+- **Limitações**: mais consumo de recursos
+- **Recomendado para**: aplicações web complexas
+
+#### `puppeteer`
+
+- **Vantagens**: integração com DevTools; boas métricas; execução rápida
+- **Limitações**: **não suporta CPU ARM**
+
+### Formatos de saída
+
+Informe os formatos em `formats`:
+
+#### `markdown`
+
+- **Descrição**: HTML convertido para Markdown limpo
+- **Uso**: LLMs, documentação, análise
+- **Recomendado para**: texto, artigos, blogs
+
+#### `html`
+
+- **Descrição**: HTML limpo e formatado
+- **Uso**: quando precisar de HTML estruturado
+- **Recomendado para**: conteúdo estruturado em HTML
+
+#### `text`
+
+- **Descrição**: texto sem formatação
+- **Uso**: análise simples
+- **Recomendado para**: só texto, palavras-chave
+
+#### `screenshot`
+
+- **Descrição**: captura da área visível
+- **Uso**: representação visual
+- **Limitações**: só `playwright` e `puppeteer`
+- **Recomendado para**: verificação visual, testes de UI
+
+#### `screenshot@fullPage`
+
+- **Descrição**: captura da página inteira
+- **Uso**: visão completa da página
+- **Limitações**: só `playwright` e `puppeteer`
+- **Recomendado para**: documentação, arquivo
+
+#### `rawHtml`
+
+- **Descrição**: HTML original recebido do servidor
+- **Uso**: análise técnica, depuração
+- **Recomendado para**: preservar estrutura original
+
+#### `summary`
+
+- **Descrição**: resumo gerado por IA
+- **Uso**: entendimento rápido, resumos
+- **Recomendado para**: agregação, pesquisa, curadoria
+
+#### `links`
+
+- **Descrição**: todos os links da página como array de strings
+- **Uso**: descoberta de links, sitemap, preparação de crawl
+- **Recursos**: relativos → absolutos; remove duplicatas e fragmentos
+- **Recomendado para**: crawlers, estrutura do site
+
+### Objeto `json_options`
+
+`json_options` aceita:
+
+- `schema`: schema da extração
+- `user_prompt`: prompt do usuário
+- `schema_name`: nome opcional da saída
+- `schema_description`: descrição opcional da saída
+
+#### Exemplo
+
+```json
+{
+    "schema": {},
+    "user_prompt": "Extract the title and content of the page"
+}
+```
+
+or
+
+```json
+{
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string"
+            },
+            "company_name": {
+                "type": "string"
+            },
+            "summary": {
+                "type": "string"
+            },
+            "is_open_source": {
+                "type": "boolean"
+            }
+        },
+        "required": ["company_name", "summary"]
+    },
+    "user_prompt": "Extract the company name, summary, and if it is open source"
+}
+```
+
+## Formato da resposta
+
+### Sucesso (HTTP 200)
+
+#### Scraping bem-sucedido
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://mock.httpstatus.io/200",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "title": "",
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">200 OK</pre></body></html>",
+        "screenshot": "http://localhost:8080/v1/public/storage/file/screenshot-c9fb76c4-2d7b-41f9-9141-b9ec9af58b39.jpeg",
+        "timestamp": "2025-07-01T04:38:02.951Z"
+    }
+}
+```
+
+#### Resposta com cache (hit)
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "cachedAt": "2026-02-08T12:34:56.000Z",
+        "maxAge": 172800000
+    }
+}
+```
+
+### Respostas de erro
+
+#### 400 — Erro de validação
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": [
+            "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'"
+        ]
+    }
+}
+```
+
+#### 401 — Erro de autenticação
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+### Scraping com falha
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 404 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/404",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 404 ",
+        "code": 404,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "34cd1d26-eb83-40ce-9d63-3be1a901f4a3",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">404 Not Found</pre></body></html>",
+        "screenshot": "screenshot-34cd1d26-eb83-40ce-9d63-3be1a901f4a3.jpeg",
+        "timestamp": "2025-07-01T04:36:20.978Z",
+        "statusCode": 404,
+        "statusMessage": ""
+    }
+}
+```
+
+or
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 502 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/502",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 502 ",
+        "code": 502,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "5fc50008-07e0-4913-a6af-53b0b3e0214b",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">502 Bad Gateway</pre></body></html>",
+        "screenshot": "screenshot-5fc50008-07e0-4913-a6af-53b0b3e0214b.jpeg",
+        "timestamp": "2025-07-01T04:39:59.981Z",
+        "statusCode": 502,
+        "statusMessage": ""
+    }
+}
+```
+
+or
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 400 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/400",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 400 ",
+        "code": 400,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "0081747c-1fc5-44f9-800c-e27b24b55a2c",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">400 Bad Request</pre></body></html>",
+        "screenshot": "screenshot-0081747c-1fc5-44f9-800c-e27b24b55a2c.jpeg",
+        "timestamp": "2025-07-01T04:38:24.136Z",
+        "statusCode": 400,
+        "statusMessage": ""
+    }
+}
+```
+
+or
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available",
+    "data": {
+        "url": "https://httpstat.us/401",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available"
+    }
+}
+```
+
+## Boas práticas
+
+### Escolha do motor
+
+1. **Dúvida / uso geral** → `auto` (padrão) — o servidor escolhe o motor
+2. **Conteúdo estático** (notícias, blogs, docs) → `cheerio`
+3. **SPAs / muito JS** → `playwright` ou `puppeteer`
+
+### Desempenho
+
+- Volume estático: priorize `cheerio`
+- `playwright`/`puppeteer` só quando precisar de renderização JS
+- Proxies rotativos ajudam contra bloqueios; mantenha proxies estáveis
+- **Alta concorrência nativa** — várias requisições simultâneas
+
+### Tratamento de erros
+
+```javascript
+try {
+    const response = await fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.data.status === "completed") {
+        // Handle successful result
+        console.log(result.data.markdown);
+    } else {
+        // Handle scraping failure
+        console.error("Scraping failed:", result.data.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## Alta concorrência
+
+A API **suporta alta concorrência nativamente**. Várias requisições simultâneas sem limite artificial de taxa:
+
+```javascript
+// Concurrent scraping example
+const urls = ["https://example1.com", "https://example2.com", "https://example3.com"];
+
+const scrapePromises = urls.map((url) =>
+    fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, engine: "cheerio" }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(scrapePromises);
+```
+
+## Perguntas frequentes
+
+### Quando usar cada motor?
+
+Cada motor tem pontos fortes:
+
+- **Auto** (padrão): escolhe por URL — Cheerio rápido e upgrade para Playwright quando precisar de JS
+- **Cheerio**: HTML estático; mais rápido; sem executar JS
+- **Playwright**: apps complexos; estabilidade e esperas; mais navegadores no futuro
+- **Puppeteer**: só Chrome/Chromium; **não funciona em ARM**; sem imagens Docker correspondentes aqui
+
+### Por que alguns sites falham?
+
+Possíveis causas:
+
+- Site bloqueia crawlers (403/404)
+- Precisa de JS mas você usou `cheerio`
+- Autenticação ou headers especiais
+- Problemas de rede
+
+### Sites com login?
+
+A API não faz autenticação. Sugestões:
+
+- Raspe páginas públicas
+- Obtenha conteúdo autenticado por outros meios
+
+### Requisitos de proxy?
+
+- Por padrão há proxy de qualidade; sem necessidade especial, não precisa configurar
+- HTTP/HTTPS
+- Formato: `http://host:port` ou `https://host:port`
+- Proxies estáveis
+
+### Há limite de taxa para concorrência?
+
+Não. A API **suporta alta concorrência nativamente**. Várias requisições simultâneas; respostas imediatas.

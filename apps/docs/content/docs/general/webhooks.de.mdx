@@ -1,0 +1,927 @@
+---
+title: Webhooks
+description: Echtzeit-Benachrichtigungen für Scraping, Crawling, Map, Search und geplante Aufgaben.
+icon: Webhook
+---
+
+## Einführung
+
+Webhooks liefern HTTP-Benachrichtigungen bei Ereignissen in Ihrem AnyCrawl-Konto. Statt zu pollen, sendet AnyCrawl POSTs an Ihre URL.
+
+**Kernpunkte**: mehrere Ereignistypen, HMAC-SHA256, Wiederholungen mit Backoff, Zustellhistorie, Bereichsfilter (Scope), benutzerdefinierte Header, Schutz vor privaten IPs (SSRF).
+
+### Kernfunktionen
+
+- **Abos**: Scraping, Crawl, Map, Search, geplante Aufgaben, System
+- **Sicherheit**: HMAC-SHA256
+- **Wiederholungen**: exponentielles Backoff
+- **Historie**: alle Zustellungen
+- **Geltungsbereich**: alle Ereignisse oder ausgewählte Tasks
+- **Header**: eigene HTTP-Header
+- **Private IPs**: blockiert (SSRF-Schutz)
+
+## API-Endpunkte
+
+```
+POST   /v1/webhooks                              # Webhook anlegen
+GET    /v1/webhooks                              # Alle Webhooks
+GET    /v1/webhooks/:webhookId                   # Details
+PUT    /v1/webhooks/:webhookId                   # Aktualisieren
+DELETE /v1/webhooks/:webhookId                   # Löschen
+GET    /v1/webhooks/:webhookId/deliveries        # Zustellhistorie
+POST   /v1/webhooks/:webhookId/test              # Test
+PUT    /v1/webhooks/:webhookId/activate          # Aktivieren
+PUT    /v1/webhooks/:webhookId/deactivate        # Deaktivieren
+POST   /v1/webhooks/:webhookId/deliveries/:deliveryId/replay  # Fehlgeschlagene Zustellung erneut
+GET    /v1/webhook-events                        # Ereignisliste
+```
+
+## Unterstützte Ereignisse
+
+### Job-Ereignisse
+
+| Ereignis | Beschreibung | Wann |
+|-------|-------------|----------------|
+| `scrape.created` | Scrape-Job erstellt | Neuer Scrape-Job in der Warteschlange |
+| `scrape.started` | Scrape-Job gestartet | Ausführung beginnt |
+| `scrape.completed` | Scrape-Job abgeschlossen | Erfolgreich beendet |
+| `scrape.failed` | Scrape-Job fehlgeschlagen | Fehler bei der Ausführung |
+| `scrape.cancelled` | Scrape-Job abgebrochen | Manuell abgebrochen |
+| `crawl.created` | Crawl-Job erstellt | Neuer Crawl-Job in der Warteschlange |
+| `crawl.started` | Crawl-Job gestartet | Ausführung beginnt |
+| `crawl.completed` | Crawl-Job abgeschlossen | Erfolgreich beendet |
+| `crawl.failed` | Crawl-Job fehlgeschlagen | Fehler bei der Ausführung |
+| `crawl.cancelled` | Crawl-Job abgebrochen | Manuell abgebrochen |
+
+### Ereignisse für geplante Aufgaben
+
+| Ereignis | Beschreibung | Wann |
+|-------|-------------|----------------|
+| `task.executed` | Aufgabe ausgeführt | Geplante Aufgabe läuft |
+| `task.failed` | Aufgabe fehlgeschlagen | Geplante Aufgabe schlägt fehl |
+| `task.paused` | Aufgabe pausiert | Aufgabe ist pausiert |
+| `task.resumed` | Aufgabe fortgesetzt | Aufgabe wird fortgesetzt |
+
+### Search-Ereignisse
+
+| Ereignis | Beschreibung | Wann |
+|-------|-------------|----------------|
+| `search.created` | Search-Job erstellt | Neuer Search-Job in der Warteschlange |
+| `search.started` | Search-Job gestartet | Ausführung beginnt |
+| `search.completed` | Search-Job abgeschlossen | Erfolgreich beendet |
+| `search.failed` | Search-Job fehlgeschlagen | Fehler bei der Ausführung |
+
+### Map-Ereignisse
+
+| Ereignis | Beschreibung | Wann |
+|-------|-------------|----------------|
+| `map.created` | Map-Job erstellt | Neuer Map-Job in der Warteschlange |
+| `map.started` | Map-Job gestartet | Ausführung beginnt |
+| `map.completed` | Map-Job abgeschlossen | Erfolgreich beendet |
+| `map.failed` | Map-Job fehlgeschlagen | Fehler bei der Ausführung |
+
+### Test-Ereignisse
+
+| Ereignis | Beschreibung | Wann |
+|-------|-------------|----------------|
+| `webhook.test` | Testereignis | Test-Webhook manuell gesendet |
+
+## Schnellstart
+
+### Webhook anlegen
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Production Notifications",
+    "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+    "event_types": ["scrape.completed", "scrape.failed", "crawl.completed"],
+    "scope": "all",
+    "timeout_seconds": 10,
+    "max_retries": 3
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/webhooks", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    name: "Production Notifications",
+    webhook_url: "https://your-domain.com/webhooks/anycrawl",
+    event_types: ["scrape.completed", "scrape.failed"],
+    scope: "all"
+  })
+});
+
+const data = await response.json();
+console.log("Webhook ID:", data.data.webhook_id);
+console.log("Secret:", data.data.secret);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/webhooks",
+    headers={
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json"
+    },
+    json={
+        "name": "Production Notifications",
+        "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+        "event_types": ["scrape.completed", "scrape.failed"],
+        "scope": "all"
+    }
+)
+
+data = response.json()
+print(f"Webhook ID: {data['data']['webhook_id']}")
+print(f"Secret: {data['data']['secret']}")
+```
+
+### Antwort
+
+```json
+{
+  "success": true,
+  "data": {
+    "webhook_id": "webhook-uuid-here",
+    "secret": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+    "message": "Webhook erfolgreich erstellt. Speichern Sie das Secret – es wird nicht erneut angezeigt."
+  }
+}
+```
+
+<Callout type="warn">
+**Wichtig:** `secret` sofort speichern – nur einmal sichtbar, für Signaturprüfung nötig.
+</Callout>
+
+## Anfrageparameter
+
+### Webhook
+
+| Parameter | Typ | Erforderlich | Standard | Beschreibung |
+|-----------|------|----------|---------|-------------|
+| `name` | string | Ja | - | Name (1–255 Zeichen) |
+| `description` | string | Nein | - | Beschreibung |
+| `webhook_url` | string | Ja | - | Ziel-URL (HTTPS empfohlen) |
+| `event_types` | string[] | Ja | - | Ereignistypen |
+| `scope` | string | Nein | `"all"` | `"all"` oder `"specific"` |
+| `specific_task_ids` | string[] | Nein | - | Task-IDs bei `specific` |
+
+### Zustellung
+
+| Parameter | Typ | Erforderlich | Standard | Beschreibung |
+|-----------|------|----------|---------|-------------|
+| `timeout_seconds` | number | Nein | `10` | Timeout (1–60 s) |
+| `max_retries` | number | Nein | `3` | Max. Versuche (0–10) |
+| `retry_backoff_multiplier` | number | Nein | `2` | Backoff-Multiplikator (1–10) |
+| `custom_headers` | object | Nein | - | Zusätzliche Header |
+
+<Callout type="info">
+Nach 10 aufeinanderfolgenden Fehlern wird der Webhook deaktiviert; nach Fix manuell aktivieren.
+</Callout>
+
+### Metadaten
+
+| Parameter | Typ | Erforderlich | Standard | Beschreibung |
+|-----------|------|----------|---------|-------------|
+| `tags` | string[] | Nein | - | Tags |
+| `metadata` | object | Nein | - | Freie Metadaten |
+
+## Payload-Format
+
+### HTTP-Header
+
+Jede Anfrage enthält u. a.:
+
+```http
+Content-Type: application/json
+X-AnyCrawl-Signature: sha256=abc123...
+X-Webhook-Event: scrape.completed
+X-Webhook-Delivery-Id: delivery-uuid-1
+X-Webhook-Timestamp: 2026-01-27T10:00:00.000Z
+```
+
+### Payload-Beispiele
+
+#### scrape.completed
+
+```json
+{
+  "job_id": "job-uuid-1",
+  "status": "completed",
+  "url": "https://example.com",
+  "total": 10,
+  "completed": 10,
+  "failed": 0,
+  "credits_used": 5,
+  "created_at": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T10:00:00.000Z"
+}
+```
+
+#### scrape.failed
+
+```json
+{
+  "job_id": "job-uuid-1",
+  "status": "failed",
+  "url": "https://example.com",
+  "error_message": "Connection timeout",
+  "credits_used": 3,
+  "created_at": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T10:00:00.000Z"
+}
+```
+
+#### task.executed
+
+```json
+{
+  "task_id": "task-uuid-1",
+  "task_name": "Daily News Scrape",
+  "execution_id": "exec-uuid-1",
+  "execution_number": 45,
+  "status": "completed",
+  "job_id": "job-uuid-1",
+  "credits_used": 5,
+  "scheduled_for": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T09:02:15.000Z"
+}
+```
+
+## Signaturprüfung
+
+### Warum?
+
+Sicherstellen, dass Anfragen von AnyCrawl stammen und nicht manipuliert wurden.
+
+### Algorithmus
+
+HMAC-SHA256 über den Payload:
+
+```
+signature = HMAC-SHA256(payload, webhook_secret)
+header_value = "sha256=" + hex(signature)
+```
+
+### Beispiele
+
+#### Node.js / Express
+
+```javascript
+const crypto = require('crypto');
+const express = require('express');
+
+function verifyWebhookSignature(payload, signature, secret) {
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(JSON.stringify(payload));
+  const expectedSignature = `sha256=${hmac.digest('hex')}`;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+const app = express();
+app.use(express.json());
+
+app.post('/webhooks/anycrawl', (req, res) => {
+  const signature = req.headers['x-anycrawl-signature'];
+  const secret = process.env.WEBHOOK_SECRET;
+
+  // Verify signature
+  if (!verifyWebhookSignature(req.body, signature, secret)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  // Extract event info
+  const eventType = req.headers['x-webhook-event'];
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  console.log(`Received event: ${eventType}`);
+  console.log(`Delivery ID: ${deliveryId}`);
+  console.log('Payload:', req.body);
+
+  // Respond quickly (< 5 seconds recommended)
+  res.status(200).json({ received: true });
+
+  // Process asynchronously
+  processWebhookAsync(eventType, req.body).catch(console.error);
+});
+
+app.listen(3000);
+```
+
+#### Python / Flask
+
+```python
+import hmac
+import hashlib
+import json
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+WEBHOOK_SECRET = 'your-webhook-secret-here'
+
+def verify_webhook_signature(payload, signature, secret):
+    expected_signature = 'sha256=' + hmac.new(
+        secret.encode('utf-8'),
+        json.dumps(payload).encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(signature, expected_signature)
+
+@app.route('/webhooks/anycrawl', methods=['POST'])
+def webhook_handler():
+    signature = request.headers.get('X-AnyCrawl-Signature')
+    payload = request.get_json()
+
+    # Verify signature
+    if not verify_webhook_signature(payload, signature, WEBHOOK_SECRET):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    # Extract event info
+    event_type = request.headers.get('X-Webhook-Event')
+    delivery_id = request.headers.get('X-Webhook-Delivery-Id')
+
+    print(f'Received event: {event_type}')
+    print(f'Delivery ID: {delivery_id}')
+    print(f'Payload: {payload}')
+
+    # Respond quickly
+    return jsonify({'received': True}), 200
+
+if __name__ == '__main__':
+    app.run(port=3000)
+```
+
+#### Go
+
+```go
+package main
+
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "os"
+)
+
+func verifyWebhookSignature(payload []byte, signature, secret string) bool {
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(payload)
+    expectedSignature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    signature := r.Header.Get("X-AnyCrawl-Signature")
+    eventType := r.Header.Get("X-Webhook-Event")
+    secret := os.Getenv("WEBHOOK_SECRET")
+
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "Error reading body", http.StatusBadRequest)
+        return
+    }
+
+    if !verifyWebhookSignature(body, signature, secret) {
+        http.Error(w, "Invalid signature", http.StatusUnauthorized)
+        return
+    }
+
+    var payload map[string]interface{}
+    if err := json.Unmarshal(body, &payload); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+
+    fmt.Printf("Received event: %s\n", eventType)
+    fmt.Printf("Payload: %+v\n", payload)
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]bool{"received": true})
+}
+
+func main() {
+    http.HandleFunc("/webhooks/anycrawl", webhookHandler)
+    http.ListenAndServe(":3000", nil)
+}
+```
+
+## Webhooks verwalten
+
+### Alle listen
+
+```bash tab="cURL"
+curl -X GET "https://api.anycrawl.dev/v1/webhooks" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/webhooks", {
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+
+const data = await response.json();
+console.log("Webhooks:", data.data);
+```
+
+### Antwort
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "uuid": "webhook-uuid-1",
+      "name": "Production Notifications",
+      "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+      "webhook_secret": "***hidden***",
+      "event_types": ["scrape.completed", "scrape.failed"],
+      "scope": "all",
+      "is_active": true,
+      "consecutive_failures": 0,
+      "total_deliveries": 145,
+      "successful_deliveries": 142,
+      "failed_deliveries": 3,
+      "last_success_at": "2026-01-27T10:00:00.000Z",
+      "last_failure_at": "2026-01-26T15:30:00.000Z",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+<Callout type="info">
+`webhook_secret` in Listen/Details ausgeblendet.
+</Callout>
+
+### Webhook aktualisieren
+
+```bash tab="cURL"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_types": ["scrape.completed", "scrape.failed", "crawl.completed"]
+  }'
+```
+
+<Callout type="info">
+Geheimnis nicht änderbar – Webhook neu anlegen zum Rotieren.
+</Callout>
+
+### Test senden
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks/:webhookId/test" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+await fetch(`https://api.anycrawl.dev/v1/webhooks/${webhookId}/test`, {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+```
+
+**Test-Payload**:
+
+```json
+{
+  "message": "Dies ist ein Test-Webhook von AnyCrawl",
+  "timestamp": "2026-01-27T10:00:00.000Z",
+  "webhook_id": "webhook-uuid-1"
+}
+```
+
+### Deaktivieren/Aktivieren
+
+```bash tab="Deactivate"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/deactivate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```bash tab="Activate"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### Löschen
+
+```bash tab="cURL"
+curl -X DELETE "https://api.anycrawl.dev/v1/webhooks/:webhookId" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+<Callout type="warn">
+Löschen entfernt die gesamte Zustellhistorie.
+</Callout>
+
+### Fehlgeschlagene Zustellung wiederholen
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks/:webhookId/deliveries/:deliveryId/replay" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+await fetch(`https://api.anycrawl.dev/v1/webhooks/${webhookId}/deliveries/${deliveryId}/replay`, {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+```
+
+**Antwort**:
+
+```json
+{
+  "success": true,
+  "message": "Delivery replayed successfully",
+  "data": {
+    "delivery_id": "delivery-uuid-1",
+    "status": "pending"
+  }
+}
+```
+
+<Callout type="info">
+Replay = neuer Zustellversuch mit gleichem Payload (nach Fix des Endpunkts).
+</Callout>
+
+## Zustellhistorie
+
+### Einträge abrufen
+
+```bash tab="cURL"
+curl -X GET "https://api.anycrawl.dev/v1/webhooks/:webhookId/deliveries?limit=20" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### Abfrageparameter
+
+| Parameter | Typ | Standard | Beschreibung |
+|-----------|------|---------|-------------|
+| `limit` | number | `100` | Anzahl |
+| `offset` | number | `0` | Überspringen |
+| `status` | string | - | `delivered`, `failed`, `retrying` |
+| `from` | string | - | Start (ISO 8601) |
+| `to` | string | - | Ende (ISO 8601) |
+
+### Antwort
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "uuid": "delivery-uuid-1",
+      "webhookSubscriptionUuid": "webhook-uuid-1",
+      "eventType": "scrape.completed",
+      "status": "delivered",
+      "attempt_number": 1,
+      "request_url": "https://your-domain.com/webhooks/anycrawl",
+      "request_method": "POST",
+      "response_status": 200,
+      "response_duration_ms": 125,
+      "created_at": "2026-01-27T10:00:00.000Z",
+      "delivered_at": "2026-01-27T10:00:00.125Z"
+    },
+    {
+      "uuid": "delivery-uuid-2",
+      "status": "failed",
+      "attempt_number": 3,
+      "error_message": "Connection timeout",
+      "error_code": "ETIMEDOUT",
+      "created_at": "2026-01-27T09:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "limit": 20,
+    "offset": 0,
+    "filters": {
+      "status": null,
+      "from": null,
+      "to": null
+    }
+  }
+}
+```
+
+## Wiederholungslogik
+
+### Wann
+
+- HTTP ≠ 2xx
+- Timeout
+- Netzwerkfehler
+
+### Zeitplan
+
+Standard (`max_retries: 3`, `retry_backoff_multiplier: 2`):
+
+| Versuch | Verzögerung | Kumuliert |
+|---------|-------------|-----------|
+| 1 | 1 Min | 1 Min |
+| 2 | 2 Min | 3 Min |
+| 3 | 4 Min | 7 Min |
+
+Formel: `backoff_multiplier ^ (attempt - 1) × 1 Minute`
+
+### Auto-Deaktivierung
+
+Nach **10 Fehlern in Folge** wird der Webhook deaktiviert.
+
+**Wieder aktivieren**:
+
+```bash
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+## Bereichsfilter (Scope)
+
+### Alle Ereignisse (`scope: "all"`)
+
+Benachrichtigungen für alle abonnierten Typen:
+
+```json
+{
+  "scope": "all",
+  "event_types": ["scrape.completed", "crawl.completed"]
+}
+```
+
+### Bestimmte Tasks (`scope: "specific"`)
+
+Nur für ausgewählte geplante Aufgaben:
+
+```json
+{
+  "scope": "specific",
+  "specific_task_ids": ["task-uuid-1", "task-uuid-2"],
+  "event_types": ["task.executed", "task.failed"]
+}
+```
+
+## Schutz privater IPs
+
+### Standard
+
+Zustellungen an private Adressen werden blockiert:
+
+- `10.0.0.0/8`
+- `172.16.0.0/12`
+- `192.168.0.0/16`
+- `169.254.0.0/16` (link-local)
+- `127.0.0.1` / `localhost`
+- IPv6 private addresses
+
+### Lokal testen
+
+Nur Entwicklung:
+
+```bash
+ALLOW_LOCAL_WEBHOOKS=true
+```
+
+<Callout type="warn">
+Nicht in Produktion aktivieren.
+</Callout>
+
+## Best Practices
+
+### 1. Schnell antworten
+
+Innerhalb von **5 Sekunden** `2xx` zurückgeben:
+
+```javascript
+app.post('/webhook', async (req, res) => {
+  // Verify signature
+  if (!verifySignature(req.body, req.headers['x-anycrawl-signature'])) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Quick acknowledgment
+  res.status(200).json({ received: true });
+
+  // Process asynchronously
+  queue.add('process-webhook', req.body);
+});
+```
+
+### 2. Idempotenz
+
+`X-Webhook-Delivery-Id` gegen Doppelverarbeitung:
+
+```javascript
+const processedDeliveries = new Set();
+
+app.post('/webhook', (req, res) => {
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  if (processedDeliveries.has(deliveryId)) {
+    return res.status(200).json({ received: true, duplicate: true });
+  }
+
+  processedDeliveries.add(deliveryId);
+
+  // Process event...
+
+  res.status(200).json({ received: true });
+});
+```
+
+### 3. HTTP-Status
+
+| Code | Bedeutung | AnyCrawl |
+|------|-----------|----------|
+| 200–299 | OK | kein Retry |
+| 400–499 | Client | kein Retry |
+| 500–599 | Server | Retry |
+| Timeout | — | Retry |
+
+### 4. Logging
+
+```javascript
+app.post('/webhook', (req, res) => {
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+  const eventType = req.headers['x-webhook-event'];
+
+  logger.info('Webhook received', {
+    deliveryId,
+    eventType,
+    timestamp: req.headers['x-webhook-timestamp']
+  });
+
+  try {
+    processWebhook(req.body, eventType);
+    logger.info('Webhook processed', { deliveryId });
+    res.status(200).json({ received: true });
+  } catch (error) {
+    logger.error('Webhook failed', {
+      deliveryId,
+      error: error.message
+    });
+    res.status(500).json({ error: 'Processing failed' });
+  }
+});
+```
+
+### 5. Sicherheit
+
+- Signaturen prüfen
+- HTTPS in Produktion
+- Keine Secrets in URLs
+- Rate Limits
+- Anomalien überwachen
+- Payload-Struktur validieren
+
+## Anwendungsfälle
+
+### Slack
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const { job_id, status, url } = req.body;
+
+  await fetch(process.env.SLACK_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: `Job ${status}: ${url}\nJob ID: ${job_id}`
+    })
+  });
+
+  res.status(200).json({ received: true });
+});
+```
+
+### E-Mail bei Fehlern
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const eventType = req.headers['x-webhook-event'];
+
+  if (eventType.endsWith('.failed')) {
+    await sendEmail({
+      to: 'admin@example.com',
+      subject: 'AnyCrawl Job Failed',
+      body: JSON.stringify(req.body, null, 2)
+    });
+  }
+
+  res.status(200).json({ received: true });
+});
+```
+
+### Datenbank-Log
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const eventType = req.headers['x-webhook-event'];
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  await db.webhookEvents.create({
+    deliveryId,
+    eventType,
+    payload: req.body,
+    receivedAt: new Date()
+  });
+
+  res.status(200).json({ received: true });
+});
+```
+
+## Fehlerbehebung
+
+### Keine Ereignisse
+
+- `is_active: true`
+- `event_types` korrekt
+- URL aus dem Internet erreichbar
+- keine Blockierung privater IPs
+- Scope prüfen
+
+### Signatur falsch
+
+- Falscher Secret
+- Payload vor Hash korrekt serialisieren
+- Kein extra Whitespace im JSON
+- HMAC-SHA256
+
+### Viele Fehler
+
+- Antwort < 5 s
+- Sinnvolle Statuscodes
+- Historie lesen
+- lokal mit ngrok testen
+
+### Auto-deaktiviert
+
+10 Fehler in Folge → Fix → Test → aktivieren:
+
+```bash
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+## Testen und Diagnose
+
+### Tools
+
+- [webhook.site](https://webhook.site)
+- [requestbin.com](https://requestbin.com)
+- [ngrok](https://ngrok.com)
+
+### Lokal
+
+```bash
+ngrok http 3000
+```
+
+ngrok-URL als Webhook-URL:
+
+```
+https://abc123.ngrok.io/webhooks/anycrawl
+```
+
+## Grenzen
+
+| Punkt | Limit |
+|------|-------|
+| Name | 1–255 Zeichen |
+| URL | HTTPS empfohlen (Prod.) |
+| Timeout | 1–60 s |
+| Wiederholungen | 0–10 |
+| Payload | max. 1 MB |
+| Custom-Header | max. 20 |
+| Ereignistypen | unbegrenzt |
+
+## Verwandte Dokumentation
+
+- [Geplante Aufgaben](./scheduled-tasks)
+- [Scrape](./scrape)
+- [Crawl](./crawl)

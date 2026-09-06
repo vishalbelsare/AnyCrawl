@@ -1,0 +1,756 @@
+---
+title: Search
+description: API ผลหน้าผลการค้นหา (SERP) สำหรับสอบถามเครื่องมือค้นหาและรับผลมีโครงสร้าง
+icon: Search
+---
+
+## บทนำ
+
+AnyCrawl Search API ให้คุณเข้าถึงผลเครื่องมือค้นหาจากหลายแหล่งแบบโปรแกรม ออกแบบสำหรับ LLM โดยเฉพาะ คืนข้อมูล JSON ที่สะอาดและมีโครงสร้าง เหมาะกับการประมวลผลและวิเคราะห์ด้วย AI
+
+API **คืนข้อมูลทันทีแบบซิงโครนัส** — ไม่ต้อง polling หรือ webhook รองรับ**หลายเครื่องมือค้นหา**และ**ดึงหลายหน้าผลในคำขอเดียว**เพื่อรวบรวมข้อมูลครบถ้วน
+
+### คุณสมบัติหลัก
+
+- **รองรับหลายเครื่องมือ**: ปัจจุบันรองรับ Google และมีแผนขยายเครื่องมืออื่น
+- **เหมาะกับ LLM**: คืน JSON มีโครงสร้างสำหรับ AI
+- **หลายภาษา**: ค้นหาในภาษาและภูมิภาคต่างๆ
+- **หลายหน้าผล**: ดึงหลายหน้าผลค้นหาในคำขอเดียว
+- **ประสิทธิภาพสูง**: **รองรับ concurrency สูงแบบเนทีฟ** พร้อมประมวลผลแบบอะซิงโครนัส
+- **ตอบกลับทันที**: **API แบบซิงโครนัส** — ได้ผลทันทีโดยไม่ต้อง polling
+- **ผลครบถ้วน**: คืนทั้งผลค้นหาและคำแนะนำ
+
+## เอนด์พอยต์ API
+
+```
+POST https://api.anycrawl.dev/v1/search
+```
+
+## ตัวอย่างการใช้งาน
+
+#### การค้นหาพื้นฐาน (Google ค่าเริ่มต้น)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "OpenAI ChatGPT"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "OpenAI ChatGPT",
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "OpenAI ChatGPT"
+    }
+)
+print(response.json())
+```
+
+#### การค้นหาหลายหน้า
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "machine learning tutorials",
+    "pages": 3,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "machine learning tutorials",
+        pages: 3,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "machine learning tutorials",
+        "pages": 3,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### การค้นหาพร้อมระบุภาษา/ภูมิภาค
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "AnyCrawl",
+    "lang": "zh",
+    "pages": 2
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "AnyCrawl",
+        lang: "zh",
+        pages: 2,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "AnyCrawl",
+        "lang": "zh",
+        "pages": 2
+    }
+)
+print(response.json())
+```
+
+#### การค้นหาแบบแบ่งหน้า
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "web scraping tools",
+    "offset": 20,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "web scraping tools",
+        offset: 20,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "web scraping tools",
+        "offset": 20,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### การค้นหาพร้อม Safe Search
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "educational content",
+    "safe_search": 0
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "educational content",
+        safe_search: 0,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "educational content",
+        "safe_search": 0
+    }
+)
+print(response.json())
+```
+
+## พารามิเตอร์คำขอ
+
+| พารามิเตอร์       | ชนิด           | จำเป็น | ค่าเริ่มต้น  | คำอธิบาย                                                                                                                           |
+| --------------- | -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`         | string         | ใช่      | -        | สตริงคำค้นหาที่จะรัน                                                                                                    |
+| `template_id`   | string         | ไม่       | -        | ID เทมเพลตสำหรับการค้นหานี้                                                                                                    |
+| `variables`     | object         | ไม่       | -        | ตัวแปรเทมเพลต (ใช้เมื่อมี `template_id`)                                                                         |
+| `engine`        | enum           | ไม่       | `google` | เครื่องมือค้นหา ปัจจุบันรองรับ: `google`                                                                                   |
+| `limit`         | number         | ไม่       | 10       | จำนวนผลสูงสุดต่อหน้า                                                                                                    |
+| `offset`        | number         | ไม่       | 0        | จำนวนผลที่ข้าม (แบ่งหน้า)                                                                                            |
+| `pages`         | number         | ไม่       | 1        | จำนวนหน้าผลค้นหาที่ดึง (ขั้นต่ำ 1 สูงสุด 20)                                                                           |
+| `lang`          | string         | ไม่       | `en`     | locale ภาษาสำหรับผลค้นหา (เช่น 'en', 'zh', 'es', 'fr')                                                                     |
+| `country`       | string         | ไม่       | -        | locale ประเทศสำหรับผลค้นหา (เช่น 'US', 'GB', 'CN')                                                                            |
+| `timeRange`     | enum           | ไม่       | -        | ตัวกรองช่วงเวลา: `day`, `week`, `month`, `year`                                                                                     |
+| `sources`       | enum           | ไม่       | -        | แหล่งค้นหา: `web`, `images`, `news` (SearXNG)                                                                                     |
+| `safe_search`   | number \| null | ไม่       | null     | ระดับ Safe search สำหรับ Google: `0` (ปิด), `1` (ปานกลาง), `2` (เข้มงวด), หรือ null (ค่าเริ่มต้น) ใช้กับ Google เท่านั้น |
+
+### ไม่บังคับ: `scrape_options` สำหรับ URL ในผลลัพธ์
+
+เมื่อระบุ แต่ละ URL ในผลค้นหาสามารถดึงด้วยตัวเลือกที่ให้ (ฟิลด์เดียวกับ `/v1/scrape` ยกเว้น `url` ระดับบนสุด) หมายเหตุ: ตัวเลือกเฉพาะเบราว์เซอร์จะถูกละเว้นเมื่อไม่ใช้เบราว์เซอร์
+
+| ฟิลด์               | ชนิด                     | ค่าเริ่มต้น       | หมายเหตุ                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `engine`            | enum                     | -              | เครื่องมือดึงสำหรับ URL ผล: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                 |
+| `formats`           | array of enum            | `["markdown"]` | รูปแบบผล: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                                          |
+| `timeout`           | number                   | `60000`        | Timeout ต่อคำขอ (ms)                                                                                                                    |
+| `wait_for`          | number                   | -              | หน่วงก่อนแยก (ms) เฉพาะเบราว์เซอร์ ลำดับต่ำกว่า `wait_for_selector`                                                 |
+| `wait_until`        | enum                     | -              | เงื่อนไขรอการนำทาง: `load`, `domcontentloaded`, `networkidle`, `commit`                                           |
+| `wait_for_selector` | string, object, or array | -              | รอ selector หนึ่งหรือหลายตัว (เฉพาะเบราว์เซอร์) มีความสำคัญเหนือ `wait_for` |
+| `include_tags`      | array of string          | -              | รวมเฉพาะองค์ประกอบที่ตรง CSS selector                                                                                              |
+| `exclude_tags`      | array of string          | -              | ยกเว้นองค์ประกอบที่ตรง CSS selector                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | แยกเฉพาะเนื้อหาหลัก (`include_tags` มีความสำคัญกว่า)                                  |
+| `proxy`             | string (URI)             | -              | URL proxy (ไม่บังคับ)                                                                                                                          |
+| `json_options`      | object                   | -              | ตัวเลือกการดึง JSON มีโครงสร้าง (schema, user_prompt, schema_name, schema_description)                                               |
+| `extract_source`    | enum                     | `markdown`     | แหล่งดึง JSON: `markdown` (ค่าเริ่มต้น) หรือ `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | เปิด OCR เสริมสำหรับรูปใน markdown เท่านั้น มีผลกับ markdown ไม่กับ `html`/`rawHtml`                                         |
+| `max_age`           | number                   | -              | อายุแคชสูงสุด (ms) ใช้ `0` เพื่อข้ามการอ่านแคช ไม่ระบุใช้ค่าเริ่มต้นของเซิร์ฟเวอร์                                                                    |
+| `store_in_cache`    | boolean                  | `true`         | เขียน Page Cache สำหรับการดึงแต่ละผลหรือไม่                                                                                           |
+| `template_id`       | string                   | -              | ID เทมเพลต **scrape** สำหรับดึงตามผลลัพธ์ (เหมือน `/v1/scrape`) URL นอก `allowedDomains` จะถูกข้าม |
+| `variables`         | object                   | -              | ตัวแปรของเทมเพลต scrape นั้น (เมื่อมี `template_id`) |
+
+### เครื่องมือค้นหาที่รองรับ
+
+#### `google` (ค่าเริ่มต้น)
+
+- **กรณีใช้**: การค้นหาเว็บทั่วไปพร้อมผลครบถ้วน
+- **ข้อดี**: ผลครอบคลุม รองรับหลายภาษาและภูมิภาค
+- **คุณสมบัติ**: คืนทั้งผลค้นหาและคำแนะนำ รองรับการกรอง safe search (ปิด/ปานกลาง/เข้มงวด)
+- **แนะนำสำหรับ**: การค้นหาทั่วไป การวิจัย การค้นพบเนื้อหา
+- **Safe Search**: รองรับพารามิเตอร์ `safe_search` ค่า 0 (ปิด), 1 (ปานกลาง), 2 (เข้มงวด), หรือ null (ค่าเริ่มต้น)
+
+## รูปแบบการตอบกลับ
+
+### การตอบกลับสำเร็จ (HTTP 200)
+
+#### การค้นหาสำเร็จ
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "title": "AlsoAsked: People Also Ask keyword research tool",
+            "url": "https://alsoasked.com/",
+            "description": "Find the questions people also ask. Enter a question, brand or search query. e.g. 'keyword research'.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "OpenAI ChatGPT Features and Benefits",
+            "url": "https://openai.com/chatgpt",
+            "description": "ChatGPT is an AI assistant that can help with writing, research, and problem-solving.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "Keyword tool",
+            "source": "Google Suggestions"
+        }
+    ]
+}
+```
+
+#### ชนิดของผลลัพธ์
+
+API คืนสองชนิด:
+
+1. **ผลการค้นหา**: รายการครบพร้อม title, URL, description และ source
+2. **คำแนะนำ**: คำค้นที่เกี่ยวข้องจากเครื่องมือค้นหา (ไม่มี URL)
+
+### การตอบกลับเมื่อผิดพลาด
+
+#### 400 — ข้อผิดพลาดการตรวจสอบ
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'google', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": ["Invalid enum value. Expected 'google', received 'invalid'"]
+    }
+}
+```
+
+#### 401 — ข้อผิดพลาดการยืนยันตัวตน
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+#### 402 — ต้องชำระเงิน
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits. Please upgrade your plan or purchase more credits."
+}
+```
+
+## แนวทางปฏิบัติที่ดี
+
+### แนวทางการเลือกเครื่องมือค้นหา
+
+1. **การค้นหาเว็บทั่วไป** → ใช้ `google` (ปัจจุบันรองรับเพียงตัวนี้)
+2. **การค้นหาหลายภาษา** → ระบุ `lang` ให้เหมาะสม
+3. **การวิจัยเชิงลึก** → ใช้หลายหน้าเพื่อผลมากขึ้น
+
+### ปรับประสิทธิภาพ
+
+- **คำขอแบบแบตช์**: ใช้ `pages` เพื่อดึงหลายหน้าในคำขอเดียวแทนการเรียกแยก
+- **กำหนดภาษา**: ระบุภาษาเพื่อผลเฉพาะภูมิภาค
+- **ปรับคำค้น**: ใช้คีย์เวิร์ดและวลีเฉพาะเจาะจงเพื่อคุณภาพผล
+
+### การจัดการข้อผิดพลาด
+
+```javascript
+try {
+    const response = await fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            query: "artificial intelligence",
+            pages: 2,
+        }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+        // Handle successful result
+        console.log("Found results:", result.data.length);
+
+        // Separate search results from suggestions
+        const searchResults = result.data.filter((item) => item.url);
+        const suggestions = result.data.filter((item) => !item.url);
+
+        console.log("Search Results:", searchResults.length);
+        console.log("Suggestions:", suggestions.length);
+    } else {
+        // Handle search failure
+        console.error("Search failed:", result.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## การใช้งาน concurrency สูง
+
+API **รองรับ concurrency สูงแบบเนทีฟ** ส่งคำขอค้นหาพร้อมกันหลายรายการได้โดยไม่ต้องกังวล rate limit:
+
+```javascript
+// ตัวอย่างการค้นหาพร้อมกัน
+const queries = ["machine learning", "artificial intelligence", "data science"];
+
+const searchPromises = queries.map((query) =>
+    fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, engine: "google", pages: 2 }),
+    }).then((res) => res.json())
+);
+
+// คำขอทั้งหมดรันพร้อมกันและคืนผลทันที
+const results = await Promise.all(searchPromises);
+console.log(`Completed ${results.length} searches simultaneously`);
+```
+
+## ขีดจำกัดอัตราและเครดิต
+
+- **ไม่มี rate limit สำหรับคำขอพร้อมกัน** — API รองรับ concurrency สูงแบบ native
+- ตรวจการใช้งานผ่าน response headers และ `BillingChargeDetails`
+
+### โมเดลเครดิต (การค้นหา + การดึงตามผลลัพธ์แบบเลือกได้)
+
+1. **`search_pages`** — ตรงกับ **`pages`** (โดยมาก 1 เครดิตต่อหน้าเป็นค่าเริ่มต้น)
+2. **`template_per_call`** — เมื่อมี **`template_id`** ระดับบนสุด (เทมเพลต **search**) เรียกเก็บ `pricing.perCall` หนึ่งครั้งต่อคำขอ
+3. เมื่อมี **`scrape_options`** และดึงตามสำเร็จ:
+   - **`search_result_scrape`** — `completed_scrape_count ×` หน่วยเอนจิน (`calculateScrapeCredits`)
+   - **`search_result_scrape_template`** — เมื่อมี **`scrape_options.template_id`** คิด `pricing.perCall` ของเทมเพลต scrape ต่อครั้งที่สำเร็จ **เฉพาะเทมเพลต search:** `metadata.charge_scrape_template_credits: false` ปิดบรรทัดนี้ (บรรทัดเอนจินยังคิด)
+
+สเปกเต็ม: ที่เก็บ **`docs/api/search-scrape-credits-and-templates.md`**
+
+## คำถามที่พบบ่อย
+
+### ถาม: ควรใช้การตั้งค่าภาษาต่างกันเมื่อไร?
+
+ตอบ:
+
+- **English (`en`)**: ผลค้นหาทั่วโลกและเนื้อหานานาชาติ
+- **Chinese (`zh`)**: เนื้อหาภาษาจีนและผลเน้นจีน
+- **รูปแบบภูมิภาค** (เช่น `en-GB`, `fr-CA`): ผลเฉพาะประเทศและเนื้อหาท้องถิ่น
+
+### ถาม: ทำไมบางการค้นหาคืนผลน้อยกว่าที่คาด?
+
+ตอบ: สาเหตุที่เป็นไปได้:
+
+- คำค้นเฉพาะเกินไปหรือใช้คำหายาก
+- ภาษาของคำค้นไม่ตรงกับพารามิเตอร์ `lang`
+- ข้อจำกัดของเครื่องมือค้นหาสำหรับหัวข้อหรือภูมิภาคบางกลุ่ม
+- ปัญหาเครือข่าย
+
+### ถาม: จัดการการค้นหาที่ต้องการภูมิภาคเฉพาะอย่างไร?
+
+ตอบ: ปัจจุบัน API เลือกภูมิภาคที่เหมาะสมจาก `lang` โดยอัตโนมัติ แนะนำ:
+
+- ใช้รหัสภาษาให้ตรงกับภูมิภาคเป้าหมาย (เช่น `en-GB` สำหรับผล UK)
+- ใส่คำค้นที่มีคำเฉพาะภูมิภาคเมื่อจำเป็น
+
+### ถาม: ผลค้นหากับคำแนะนำต่างกันอย่างไร?
+
+ตอบ:
+
+- **ผลการค้นหา**: รายการครบพร้อม title, URL, description และ source
+- **คำแนะนำ**: คำค้นที่เกี่ยวข้องโดยไม่มี URL เหมาะสำหรับขยายคำค้น
+
+### ถาม: มี rate limit สำหรับคำขอค้นหาพร้อมกันหรือไม่?
+
+ตอบ: ไม่ API **รองรับ concurrency สูงแบบเนทีฟ** ส่งคำขอพร้อมกันได้โดยไม่ต้องกังวล rate limit และคืนข้อมูลทันที
+
+## การรองรับภาษาและภูมิภาค
+
+Search API รองรับหลายภาษาและภูมิภาคผ่านพารามิเตอร์ `lang` รายการ locale ที่รองรับมีดังนี้:
+
+### ภาษาหลัก
+
+- `all` - All languages
+
+#### **English** 🌐
+
+- `en` - Global English
+- `en-AU` - English (Australia) 🇦🇺
+- `en-CA` - English (Canada) 🇨🇦
+- `en-GB` - English (United Kingdom) 🇬🇧
+- `en-IE` - English (Ireland) 🇮🇪
+- `en-IN` - English (India) 🇮🇳
+- `en-NZ` - English (New Zealand) 🇳🇿
+- `en-PH` - English (Philippines) 🇵🇭
+- `en-PK` - English (Pakistan) 🇵🇰
+- `en-SG` - English (Singapore) 🇸🇬
+- `en-US` - English (United States) 🇺🇸
+- `en-ZA` - English (South Africa) 🇿🇦
+
+#### **Chinese** 🌐
+
+- `zh` - Global Chinese
+- `zh-CN` - Chinese (China) 🇨🇳
+- `zh-HK` - Chinese (Hong Kong) 🇭🇰
+- `zh-TW` - Chinese (Taiwan) 🇹🇼
+
+#### **Spanish** 🌐
+
+- `es` - Global Spanish
+- `es-AR` - Spanish (Argentina) 🇦🇷
+- `es-CL` - Spanish (Chile) 🇨🇱
+- `es-CO` - Spanish (Colombia) 🇨🇴
+- `es-ES` - Spanish (Spain) 🇪🇸
+- `es-MX` - Spanish (Mexico) 🇲🇽
+- `es-PE` - Spanish (Peru) 🇵🇪
+
+#### **French** 🌐
+
+- `fr` - Global French
+- `fr-BE` - French (Belgium) 🇧🇪
+- `fr-CA` - French (Canada) 🇨🇦
+- `fr-CH` - French (Switzerland) 🇨🇭
+- `fr-FR` - French (France) 🇫🇷
+
+#### **German** 🌐
+
+- `de` - Global German
+- `de-AT` - German (Austria) 🇦🇹
+- `de-BE` - German (Belgium) 🇧🇪
+- `de-CH` - German (Switzerland) 🇨🇭
+- `de-DE` - German (Germany) 🇩🇪
+
+#### **Portuguese** 🌐
+
+- `pt` - Global Portuguese
+- `pt-BR` - Portuguese (Brazil) 🇧🇷
+- `pt-PT` - Portuguese (Portugal) 🇵🇹
+
+#### **Italian** 🌐
+
+- `it` - Global Italian
+- `it-CH` - Italian (Switzerland) 🇨🇭
+- `it-IT` - Italian (Italy) 🇮🇹
+
+#### **Japanese** 🌐
+
+- `ja` - Global Japanese
+- `ja-JP` - Japanese (Japan) 🇯🇵
+
+#### **Korean** 🌐
+
+- `ko` - Global Korean
+- `ko-KR` - Korean (South Korea) 🇰🇷
+
+#### **Russian** 🌐
+
+- `ru` - Global Russian
+- `ru-RU` - Russian (Russia) 🇷🇺
+
+### ภาษายุโรป
+
+#### **Dutch** 🌐
+
+- `nl` - Global Dutch
+- `nl-BE` - Dutch (Belgium) 🇧🇪
+- `nl-NL` - Dutch (Netherlands) 🇳🇱
+
+#### **Polish** 🌐
+
+- `pl` - Global Polish
+- `pl-PL` - Polish (Poland) 🇵🇱
+
+#### **Czech** 🌐
+
+- `cs` - Global Czech
+- `cs-CZ` - Czech (Czech Republic) 🇨🇿
+
+#### **Hungarian** 🌐
+
+- `hu` - Global Hungarian
+- `hu-HU` - Hungarian (Hungary) 🇭🇺
+
+#### **Romanian** 🌐
+
+- `ro` - Global Romanian
+- `ro-RO` - Romanian (Romania) 🇷🇴
+
+#### **Greek** 🌐
+
+- `el` - Global Greek
+- `el-GR` - Greek (Greece) 🇬🇷
+
+#### **Bulgarian** 🌐
+
+- `bg` - Global Bulgarian
+- `bg-BG` - Bulgarian (Bulgaria) 🇧🇬
+
+#### **Croatian** 🌐
+
+- `hr` - Global Croatian
+
+#### **Slovak** 🌐
+
+- `sk` - Global Slovak
+
+#### **Slovenian** 🌐
+
+- `sl` - Global Slovenian
+
+#### **Estonian** 🌐
+
+- `et` - Global Estonian
+- `et-EE` - Estonian (Estonia) 🇪🇪
+
+#### **Latvian** 🌐
+
+- `lv` - Global Latvian
+
+#### **Lithuanian** 🌐
+
+- `lt` - Global Lithuanian
+
+#### **Finnish** 🌐
+
+- `fi` - Global Finnish
+- `fi-FI` - Finnish (Finland) 🇫🇮
+
+#### **Swedish** 🌐
+
+- `sv` - Global Swedish
+- `sv-SE` - Swedish (Sweden) 🇸🇪
+
+#### **Norwegian** 🌐
+
+- `nb` - Norwegian Bokmål
+- `nb-NO` - Norwegian Bokmål (Norway) 🇳🇴
+
+#### **Danish** 🌐
+
+- `da` - Global Danish
+- `da-DK` - Danish (Denmark) 🇩🇰
+
+#### **Icelandic** 🌐
+
+- `is` - Global Icelandic
+
+### ภาษาอื่นๆ
+
+#### **Arabic** 🌐
+
+- `ar` - Global Arabic
+- `ar-SA` - Arabic (Saudi Arabia) 🇸🇦
+
+#### **Hebrew** 🇮🇱
+
+- `he` - Hebrew
+
+#### **Turkish** 🌐
+
+- `tr` - Global Turkish
+- `tr-TR` - Turkish (Turkey) 🇹🇷
+
+#### **Persian** 🌐
+
+- `fa` - Persian
+
+#### **Hindi** 🌐
+
+- `hi` - Hindi
+
+#### **Urdu** 🌐
+
+- `ur` - Urdu
+
+#### **Thai** 🌐
+
+- `th` - Global Thai
+- `th-TH` - Thai (Thailand) 🇹🇭
+
+#### **Vietnamese** 🌐
+
+- `vi` - Global Vietnamese
+- `vi-VN` - Vietnamese (Vietnam) 🇻🇳
+
+#### **Indonesian** 🌐
+
+- `id` - Global Indonesian
+- `id-ID` - Indonesian (Indonesia) 🇮🇩
+
+#### **ภาษาอินเดีย**
+
+- `kn` - Kannada 🌐
+- `ml` - Malayalam 🌐
+- `mr` - Marathi 🌐
+- `ta` - Tamil 🌐
+- `te` - Telugu 🌐
+
+#### **ภาษายุโรปอื่นๆ**
+
+- `af` - Afrikaans 🌐
+- `be` - Belarusian 🌐
+- `ca` - Catalan 🌐
+- `cy` - Welsh 🌐
+- `eu` - Basque 🌐
+- `ga` - Irish 🌐
+- `gd` - Scottish Gaelic 🌐
+- `gl` - Galician 🌐
+- `sq` - Albanian 🌐
+- `uk` - Ukrainian 🌐
+
+### หมายเหตุการใช้งาน
+
+- **รหัสแบบ global** (เช่น `en`, `zh`, `es`) ให้ผลค้นหากว้างขึ้นโดยไม่จำกัดประเทศ
+- **รหัสเฉพาะประเทศ** (เช่น `en-US`, `zh-CN`, `es-MX`) คืนผลท้องถิ่นสำหรับภูมิภาคนั้น
+- API เลือกโดเมน Google และการตั้งค่าภาษาที่เหมาะสมจาก locale ที่คุณระบุ
+- เพื่อผลดีที่สุด ให้ `lang` สอดคล้องกับภาษาของคำค้น

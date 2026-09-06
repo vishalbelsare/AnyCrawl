@@ -3,7 +3,7 @@ import { z } from "zod";
 import { RequestWithAuth } from "@anycrawl/libs";
 import { s3 } from "@anycrawl/libs";
 import { Utils } from "@anycrawl/scrape/Utils";
-import { join } from 'path';
+import { basename, join, resolve } from 'path';
 
 const pathSchema = z.object({
     path: z.string().min(1, "Path is required")
@@ -18,9 +18,13 @@ export class FileController {
                 res.redirect(url);
             } else {
                 const utils = Utils.getInstance();
-                const storageName = utils.getStorageName();
-                const projectRoot = join(process.cwd(), '..', '..');
-                const filePath = join(projectRoot, 'storage', 'key_value_stores', storageName, path);
+                if (path === "." || path === ".." || path.includes("/") || path.includes("\\") || basename(path) !== path) {
+                    res.status(400).json({ error: 'Invalid path' });
+                    return;
+                }
+
+                const storageRoot = resolve(process.env.ANYCRAWL_LOCAL_STORAGE_DIR || join(process.cwd(), '..', '..', 'storage'));
+                const filePath = join(storageRoot, 'key_value_stores', utils.getStorageName(), path);
                 res.sendFile(filePath, (err) => {
                     if (err) {
                         console.error('Error sending file:', err);

@@ -1,33 +1,78 @@
 import { Response } from "express";
 import { z } from "zod";
-import { SearchService } from "@anycrawl/search/SearchService";
+import { SearchService, getSearchConfig } from "@anycrawl/search/SearchService";
 import { log } from "@anycrawl/libs/log";
-import { searchSchema, RequestWithAuth, CreditCalculator, WebhookEventType, estimateTaskCredits, getCacheConfig } from "@anycrawl/libs";
+import { searchSchema, RequestWithAuth, CreditCalculator, WebhookEventType, estimateTaskCredits, getCacheConfig, appConfig } from "@anycrawl/libs";
 import { randomUUID } from "crypto";
-import { STATUS, createJob, insertJobResult, completedJob, failedJob, updateJobCounts, updateJobCacheHits, JOB_RESULT_STATUS } from "@anycrawl/db";
+import { STATUS, createJob, insertJobResult, completedJob, failedJob, updateJobCounts, updateJobCacheHits, JOB_RESULT_STATUS, writeResultToDataset, assertDatasetWritable, parseDatasetOutput, standardDatasetMapping, DatasetWriteError, type ParsedDatasetOutput, type DatasetMapping } from "@anycrawl/db";
+import type { OwnerContext } from "@anycrawl/libs";
 import { QueueManager, CacheManager } from "@anycrawl/scrape";
-import { TemplateHandler, TemplateVariableMapper } from "../../utils/templateHandler.js";
+import { TemplateHandler, validateVariables, applyVariableDefaults } from "../../utils/templateHandler.js";
 import { validateTemplateOnlyFields } from "../../utils/templateValidator.js";
+import { mergeOptionsWithTemplate } from "../../utils/optionMerger.js";
+import { DomainValidator } from "@anycrawl/template-client";
 import { renderTextTemplate } from "../../utils/urlTemplate.js";
 import { triggerWebhookEvent } from "../../utils/webhookHelper.js";
+
+const getBrowserRuntimeForCache = (engine?: string | null): string | undefined =>
+    engine === "playwright" || engine === "puppeteer" ? "cloakbrowser" : undefined;
+
 export class SearchController {
     private searchService: SearchService;
 
     constructor() {
-        this.searchService = new SearchService({
-            defaultEngine: process.env.ANYCRAWL_SEARCH_DEFAULT_ENGINE,
-            enabledEngines: process.env.ANYCRAWL_SEARCH_ENABLED_ENGINES?.split(',').map(e => e.trim()),
-            searxngUrl: process.env.ANYCRAWL_SEARXNG_URL,
-            acEngineUrl: process.env.ANYCRAWL_AC_ENGINE_URL,
-        });
+        this.searchService = new SearchService(getSearchConfig());
         log.info("SearchController initialized");
     }
+
+    /**
+     * Run the Dataset Writer for the assembled search results and return the
+     * `dataset` splice. Fail-closed: Writer errors become `{ status: "failed" }`
+     * so search data is never dropped and the response never becomes a 500.
+     */
+    private writeDatasetSafe = async (args: {
+        datasetOutput: ParsedDatasetOutput;
+        mapping: DatasetMapping;
+        owner: OwnerContext;
+        jobId: string;
+        result: unknown;
+    }): Promise<Record<string, unknown>> => {
+        try {
+            const outcome = await writeResultToDataset({
+                producerType: "search",
+                producerId: args.jobId,
+                jobId: args.jobId,
+                scope: { kind: "job", jobId: args.jobId },
+                scopeType: "search",
+                result: args.result,
+                mapping: args.mapping,
+                owner: args.owner,
+                dataset: args.datasetOutput.dataset,
+            });
+            return {
+                dataset_id: outcome.datasetId,
+                dataset_run_id: outcome.datasetRunId,
+                status: outcome.status,
+            };
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            log.warning(`[SEARCH] Dataset write failed for job ${args.jobId}: ${message}`);
+            return { status: "failed", warning: message };
+        }
+    };
 
     public handle = async (req: RequestWithAuth, res: Response): Promise<void> => {
         let searchJobId: string | null = null;
         let engineName: string | null = null;
         let defaultPrice: number = 0;
+        /** Search-template metadata: when false, do not bill scrape template perCall for follow-up scrapes. */
+        let chargeScrapeTemplateCreditsForFollowup = true;
         try {
+            // Dataset output is an additive, non-schema field: capture from the raw
+            // body up front, then strip it before schema parsing so the no-dataset
+            // path is unchanged.
+            const rawDatasetOutput = (req.body && typeof req.body === "object") ? (req.body as any).output : undefined;
+
             // Merge template options with request body before parsing
             let requestData = { ...req.body };
 
@@ -44,6 +89,10 @@ export class SearchController {
                     currentUserId
                 );
                 defaultPrice = TemplateHandler.reslovePrice(requestData.template, "credits", "perCall");
+                const stMeta = requestData.template?.metadata as { charge_scrape_template_credits?: boolean } | undefined;
+                if (stMeta && typeof stMeta.charge_scrape_template_credits === "boolean") {
+                    chargeScrapeTemplateCreditsForFollowup = stMeta.charge_scrape_template_credits;
+                }
 
                 // Remove template field before schema validation (schemas use strict mode)
                 delete requestData.template;
@@ -56,15 +105,98 @@ export class SearchController {
                 }
             } catch { /* ignore render errors; schema will validate later */ }
 
+            // Never feed `output` to the search schema (unknown keys are stripped,
+            // but strip explicitly to keep intent clear and behavior stable).
+            if (requestData && typeof requestData === "object") delete (requestData as any).output;
+
             // Validate and parse the merged data
             const validatedData = searchSchema.parse(requestData);
 
+            // Resolve the dataset output config (null unless output.dataset present).
+            const datasetOutput = parseDatasetOutput(rawDatasetOutput, { defaultName: `Search ${validatedData.query}` });
+            const datasetMapping = standardDatasetMapping("search");
+            const datasetOwner: OwnerContext = { apiKeyId: req.auth?.uuid, userId: req.auth?.user };
+            if (datasetOutput) {
+                // Eagerly validate an existing dataset before running the search.
+                try {
+                    await assertDatasetWritable({ owner: datasetOwner, dataset: datasetOutput.dataset, mapping: datasetMapping });
+                } catch (dsError) {
+                    if (dsError instanceof DatasetWriteError) {
+                        req.creditsUsed = 0;
+                        req.billingChargeDetails = undefined;
+                        res.status(dsError.httpStatus).json({ success: false, error: dsError.code, message: dsError.message });
+                        return;
+                    }
+                    throw dsError;
+                }
+            }
+
+            let mergedSearchScrapeOptions = validatedData.scrape_options;
+            let scrapeFollowTemplatePerCall = 0;
+            let scrapeFollowDomainRestriction: ReturnType<typeof DomainValidator.parseDomainRestriction> = undefined;
+
+            if (validatedData.scrape_options?.template_id) {
+                const uid = req.auth?.user ? String(req.auth.user) : undefined;
+                const tr = await TemplateHandler.getTemplateOptions(
+                    validatedData.scrape_options.template_id,
+                    "scrape",
+                    uid
+                );
+                if (!tr.success || !tr.template || !tr.templateOptions) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Validation error",
+                        message: tr.error || "Invalid scrape template for search follow-up",
+                    });
+                    return;
+                }
+                try {
+                    validateVariables(
+                        tr.template.variables,
+                        validatedData.scrape_options.variables,
+                        validatedData.scrape_options
+                    );
+                } catch (ve) {
+                    res.status(400).json({
+                        success: false,
+                        error: "Validation error",
+                        message: ve instanceof Error ? ve.message : String(ve),
+                    });
+                    return;
+                }
+                const variablesWithDefaults = applyVariableDefaults(
+                    tr.template.variables,
+                    validatedData.scrape_options.variables
+                );
+                mergedSearchScrapeOptions = mergeOptionsWithTemplate(
+                    tr.templateOptions as Record<string, unknown>,
+                    {
+                        ...validatedData.scrape_options,
+                        ...(variablesWithDefaults !== undefined ? { variables: variablesWithDefaults } : {}),
+                    }
+                ) as typeof validatedData.scrape_options;
+                scrapeFollowTemplatePerCall = TemplateHandler.reslovePrice(tr.template, "credits", "perCall");
+                if (!chargeScrapeTemplateCreditsForFollowup) {
+                    scrapeFollowTemplatePerCall = 0;
+                }
+                scrapeFollowDomainRestriction = DomainValidator.parseDomainRestriction(
+                    tr.template.metadata?.allowedDomains
+                );
+            }
+
+            const searchEstimatePayload = {
+                ...validatedData,
+                scrape_options: mergedSearchScrapeOptions ?? validatedData.scrape_options,
+            };
+
             // Pre-check if user has enough credits
-            if (req.auth && process.env.ANYCRAWL_API_AUTH_ENABLED === "true" && process.env.ANYCRAWL_API_CREDITS_ENABLED === "true") {
+            if (req.auth && appConfig.authEnabled && appConfig.creditsEnabled) {
                 const userCredits = req.auth.credits;
 
                 // Use estimateTaskCredits for accurate credit estimation
-                const estimatedCredits = defaultPrice + estimateTaskCredits('search', validatedData);
+                const estimatedCredits =
+                    defaultPrice +
+                    estimateTaskCredits("search", searchEstimatePayload, { scrapeFollowTemplatePerCall });
 
                 if (estimatedCredits > userCredits) {
                     res.status(402).json({
@@ -159,26 +291,30 @@ export class SearchController {
                             JOB_RESULT_STATUS.FAILED
                         );
                     } else {
-                        if (validatedData.scrape_options) {
-                            const scrapeOptions = validatedData.scrape_options;
+                        if (mergedSearchScrapeOptions) {
+                            const scrapeOptions = mergedSearchScrapeOptions;
                             const engineForScrape = scrapeOptions.engine!;
                             const maxAge = scrapeOptions.max_age;
                             const effectiveMaxAge = maxAge ?? cacheConfig.defaultMaxAge;
-                            const shouldCheckCache = cacheConfig.pageCacheEnabled && (maxAge === undefined || maxAge > 0);
+                            const shouldCheckCache =
+                                cacheConfig.pageCacheEnabled &&
+                                (maxAge === undefined || maxAge > 0) &&
+                                !scrapeOptions.template_id;
                             const cacheOptions = {
                                 engine: engineForScrape,
+                                browser_runtime: getBrowserRuntimeForCache(engineForScrape),
                                 formats: scrapeOptions.formats,
                                 json_options: scrapeOptions.json_options,
                                 include_tags: scrapeOptions.include_tags,
                                 exclude_tags: scrapeOptions.exclude_tags,
                                 proxy: scrapeOptions.proxy,
-                                only_main_content: (scrapeOptions as any).only_main_content,
+                                only_main_content: scrapeOptions.only_main_content,
                                 extract_source: scrapeOptions.extract_source,
                                 ocr_options: scrapeOptions.ocr_options,
                                 wait_for: scrapeOptions.wait_for,
                                 wait_until: scrapeOptions.wait_until,
                                 wait_for_selector: scrapeOptions.wait_for_selector,
-                                template_id: (scrapeOptions as any).template_id,
+                                template_id: scrapeOptions.template_id,
                                 store_in_cache: scrapeOptions.store_in_cache,
                             };
                             // Respect global limit across pages
@@ -187,6 +323,15 @@ export class SearchController {
                             for (const result of toProcess) {
                                 if (!result.url) continue; // Ensure url is a string for RequestTask
                                 const resultUrl = result.url as string;
+                                if (scrapeFollowDomainRestriction) {
+                                    const domainCheck = DomainValidator.validateDomain(
+                                        resultUrl,
+                                        scrapeFollowDomainRestriction
+                                    );
+                                    if (!domainCheck.isValid) {
+                                        continue;
+                                    }
+                                }
                                 if (shouldCheckCache) {
                                     const cached = await cacheManager.getFromCache(
                                         resultUrl,
@@ -204,13 +349,16 @@ export class SearchController {
                                         continue;
                                     }
                                 }
-                                // Extract engine from scrapeOptions and pass remaining options
-                                const { engine: _engine, ...options } = scrapeOptions;
+                                const {
+                                    engine: _engine,
+                                    variables: templateVars,
+                                    ...optionsSansEngine
+                                } = scrapeOptions as typeof scrapeOptions & { variables?: Record<string, unknown> };
                                 const jobPayload = {
                                     url: resultUrl,
                                     engine: engineForScrape,
-                                    options,
-                                    // Pass search job ID as parent ID for result recording
+                                    templateVariables: templateVars ?? {},
+                                    options: optionsSansEngine,
                                     parentId: searchJobId,
                                 };
                                 log.info(`Scrape job payload: ${JSON.stringify(jobPayload)}`);
@@ -299,10 +447,11 @@ export class SearchController {
             // Calculate credits using CreditCalculator
             req.billingChargeDetails = CreditCalculator.buildSearchChargeDetails({
                 pages: validatedData.pages,
-                scrape_options: validatedData.scrape_options,
+                scrape_options: mergedSearchScrapeOptions ?? validatedData.scrape_options,
                 completedScrapeCount,
             }, {
                 templateCredits: defaultPrice,
+                scrapeFollowTemplatePerCall,
             });
             req.creditsUsed = req.billingChargeDetails.total;
 
@@ -353,10 +502,17 @@ export class SearchController {
             } catch (e) {
                 log.error(`Failed to mark job final status for job_id=${searchJobId}: ${e instanceof Error ? e.message : String(e)}`);
             }
-            res.json({
-                success: true,
-                data: results,
-            });
+            const searchResponse: Record<string, unknown> = { success: true, data: results };
+            if (datasetOutput) {
+                searchResponse.dataset = await this.writeDatasetSafe({
+                    datasetOutput,
+                    mapping: datasetMapping,
+                    owner: datasetOwner,
+                    jobId: searchJobId!,
+                    result: results,
+                });
+            }
+            res.json(searchResponse);
         } catch (error) {
             if (error instanceof z.ZodError) {
                 const formattedErrors = error.errors.map((err) => ({

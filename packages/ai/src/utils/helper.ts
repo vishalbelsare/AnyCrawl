@@ -5,6 +5,25 @@ import { ConfigModelDetail } from './types.js';
 
 let aiConfig: any = getAIConfig();
 
+const getModelDetailConfig = (modelId: string) => {
+    const segments = modelId.split('/');
+    const candidates = [
+        modelId,
+        modelId.includes('/') ? modelId.slice(modelId.indexOf('/') + 1) : null,
+        modelId.includes('/') ? segments.slice(-2).join('/') : null,
+        modelId.includes('/') ? segments[segments.length - 1] ?? null : null,
+    ].filter(Boolean) as string[];
+
+    for (const candidate of candidates) {
+        const detailConfig = modelsConfig[candidate as keyof typeof modelsConfig];
+        if (detailConfig) {
+            return detailConfig;
+        }
+    }
+
+    return null;
+}
+
 // Allow external callers (e.g., scrape worker) to refresh config after ensureAIConfigLoaded()
 export const refreshAIConfig = (): void => {
     aiConfig = getAIConfig();
@@ -42,13 +61,10 @@ const getAvailableModels = () => {
         if (!defaultModel) {
             throw new Error('DEFAULT_LLM_MODEL is not set');
         }
-        const detailConfig = modelsConfig[defaultModel as keyof typeof modelsConfig];
-        if (!detailConfig) {
-            throw new Error('DEFAULT_LLM_MODEL is not set');
-        }
+        const detailConfig = getModelDetailConfig(defaultModel);
         modelOptions.push({
             value: defaultModel,
-            label: (detailConfig as any)?.displayName ?? defaultModel,
+            label: detailConfig?.displayName ?? defaultModel,
         });
     }
     return modelOptions;
@@ -83,15 +99,13 @@ const getEnabledProviderModels = () => {
     } else {
         const defaultModel = process.env.DEFAULT_LLM_MODEL;
         if (defaultModel) {
-            const detailConfig = modelsConfig[defaultModel as keyof typeof modelsConfig];
-            if (detailConfig) {
-                enabledModels.push({
-                    modelName: defaultModel,
-                    displayName: (detailConfig as any)?.displayName ?? defaultModel,
-                    provider: 'env',
-                    modelId: defaultModel
-                });
-            }
+            const detailConfig = getModelDetailConfig(defaultModel);
+            enabledModels.push({
+                modelName: defaultModel,
+                displayName: detailConfig?.displayName ?? defaultModel,
+                provider: 'env',
+                modelId: defaultModel
+            });
         }
     }
 

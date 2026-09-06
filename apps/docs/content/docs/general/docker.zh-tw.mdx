@@ -1,0 +1,427 @@
+---
+title: Docker 部署
+description: 使用 Docker 自行部署 AnyCrawl 的逐步指南，包含設定選項與最佳實踐
+icon: Hammer
+---
+
+## 使用預建映像的 Docker
+
+AnyCrawl 透過 GitHub Container Registry 提供預建的 Docker 映像。您可以快速部署 AnyCrawl，無需從原始碼建構。
+
+### 可用的預建映像
+
+以下映像可從 [GitHub Container Registry](https://github.com/any4ai/AnyCrawl/packages) 取得：
+
+- **anycrawl**：AnyCrawl 的一體化映像，包含所有服務和相依套件。
+- **anycrawl-api**：主要 API 服務
+- **anycrawl-scrape-cheerio**：Cheerio 擷取引擎
+- **anycrawl-scrape-playwright**：Playwright 擷取引擎
+- **anycrawl-scrape-puppeteer**：Puppeteer 擷取引擎
+
+## 快速開始
+
+AnyCrawl 建構了一體化映像，預建映像為 `ghcr.io/any4ai/anycrawl:latest`，包含所有服務和相依套件。您可以使用以下命令執行：
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+- 注意：arm64 架構的映像不包含 `scrape-puppeteer` 服務。如果您確實需要使用 puppeteer，可以在 docker run 命令中將平台設定為 `linux/amd64`，如下所示：
+
+```bash
+docker run -p 8080:8080 --platform linux/amd64 ghcr.io/any4ai/anycrawl:latest
+```
+
+> 注意：這會影響效能，低於原生 arm64 映像。
+
+在背景執行：
+
+```bash
+docker run -d -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+如果您想在 Arm64 架構上執行（不支援 puppeteer），可以使用以下命令：
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest-arm64
+```
+
+### 使用環境變數
+
+```bash
+# Run with custom configuration
+docker run -d \
+  -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e ANYCRAWL_API_AUTH_ENABLED=false \
+  -e ANYCRAWL_HEADLESS=true \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+### 使用 .env 檔案
+
+```bash
+# Run with local .env file
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/.env:/usr/src/app/.env:ro \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+## Docker 建構
+
+如果您想建構自己的映像，可以依照以下步驟操作。
+
+### 前置需求
+
+在開始之前，請確保您的系統已安裝以下軟體：
+
+- **Docker**：版本 20.10 或更高
+- **Docker Compose**：版本 2.0 或更高
+
+### 安裝 Docker 和 Docker Compose
+
+#### macOS
+
+```bash
+# 使用 Homebrew 安裝
+brew install docker docker-compose
+
+# 或者下載 Docker Desktop
+# https://www.docker.com/products/docker-desktop
+```
+
+#### Ubuntu/Debian
+
+```bash
+# 安裝 Docker
+# Add Docker's official GPG key:
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the repository to Apt sources:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+## 快速開始
+
+### 1. 複製儲存庫
+
+```bash
+git clone https://github.com/any4ai/AnyCrawl.git
+cd AnyCrawl
+```
+
+### 2. 啟動服務
+
+```bash
+# 建構並啟動所有服務
+docker compose up --build
+
+# 或者在背景執行
+docker compose up --build -d
+```
+
+### 3. 驗證部署
+
+```bash
+# 檢查服務狀態
+docker compose ps
+
+# 測試 API 是否正常運作
+curl http://localhost:8080/health
+```
+
+## 服務架構
+
+AnyCrawl 採用微服務架構，包含以下服務：
+
+### 核心服務
+
+| 服務名稱            | 說明                             | 連接埠 | 相依性 |
+| ------------------- | -------------------------------- | ------ | ------ |
+| `api`               | API 閘道和主要服務介面           | 8080   | redis  |
+| `scrape-puppeteer`  | Puppeteer 擷取引擎               | -      | redis  |
+| `scrape-playwright` | Playwright 擷取引擎              | -      | redis  |
+| `scrape-cheerio`    | Cheerio 擷取引擎（不支援 SPA）   | -      | redis  |
+| `redis`             | 訊息佇列和快取                   | 6379   | -      |
+
+## 環境變數設定
+
+### 基本設定
+
+| 變數名稱            | 說明         | 預設值       | 範例                        |
+| ------------------- | ------------ | ------------ | --------------------------- |
+| `NODE_ENV`          | 執行環境     | `production` | `production`, `development` |
+| `ANYCRAWL_API_PORT` | API 服務連接埠 | `8080`     | `8080`                      |
+
+### 擷取設定
+
+| 變數名稱                         | 說明                                     | 預設值   | 範例                             |
+| -------------------------------- | ---------------------------------------- | -------- | -------------------------------- |
+| `ANYCRAWL_HEADLESS`              | 是否使用無頭模式                         | `true`   | `true`, `false`                  |
+| `ANYCRAWL_PROXY_URL`             | 基礎代理伺服器位址                       | -        | `http://proxy:8080`              |
+| `ANYCRAWL_PROXY_STEALTH_URL`     | 隱匿代理伺服器位址                       | -        | `http://residential-proxy:8080`  |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | 使用隱匿代理時額外消耗的積分             | `5`      | `5`                              |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS`    | 隱匿/auto 代理模式預設逾時（毫秒）       | `120000` | `120000`                         |
+| `ANYCRAWL_IGNORE_SSL_ERROR`      | 忽略 SSL 錯誤                            | `true`   | `true`, `false`                  |
+
+### 資料庫設定
+
+| 變數名稱                       | 說明             | 預設值                        |
+| ------------------------------ | ---------------- | ----------------------------- |
+| `ANYCRAWL_API_DB_TYPE`         | 資料庫類型       | `sqlite`                      |
+| `ANYCRAWL_API_DB_CONNECTION`   | 資料庫連線路徑   | `/usr/src/app/db/database.db` |
+
+### Redis 設定
+
+| 變數名稱             | 說明             | 預設值               |
+| -------------------- | ---------------- | -------------------- |
+| `ANYCRAWL_REDIS_URL` | Redis 連線位址   | `redis://redis:6379` |
+
+### 驗證設定
+
+| 變數名稱                      | 說明                | 預設值  |
+| ----------------------------- | ------------------- | ------- |
+| `ANYCRAWL_API_AUTH_ENABLED`   | 是否啟用 API 驗證   | `false` |
+
+## 自訂設定
+
+### 建立環境設定檔
+
+```bash
+# 建立 .env 檔案
+cp .env.example .env
+```
+
+### 範例 .env 檔案
+
+```bash
+# 基本設定
+NODE_ENV=production
+ANYCRAWL_API_PORT=8080
+
+# 擷取設定
+ANYCRAWL_HEADLESS=true
+ANYCRAWL_PROXY_URL=
+ANYCRAWL_PROXY_STEALTH_URL=
+ANYCRAWL_PROXY_STEALTH_CREDITS=5
+ANYCRAWL_STEALTH_TIMEOUT_MS=120000
+ANYCRAWL_IGNORE_SSL_ERROR=true
+
+# 資料庫設定
+ANYCRAWL_API_DB_TYPE=sqlite
+ANYCRAWL_API_DB_CONNECTION=/usr/src/app/db/database.db
+
+# Redis 設定
+ANYCRAWL_REDIS_URL=redis://redis:6379
+
+# 驗證設定
+ANYCRAWL_API_AUTH_ENABLED=false
+```
+
+## 資料持久化
+
+### 儲存卷
+
+AnyCrawl 使用以下卷來持久化資料：
+
+```yaml
+volumes:
+    - ./storage:/usr/src/app/storage # 擷取資料儲存
+    - ./db:/usr/src/app/db # 資料庫檔案
+    - redis-data:/data # Redis 資料
+```
+
+### 備份資料
+
+```bash
+# 備份資料庫
+docker compose exec api cp /usr/src/app/db/database.db /usr/src/app/storage/backup.db
+
+# 備份 Redis 資料
+docker compose exec redis redis-cli SAVE
+docker compose cp redis:/data/dump.rdb ./backup/
+```
+
+## 常用命令
+
+### 服務管理
+
+```bash
+# 啟動服務
+docker compose up -d
+
+# 停止服務
+docker compose down
+
+# 重新啟動特定服務
+docker compose restart api
+
+# 檢視服務記錄
+docker compose logs -f api
+```
+
+### 擴展服務
+
+```bash
+# 擴展擷取服務實例
+docker compose up -d --scale scrape-puppeteer=3
+docker compose up -d --scale scrape-playwright=2
+```
+
+## 監控命令
+
+```bash
+# 檢視服務狀態
+docker compose ps
+
+# 檢視資源使用情況
+docker stats
+
+# 檢視特定服務記錄
+docker compose logs -f --tail=100 api
+```
+
+## 疑難排解
+
+### 常見問題
+
+#### 1. 連接埠衝突
+
+```bash
+# 檢查連接埠使用情況
+lsof -i :8080
+
+# 修改連接埠對應
+# 在 docker-compose.yml 中修改 ports 設定
+ports:
+  - "8081:8080"  # 將本機連接埠改為 8081
+```
+
+#### 2. 記憶體不足
+
+```bash
+# 檢查容器記憶體使用情況
+docker stats
+
+# 增加 Docker 可用記憶體（Docker Desktop）
+# Docker Desktop -> Settings -> Resources -> Memory
+```
+
+#### 3. 資料庫連線失敗
+
+```bash
+# 檢查資料庫檔案權限
+ls -la ./db/
+
+# 重新建立資料庫卷
+docker compose down -v
+docker compose up --build
+```
+
+#### 4. Redis 連線失敗
+
+```bash
+# 檢查 Redis 服務狀態
+docker compose exec redis redis-cli ping
+
+# 檢視 Redis 記錄
+docker compose logs redis
+```
+
+### 偵錯模式
+
+啟用偵錯模式進行問題排查：
+
+```bash
+# 設定環境變數啟用偵錯
+export NODE_ENV=development
+export DEBUG=anycrawl:*
+
+# 啟動服務
+docker compose up --build
+```
+
+## 正式環境部署
+
+### 安全設定
+
+1. **啟用驗證**：
+
+```bash
+ANYCRAWL_API_AUTH_ENABLED=true
+```
+
+啟用驗證後，您需要新增 ApiKey 並在請求標頭中使用。
+
+### 產生 API 金鑰
+
+如果您已啟用驗證（`ANYCRAWL_API_AUTH_ENABLED=true`），請從儲存庫根目錄產生 API 金鑰：
+
+```bash
+pnpm --filter api key:generate
+# 可選擇為金鑰命名
+pnpm --filter api key:generate -- default
+```
+
+此命令會輸出 `uuid`、`key` 和 `credits`。在 `Authorization: Bearer <KEY>` 標頭中使用輸出的金鑰。
+
+#### 在 Docker 容器內執行
+
+如果您透過 Docker 執行，請在容器內執行命令：
+
+- 使用 Docker Compose：
+
+```bash
+docker compose exec api pnpm --filter api key:generate
+docker compose exec api pnpm --filter api key:generate -- default
+```
+
+- 使用單一容器（請替換 `<container_name_or_id>`）：
+
+```bash
+docker exec -it <container_name_or_id> pnpm --filter api key:generate
+docker exec -it <container_name_or_id> pnpm --filter api key:generate -- default
+```
+
+2. **使用 HTTPS**：
+
+參考：
+
+```yaml
+services:
+    nginx:
+        image: nginx:alpine
+        ports:
+            - "443:443"
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf
+            - ./ssl:/etc/ssl/certs
+```
+
+使用 `nginx` 作為反向代理。
+
+## 更新和維護
+
+### 更新服務
+
+```bash
+# 拉取最新映像
+docker compose pull
+
+# 重新建構並啟動
+docker compose up --build -d
+
+# 清理舊映像
+docker image prune -f
+```

@@ -1,0 +1,28 @@
+{
+    "title": "概览",
+    "description": "通用文档",
+    "root": true,
+    "icon": "Building2",
+    "pages": [
+        "---快速开始---",
+        "index",
+        "mcp",
+        "---功能---",
+        "scrape",
+        "crawl",
+        "cache",
+        "search",
+        "map",
+        "json-mode",
+        "template",
+        "---自动化---",
+        "scheduled-tasks",
+        "monitors",
+        "webhooks",
+        "---开发者指南---",
+        "mcp-setup-guides",
+        "---自行部署---",
+        "docker",
+        "proxy-rule"
+    ]
+}

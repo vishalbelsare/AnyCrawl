@@ -1,0 +1,412 @@
+---
+title: Déploiement Docker
+description: Guide pas à pas pour auto-héberger AnyCrawl avec Docker, options de configuration et bonnes pratiques
+icon: Hammer
+---
+
+## Docker avec images préconstruites
+
+AnyCrawl fournit des images Docker préconstruites via GitHub Container Registry. Vous pouvez déployer AnyCrawl rapidement sans compilation depuis les sources.
+
+### Images préconstruites disponibles
+
+Les images suivantes sont disponibles sur [GitHub Container Registry](https://github.com/any4ai/AnyCrawl/packages) :
+
+- **anycrawl** : image tout-en-un pour AnyCrawl. Elle inclut tous les services et dépendances.
+- **anycrawl-api** : service API principal
+- **anycrawl-scrape-cheerio** : moteur de scraping Cheerio
+- **anycrawl-scrape-playwright** : moteur de scraping Playwright
+- **anycrawl-scrape-puppeteer** : moteur de scraping Puppeteer
+
+## Démarrage rapide
+
+AnyCrawl propose une image tout-en-un ; l’image préconstruite est `ghcr.io/any4ai/anycrawl:latest`, qui inclut tous les services et dépendances. Vous pouvez l’exécuter avec :
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+- Remarque : l’image d’architecture arm64 n’inclut pas le service `scrape-puppeteer`. Si vous avez vraiment besoin de Puppeteer, vous pouvez définir la plateforme sur `linux/amd64` dans la commande `docker run`, par exemple :
+
+```bash
+docker run -p 8080:8080 --platform linux/amd64 ghcr.io/any4ai/anycrawl:latest
+```
+
+> Remarque : cela a un impact sur les performances, inférieur à l’image arm64 native.
+
+Exécution en arrière-plan :
+
+```bash
+docker run -d -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+Pour une architecture Arm64 (sans prise en charge de Puppeteer), utilisez :
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest-arm64
+```
+
+### Avec des variables d’environnement
+
+```bash
+# Exécution avec configuration personnalisée
+docker run -d \
+  -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e ANYCRAWL_API_AUTH_ENABLED=false \
+  -e ANYCRAWL_HEADLESS=true \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+### Avec un fichier .env
+
+```bash
+# Exécution avec un fichier .env local
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/.env:/usr/src/app/.env:ro \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+## Construction Docker
+
+Pour construire votre propre image, suivez les étapes ci-dessous.
+
+### Prérequis
+
+Avant de commencer, assurez-vous d’avoir installé :
+
+- **Docker** : version 20.10 ou supérieure
+- **Docker Compose** : version 2.0 ou supérieure
+
+### Installation de Docker et Docker Compose
+
+#### macOS
+
+```bash
+# Installation via Homebrew
+brew install docker docker-compose
+
+# Ou téléchargez Docker Desktop
+# https://www.docker.com/products/docker-desktop
+```
+
+#### Ubuntu/Debian
+
+```bash
+# Installation de Docker
+# Ajouter la clé GPG officielle de Docker :
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Ajouter le dépôt aux sources Apt :
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+## Démarrage rapide
+
+### 1. Cloner le dépôt
+
+```bash
+git clone https://github.com/any4ai/AnyCrawl.git
+cd AnyCrawl
+```
+
+### 2. Démarrer les services
+
+```bash
+# Construire et démarrer tous les services
+docker compose up --build
+
+# Ou en arrière-plan
+docker compose up --build -d
+```
+
+### 3. Vérifier le déploiement
+
+```bash
+# Vérifier l’état des services
+docker compose ps
+
+# Tester que l’API répond
+curl http://localhost:8080/health
+```
+
+## Architecture des services
+
+AnyCrawl adopte une architecture microservices avec les services suivants :
+
+### Services principaux
+
+| Nom du service      | Description                              | Port | Dépendances |
+| ------------------- | ---------------------------------------- | ---- | ----------- |
+| `api`               | Passerelle API et interface principale   | 8080 | redis       |
+| `scrape-puppeteer`  | Moteur de scraping Puppeteer             | -    | redis       |
+| `scrape-playwright` | Moteur de scraping Playwright            | -    | redis       |
+| `scrape-cheerio`    | Moteur Cheerio (pas de SPA)              | -    | redis       |
+| `redis`             | File d’attente et cache                  | 6379 | -           |
+
+## Variables d’environnement
+
+### Configuration de base
+
+| Variable            | Description           | Défaut       | Exemple                     |
+| ------------------- | --------------------- | ------------ | --------------------------- |
+| `NODE_ENV`          | Environnement d’exécution | `production` | `production`, `development` |
+| `ANYCRAWL_API_PORT` | Port du service API | `8080`       | `8080`                      |
+
+### Configuration du scraping
+
+| Variable                         | Description                                          | Défaut   | Exemple                         |
+| -------------------------------- | ---------------------------------------------------- | -------- | ------------------------------- |
+| `ANYCRAWL_HEADLESS`              | Mode sans interface                                  | `true`   | `true`, `false`                 |
+| `ANYCRAWL_PROXY_URL`             | Adresse du proxy de base                            | -        | `http://proxy:8080`             |
+| `ANYCRAWL_PROXY_STEALTH_URL`     | Adresse du proxy furtif                              | -        | `http://residential-proxy:8080` |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | Crédits supplémentaires si proxy furtif             | `5`      | `5`                             |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS`    | Délai par défaut mode furtif/auto (ms)              | `120000` | `120000`                        |
+| `ANYCRAWL_IGNORE_SSL_ERROR`      | Ignorer les erreurs SSL                              | `true`   | `true`, `false`                 |
+
+### Configuration de la base de données
+
+| Variable                     | Description              | Défaut                        |
+| ---------------------------- | ------------------------ | ----------------------------- |
+| `ANYCRAWL_API_DB_TYPE`       | Type de base             | `sqlite`                      |
+| `ANYCRAWL_API_DB_CONNECTION` | Chemin de connexion      | `/usr/src/app/db/database.db` |
+
+### Configuration Redis
+
+| Variable             | Description          | Défaut               |
+| -------------------- | -------------------- | -------------------- |
+| `ANYCRAWL_REDIS_URL` | URL de connexion Redis | `redis://redis:6379` |
+
+### Configuration de l’authentification
+
+| Variable                    | Description                | Défaut  |
+| --------------------------- | -------------------------- | ------- |
+| `ANYCRAWL_API_AUTH_ENABLED` | Activer l’auth API         | `false` |
+
+## Configuration personnalisée
+
+### Créer le fichier d’environnement
+
+```bash
+# Créer le fichier .env
+cp .env.example .env
+```
+
+### Exemple de fichier .env
+
+```bash
+# Configuration de base
+NODE_ENV=production
+ANYCRAWL_API_PORT=8080
+
+# Scraping
+ANYCRAWL_HEADLESS=true
+ANYCRAWL_PROXY_URL=
+ANYCRAWL_PROXY_STEALTH_URL=
+ANYCRAWL_PROXY_STEALTH_CREDITS=5
+ANYCRAWL_STEALTH_TIMEOUT_MS=120000
+ANYCRAWL_IGNORE_SSL_ERROR=true
+
+# Base de données
+ANYCRAWL_API_DB_TYPE=sqlite
+ANYCRAWL_API_DB_CONNECTION=/usr/src/app/db/database.db
+
+# Redis
+ANYCRAWL_REDIS_URL=redis://redis:6379
+
+# Authentification
+ANYCRAWL_API_AUTH_ENABLED=false
+```
+
+## Persistance des données
+
+### Volumes de stockage
+
+AnyCrawl utilise les volumes suivants pour la persistance :
+
+```yaml
+volumes:
+    - ./storage:/usr/src/app/storage # Données de scraping
+    - ./db:/usr/src/app/db # Fichiers de base
+    - redis-data:/data # Données Redis
+```
+
+### Sauvegarde
+
+```bash
+# Sauvegarder la base
+docker compose exec api cp /usr/src/app/db/database.db /usr/src/app/storage/backup.db
+
+# Sauvegarder Redis
+docker compose exec redis redis-cli SAVE
+docker compose cp redis:/data/dump.rdb ./backup/
+```
+
+## Commandes courantes
+
+### Gestion des services
+
+```bash
+# Démarrer les services
+docker compose up -d
+
+# Arrêter les services
+docker compose down
+
+# Redémarrer un service
+docker compose restart api
+
+# Journaux
+docker compose logs -f api
+```
+
+### Mise à l’échelle
+
+```bash
+# Augmenter le nombre d’instances de scraping
+docker compose up -d --scale scrape-puppeteer=3
+docker compose up -d --scale scrape-playwright=2
+```
+
+## Surveillance
+
+```bash
+# État des services
+docker compose ps
+
+# Utilisation des ressources
+docker stats
+
+# Journaux d’un service
+docker compose logs -f --tail=100 api
+```
+
+## Dépannage
+
+### Problèmes courants
+
+#### 1. Conflits de ports
+
+```bash
+# Vérifier l’utilisation du port
+lsof -i :8080
+
+# Modifier le mappage de ports dans docker-compose.yml
+ports:
+  - "8081:8080"  # Port local 8081
+```
+
+#### 2. Mémoire insuffisante
+
+```bash
+docker stats
+
+# Augmenter la mémoire (Docker Desktop)
+# Docker Desktop -> Settings -> Resources -> Memory
+```
+
+#### 3. Échec de connexion à la base
+
+```bash
+ls -la ./db/
+
+docker compose down -v
+docker compose up --build
+```
+
+#### 4. Échec de connexion à Redis
+
+```bash
+docker compose exec redis redis-cli ping
+
+docker compose logs redis
+```
+
+### Mode débogage
+
+```bash
+export NODE_ENV=development
+export DEBUG=anycrawl:*
+
+docker compose up --build
+```
+
+## Déploiement en production
+
+### Sécurité
+
+1. **Activer l’authentification** :
+
+```bash
+ANYCRAWL_API_AUTH_ENABLED=true
+```
+
+Après activation, ajoutez une clé API et utilisez-la dans les en-têtes des requêtes.
+
+### Générer une clé API
+
+Si l’authentification est activée (`ANYCRAWL_API_AUTH_ENABLED=true`), générez une clé depuis la racine du dépôt :
+
+```bash
+pnpm --filter api key:generate
+# nom optionnel
+pnpm --filter api key:generate -- default
+```
+
+La commande affiche `uuid`, `key` et `credits`. Utilisez la clé dans l’en-tête `Authorization: Bearer <KEY>`.
+
+#### Dans le conteneur Docker
+
+- Avec Docker Compose :
+
+```bash
+docker compose exec api pnpm --filter api key:generate
+docker compose exec api pnpm --filter api key:generate -- default
+```
+
+- Conteneur unique (remplacez `<container_name_or_id>`) :
+
+```bash
+docker exec -it <container_name_or_id> pnpm --filter api key:generate
+docker exec -it <container_name_or_id> pnpm --filter api key:generate -- default
+```
+
+2. **Utiliser HTTPS** :
+
+Exemple :
+
+```yaml
+services:
+    nginx:
+        image: nginx:alpine
+        ports:
+            - "443:443"
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf
+            - ./ssl:/etc/ssl/certs
+```
+
+Utilisez `nginx` comme reverse proxy.
+
+## Mises à jour et maintenance
+
+### Mettre à jour les services
+
+```bash
+docker compose pull
+
+docker compose up --build -d
+
+docker image prune -f
+```

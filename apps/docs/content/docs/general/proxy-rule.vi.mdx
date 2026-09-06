@@ -1,0 +1,284 @@
+---
+title: Cấu hình proxy
+description: Cấu hình định tuyến proxy theo URL cho AnyCrawl
+icon: Waypoints
+---
+
+# Cấu hình proxy
+
+AnyCrawl hỗ trợ định tuyến proxy linh hoạt theo mẫu URL. Bạn có thể cấu hình proxy khác nhau cho từng website hoặc endpoint API.
+
+## Chế độ proxy
+
+AnyCrawl hỗ trợ bốn chế độ proxy có thể chỉ định trong request API:
+
+| Mode | Mô tả |
+|------|-------------|
+| `auto` | Tự quyết giữa proxy cơ bản và stealth. Bắt đầu với base khi có; nếu base không khả dụng hoặc có retry/lỗi, nâng cấp/chuyển sang stealth. |
+| `base` | Dùng proxy cấu hình trong `ANYCRAWL_PROXY_URL` (mặc định) |
+| `stealth` | Dùng proxy cấu hình trong `ANYCRAWL_PROXY_STEALTH_URL` (thường là residential hoặc premium) |
+| Custom URL | Chuỗi URL proxy đầy đủ (ví dụ `http://user:pass@proxy:8080`), trong response trả về dạng `custom` |
+
+### Ví dụ sử dụng
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "auto"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "stealth"
+}
+```
+
+```json
+{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://custom-proxy:8080"
+}
+```
+
+## Hành vi timeout (API Scrape)
+
+- `timeout` ở cấp request luôn được ưu tiên.
+- Nếu `proxy` là `stealth` hoặc `auto` và không có `timeout`, AnyCrawl dùng `ANYCRAWL_STEALTH_TIMEOUT_MS` (mặc định: `120000`).
+- Với chế độ `base` hoặc URL proxy tùy chỉnh mà không có `timeout` rõ ràng, AnyCrawl dùng `60000`.
+
+## Cách cấu hình
+
+### Cách 1: Cấu hình proxy đơn giản (ANYCRAWL_PROXY_URL)
+
+Với trường hợp muốn dùng cùng một proxy cho mọi request, đặt biến môi trường `ANYCRAWL_PROXY_URL`:
+
+```bash
+# Một proxy
+export ANYCRAWL_PROXY_URL=http://username:password@proxy.example.com:8080
+
+# Nhiều proxy (chế độ tầng)
+export ANYCRAWL_PROXY_URL=http://proxy1:8080,http://proxy2:8080,http://proxy3:8080
+```
+
+Khi cung cấp nhiều proxy (phân tách bằng dấu phẩy), AnyCrawl dùng chiến lược **proxy tầng (tiered)**:
+
+- Mọi request bắt đầu với proxy đầu tiên (tier 0)
+- Nếu proxy lỗi với một domain, AnyCrawl tự chuyển tier tiếp theo cho domain đó
+- Cung cấp failover thông minh và tối ưu sử dụng proxy
+
+Đây là cách đơn giản nhất khi không cần định tuyến theo URL.
+
+### Cách 2: File cấu hình nâng cao (ANYCRAWL_PROXY_CONFIG)
+
+Để định tuyến proxy theo URL, tạo file JSON (ví dụ `proxy-config.json`) và đặt biến `ANYCRAWL_PROXY_CONFIG` trỏ tới đường dẫn file:
+
+```bash
+ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+**Lưu ý**: Nếu cả `ANYCRAWL_PROXY_URL` và `ANYCRAWL_PROXY_CONFIG` đều được đặt, quy tắc trong file cấu hình được ưu tiên, còn `ANYCRAWL_PROXY_URL` làm fallback cho URL không khớp quy tắc nào.
+
+## Loại quy tắc
+
+AnyCrawl hỗ trợ ba loại quy tắc proxy, áp dụng theo thứ tự ưu tiên:
+
+### 1. Quy tắc URL (ưu tiên cao nhất)
+
+Khớp URL chính xác. Dùng khi cần một proxy cụ thể cho một endpoint.
+
+```json
+{
+    "url": "https://api.example.com/v1/data",
+    "proxy": "http://username:password@proxy1.example.com:8080"
+}
+```
+
+### 2. Quy tắc pattern (ưu tiên trung bình)
+
+Khớp mẫu URL đầy đủ với ký tự đại diện. Hữu ích khi khớp đường dẫn hoặc giao thức cụ thể.
+
+```json
+{
+    "pattern": "https://*.github.com/api/*",
+    "proxy": "http://username:password@proxy2.example.com:8080"
+}
+```
+
+### 3. Quy tắc domain (ưu tiên thấp nhất)
+
+Chỉ khớp theo domain. Định tuyến mọi request tới domain qua một proxy cụ thể.
+
+```json
+{
+    "domain": "*.gov.au",
+    "proxy": "http://username:password@proxy3.example.com:8080"
+}
+```
+
+## Mẫu ký tự đại diện
+
+- `*` — Khớp bất kỳ số ký tự nào
+- `?` — Khớp đúng một ký tự
+- Mẫu không phân biệt hoa thường
+
+### Ví dụ
+
+- `*.example.com` — Khớp `api.example.com`, `www.example.com`, `test.example.com`
+- `api-?.example.com` — Khớp `api-1.example.com`, `api-2.example.com`, không khớp `api-10.example.com`
+- `https://*.example.com/api/*` — Khớp mọi URL HTTPS trên subdomain của example.com có đường dẫn `/api/`
+
+## Ví dụ cấu hình đầy đủ
+
+```json
+{
+    "rules": [
+        {
+            "url": "https://api.example.com/v1/users",
+            "proxy": "http://premium-proxy.example.com:8080"
+        },
+        {
+            "pattern": "https://api.github.com/*",
+            "proxy": "http://github-proxy.example.com:8080"
+        },
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-proxy.example.com:8080"
+        }
+    ]
+}
+```
+
+## Định dạng URL proxy
+
+AnyCrawl hỗ trợ nhiều định dạng URL proxy:
+
+- HTTP: `http://username:password@proxy.example.com:8080`
+- HTTPS: `https://username:password@proxy.example.com:8443`
+
+## Gỡ lỗi
+
+Bạn sẽ thấy log dạng:
+
+```
+Using proxy from request userData: http://custom-proxy:8080
+Found proxy for URL https://example.com: http://proxy.example.com:8080 By matching a rule.
+Proxy matched by domain pattern: *.gov.au → http://proxy.example.com:8080
+Using tiered proxy: http://default-proxy:8080
+```
+
+## Ví dụ thứ tự ưu tiên
+
+Với URL `https://api.github.com/repos/owner/repo`, các quy tắc được kiểm tra theo thứ tự:
+
+1. **Khớp URL**: `"url": "https://api.github.com/repos/owner/repo"`
+2. **Khớp pattern**: `"pattern": "https://api.github.com/*"`
+3. **Khớp domain**: `"domain": "*.github.com"`
+
+Quy tắc khớp đầu tiên được áp dụng.
+
+## Thực hành tốt
+
+1. **Dùng quy tắc domain** cho nhu cầu proxy rộng (ví dụ mọi request tới site chính phủ một nước)
+2. **Dùng quy tắc pattern** khi cần khớp đường dẫn hoặc giao thức cụ thể
+3. **Dùng quy tắc URL** cho endpoint chính xác cần xử lý đặc biệt
+4. **Thứ tự trong file không quan trọng** — ưu tiên do loại quy tắc quyết định
+5. **Kiểm tra mẫu** bằng log debug để đảm bảo khớp đúng ý
+
+## Hệ thống proxy tầng
+
+Khi dùng nhiều proxy với `ANYCRAWL_PROXY_URL`, AnyCrawl áp dụng hệ thống proxy tầng thông minh:
+
+### Cách hoạt động
+
+1. **Trạng thái ban đầu**: Mọi domain bắt đầu với proxy đầu tiên (tier 0)
+2. **Phát hiện lỗi**: Khi proxy lỗi với một domain, domain đó được nâng lên tier tiếp theo
+3. **Theo domain**: Mỗi domain giữ mức tier riêng độc lập
+
+### Kịch bản ví dụ
+
+```bash
+export ANYCRAWL_PROXY_URL=http://fast-proxy:8080,http://stable-proxy:8080,http://backup-proxy:8080
+```
+
+- Request ban đầu tới `example.com` → Dùng `fast-proxy:8080` (tier 0)
+- Nếu `fast-proxy` lỗi với `example.com` → Chuyển `stable-proxy:8080` (tier 1)
+- Trong lúc đó `github.com` có thể vẫn dùng `fast-proxy:8080` nếu ổn định
+- Hệ thống định kỳ thử lại `fast-proxy` cho `example.com` để kiểm tra đã phục hồi chưa
+
+### Lợi ích
+
+- **Failover tự động**: Không cần can thiệp thủ công khi proxy lỗi
+- **Tối ưu theo domain**: Mỗi domain dùng proxy tốt nhất có sẵn
+- **Hiệu quả tài nguyên**: Proxy lỗi không bị bỏ hẳn
+- **Tự phục hồi**: Tự quay lại proxy tối ưu khi chúng hoạt động trở lại
+
+## Ví dụ đầy đủ: dùng cả hai cách
+
+Thiết lập mẫu kết hợp:
+
+```bash
+# Proxy mặc định cho mục đích chung
+export ANYCRAWL_PROXY_URL=http://default-proxy:8080
+
+# Định tuyến theo URL cho site cụ thể
+export ANYCRAWL_PROXY_CONFIG=/path/to/proxy-config.json
+```
+
+Với proxy-config.json:
+
+```json
+{
+    "rules": [
+        {
+            "domain": "*.gov.au",
+            "proxy": "http://au-residential-proxy:8080"
+        },
+        {
+            "pattern": "https://api.*.com/*",
+            "proxy": "http://api-optimized-proxy:3128"
+        }
+    ]
+}
+```
+
+Kết quả:
+
+- `https://www.homeaffairs.gov.au/` → Dùng `au-residential-proxy:8080` (khớp domain)
+- `https://api.github.com/repos` → Dùng `api-optimized-proxy:3128` (khớp pattern)
+- `https://example.com/` → Dùng `default-proxy:8080` (fallback `ANYCRAWL_PROXY_URL`)
+
+## Tóm tắt biến môi trường
+
+| Variable                      | Mục đích                                         | Ví dụ                                                |
+| ----------------------------- | ------------------------------------------------ | ---------------------------------------------------- |
+| `ANYCRAWL_PROXY_URL`          | Proxy cơ bản (một hoặc nhiều)                    | `http://proxy:8080` hoặc `http://p1:8080,http://p2:8080` |
+| `ANYCRAWL_PROXY_STEALTH_URL`  | Proxy stealth/premium (residential)              | `http://residential-proxy:8080`                        |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | Credits phụ khi dùng stealth proxy            | `5`                                                  |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS` | Timeout mặc định cho `proxy=stealth` và `proxy=auto` khi không có `timeout` trong request | `120000` |
+| `ANYCRAWL_PROXY_CONFIG`       | Đường dẫn file JSON định tuyến theo URL         | `/path/to/proxy-config.json`                           |
+
+### Thứ tự ưu tiên
+
+1. **Cao nhất**: Chế độ proxy hoặc URL tùy chỉnh trong tùy chọn request
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "playwright",
+        "proxy": "stealth"
+    }
+    ```
+    Hoặc URL tùy chỉnh:
+    ```json
+    {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "proxy": "http://custom-proxy:8080"
+    }
+    ```
+2. **Cao**: Quy tắc theo URL từ `ANYCRAWL_PROXY_CONFIG`
+3. **Thấp**: Proxy tầng từ `ANYCRAWL_PROXY_URL` (fallback)

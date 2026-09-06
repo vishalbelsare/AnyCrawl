@@ -1,0 +1,328 @@
+---
+title: Modo JSON
+description: Extraia dados estruturados de páginas web com LLMs e validação por JSON Schema.
+icon: Database
+---
+
+## Introdução
+
+O modo JSON permite extrair dados estruturados de qualquer página web usando grandes modelos de linguagem (LLMs).
+
+O AnyCrawl permite definir um JSON Schema e prompts para orientar a extração, garantindo que a saída corresponda ao formato desejado.
+
+## Exemplos de uso
+
+O modo JSON oferece três modos de extração estruturada:
+
+1. **Somente prompt**: use um prompt em linguagem natural para descrever o que extrair. O LLM define a estrutura da saída.
+2. **Somente schema**: defina um JSON Schema para restringir rigorosamente a estrutura. O LLM preenche o conteúdo.
+3. **Prompt + schema**: combine os dois para orientar estrutura e conteúdo com precisão.
+
+Dica: defina `extract_source` para controlar se a extração estruturada lê do `markdown` gerado ou do `html` original. O padrão é `markdown`; use `html` quando o markdown perder estrutura importante.
+
+Importante: inclua `"json"` em `formats` ao usar `json_options`; caso contrário a resposta não terá JSON extraído.
+
+---
+
+### 1. Somente prompt (estrutura flexível)
+
+**Passos:**
+
+1. Defina a URL da página
+2. Escreva um prompt descrevendo as informações a extrair
+3. Envie a requisição
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "user_prompt": "Extract the company mission, open source status, and employee count."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            user_prompt: "Extract the company mission, open source status, and employee count.",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'user_prompt': 'Extract the company mission, open source status, and employee count.'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 2. Somente schema (estrutura rígida)
+
+**Passos:**
+
+1. Defina a URL da página
+2. Defina um JSON Schema com os campos e tipos desejados
+3. Envie a requisição
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      }
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 3. Prompt + schema (estrutura e conteúdo guiados)
+
+**Passos:**
+
+1. Defina a URL da página
+2. Defina um JSON Schema para a estrutura de saída
+3. Escreva um prompt para orientar a extração
+4. Envie a requisição
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      },
+      "user_prompt": "Extract the company mission (string), open source status (boolean), and employee count (number)."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+            user_prompt:
+                "Extract the company mission (string), open source status (boolean), and employee count (number).",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema,
+            'user_prompt': 'Extract the company mission (string), open source status (boolean), and employee count (number).'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+## Objeto `json_options`
+
+O parâmetro `json_options` é um objeto que aceita:
+
+- `schema`: schema usado na extração.
+- `user_prompt`: prompt do usuário para a extração.
+- `schema_name`: nome opcional da saída gerada.
+- `schema_description`: descrição opcional da saída gerada.
+
+### JSON Schema
+
+O schema usado na extração. Campos comuns:
+
+- `type`: tipo do valor; tipos suportados abaixo.
+- `properties`: (para `object`) objeto com campos e respectivos schemas.
+- `required`: (para `object`) array de nomes de campos obrigatórios.
+
+#### Tipos suportados
+
+| Tipo      | Descrição                | Exemplo                                 |
+| --------- | -------------------------- | --------------------------------------- |
+| `string`  | Texto                  | Nome da empresa, descrições, títulos      |
+| `number`  | Valores numéricos             | Preços, quantidades, avaliações             |
+| `boolean` | Verdadeiro/falso          | Flags de disponibilidade, indicadores  |
+| `object`  | Estruturas aninhadas          | Endereço, especificações de produto |
+| `array`   | Listas de valores ou objetos | Tags, categorias, listas de recursos         |
+
+### Exemplo de schema
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "company_name": {
+            "type": "string"
+        },
+        "is_open_source": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "employee_count": {
+            "type": "number"
+        }
+    },
+    "required": ["company_name"]
+}
+```
+
+
+## Documentação relacionada
+
+- [API Scrape](./scrape) — Scraping básico com extração JSON
+- [API Crawl](./crawl) — Crawling com opções de extração JSON
+- [Sistema de templates](./template) — Templates avançados de extração

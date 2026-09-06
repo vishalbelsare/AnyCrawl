@@ -1,0 +1,745 @@
+---
+title: Search
+description: SERP-API zum Abfragen von Suchmaschinen und strukturierten Ergebnissen.
+icon: Search
+---
+
+## Einführung
+
+Die AnyCrawl-Search-API liefert programmgesteuert Suchergebnisse mehrerer Suchmaschinen. Für LLMs aufbereitet: saubere, strukturierte Daten.
+
+Die API **antwortet sofort und synchron** – kein Polling, keine Webhooks. **Mehrere Engines** und **mehrere Ergebnisseiten** pro Anfrage sind möglich.
+
+### Kernfunktionen
+
+- **Mehrere Engines**: derzeit Google, weitere geplant
+- **LLM-optimiert**: strukturierte JSON-Daten
+- **Mehrsprachig**: Sprachen und Regionen wählbar
+- **Mehrseitige Ergebnisse**: mehrere SERP-Seiten in einer Anfrage
+- **Performance**: **Hohe Parallelität** mit asynchroner Verarbeitung
+- **Sofortantwort**: **Synchrones API**
+- **Umfassend**: Suchtreffer und Suchvorschläge
+
+## API-Endpunkt
+
+```
+POST https://api.anycrawl.dev/v1/search
+```
+
+## Nutzungsbeispiele
+
+#### Basis-Suche (Standard: Google)
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "OpenAI ChatGPT"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "OpenAI ChatGPT",
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "OpenAI ChatGPT"
+    }
+)
+print(response.json())
+```
+
+#### Mehrseitige Suche
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "machine learning tutorials",
+    "pages": 3,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "machine learning tutorials",
+        pages: 3,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "machine learning tutorials",
+        "pages": 3,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### Suche mit Sprache/Region
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "AnyCrawl",
+    "lang": "zh",
+    "pages": 2
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "AnyCrawl",
+        lang: "zh",
+        pages: 2,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "AnyCrawl",
+        "lang": "zh",
+        "pages": 2
+    }
+)
+print(response.json())
+```
+
+#### Paginierung
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "web scraping tools",
+    "offset": 20,
+    "limit": 10
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "web scraping tools",
+        offset: 20,
+        limit: 10,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "web scraping tools",
+        "offset": 20,
+        "limit": 10
+    }
+)
+print(response.json())
+```
+
+#### Safe Search
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type": "application/json" \
+  -d '{
+    "query": "educational content",
+    "safe_search": 0
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer <your-api-key>",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        query: "educational content",
+        safe_search: 0,
+    }),
+});
+const result = await response.json();
+console.log(result);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/search",
+    headers={
+        "Authorization": "Bearer <your-api-key>",
+        "Content-Type": "application/json"
+    },
+    json={
+        "query": "educational content",
+        "safe_search": 0
+    }
+)
+print(response.json())
+```
+
+## Anfrageparameter
+
+| Parameter       | Typ            | Erforderlich | Standard | Beschreibung                                                                                                                           |
+| --------------- | -------------- | ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `query`         | string         | Ja           | -        | Suchanfrage                                                                                                                           |
+| `template_id`   | string         | Nein         | -        | Template-ID für diese Suche                                                                                                           |
+| `variables`     | object         | Nein         | -        | Template-Variablen (nur mit `template_id`)                                                                                            |
+| `engine`        | enum           | Nein         | `google` | Suchmaschine. Derzeit: `google`                                                                                                       |
+| `limit`         | number         | Nein         | 10       | Max. Treffer pro Seite                                                                                                                |
+| `offset`        | number         | Nein         | 0        | Überspringen (Paginierung)                                                                                                            |
+| `pages`         | number         | Nein         | 1        | Anzahl SERP-Seiten (min: 1, max: 20)                                                                                                  |
+| `lang`          | string         | Nein         | `en`     | Sprach-Locale (z. B. `en`, `zh`, `de`)                                                                                               |
+| `country`       | string         | Nein         | -        | Länder-Locale (z. B. `US`, `DE`)                                                                                                      |
+| `timeRange`     | enum           | Nein         | -        | Zeitraum: `day`, `week`, `month`, `year`                                                                                              |
+| `sources`       | enum           | Nein         | -        | Quellen: `web`, `images`, `news` (SearXNG)                                                                                            |
+| `safe_search`   | number \| null | Nein         | null     | Google SafeSearch: `0` aus, `1` mittel, `2` streng, `null` Standard. Nur Google.                                                       |
+
+### Optional: `scrape_options` für Ergebnis-URLs
+
+Wenn gesetzt, kann jede Ergebnis-URL mit diesen Optionen gescrapet werden (wie `/v1/scrape` ohne Top-Level `url`). Nur-Browser-Optionen werden bei Nicht-Browser-Scraping ignoriert.
+
+| Feld                | Typ                      | Standard       | Hinweise                                                                                                                                   |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `engine`            | enum                     | -              | Engine: `auto`, `cheerio`, `playwright`, `puppeteer`                                                                                       |
+| `formats`           | array of enum            | `["markdown"]` | Ausgabeformate: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                     |
+| `timeout`           | number                   | `60000`        | Timeout (ms)                                                                                                                               |
+| `wait_for`          | number                   | -              | Verzögerung (ms); nur Browser; unter `wait_for_selector`                                                                                   |
+| `wait_until`        | enum                     | -              | `load`, `domcontentloaded`, `networkidle`, `commit`                                                                                        |
+| `wait_for_selector` | string, object, or array | -              | Selektor(en) warten (Browser); Vorrang vor `wait_for`                                                                                     |
+| `include_tags`      | array of string          | -              | CSS-Selektoren einschließen                                                                                                                |
+| `exclude_tags`      | array of string          | -              | CSS-Selektoren ausschließen                                                                                                                  |
+| `only_main_content` | boolean                  | `true`         | Nur Hauptinhalt (`include_tags` Vorrang)                                                                                                   |
+| `proxy`             | string (URI)             | -              | Optionaler Proxy                                                                                                                             |
+| `json_options`      | object                   | -              | JSON-Extraktion (schema, user_prompt, …)                                                                                                   |
+| `extract_source`    | enum                     | `markdown`     | JSON-Quelle: `markdown` oder `html`                                                                                                        |
+| `ocr_options`       | boolean                  | `false`        | OCR nur Markdown-Bilder                                                                                                                      |
+| `max_age`           | number                   | -              | Cache (ms); `0` = kein Lesen                                                                                                                 |
+| `store_in_cache`    | boolean                  | `true`         | Page Cache pro Ergebnis-Scrape                                                                                                               |
+| `template_id`       | string                   | -              | **Scrape**-Template-ID für Follow-up-Scrapes (wie `/v1/scrape`). URLs außerhalb von `allowedDomains` werden übersprungen. |
+| `variables`         | object                   | -              | Variablen für dieses Scrape-Template (mit `template_id`). |
+
+### Unterstützte Suchmaschinen
+
+#### `google` (Standard)
+
+- **Einsatz**: Allgemeine Websuche
+- **Vorteile**: breite Treffer, viele Sprachen/Regionen
+- **Funktionen**: Treffer + Vorschläge; SafeSearch (aus/mittel/streng)
+- **Empfehlung**: Recherche, Content-Discovery
+- **SafeSearch**: `safe_search` 0, 1, 2 oder `null`
+
+## Antwortformat
+
+### Erfolg (HTTP 200)
+
+#### Suche erfolgreich
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "title": "AlsoAsked: People Also Ask keyword research tool",
+            "url": "https://alsoasked.com/",
+            "description": "Find the questions people also ask. Enter a question, brand or search query. e.g. 'keyword research'.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "OpenAI ChatGPT Features and Benefits",
+            "url": "https://openai.com/chatgpt",
+            "description": "ChatGPT is an AI assistant that can help with writing, research, and problem-solving.",
+            "source": "Google Search Result"
+        },
+        {
+            "title": "Keyword tool",
+            "source": "Google Suggestions"
+        }
+    ]
+}
+```
+
+#### Ergebnistypen
+
+1. **Suchergebnisse**: Titel, URL, Beschreibung, Quelle
+2. **Vorschläge**: verwandte Suchanfragen ohne URL
+
+### Fehlerantworten
+
+#### 400 – Validierung
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'google', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": ["Invalid enum value. Expected 'google', received 'invalid'"]
+    }
+}
+```
+
+#### 401 – Authentifizierung
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+#### 402 – Zahlung erforderlich
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits. Please upgrade your plan or purchase more credits."
+}
+```
+
+## Best Practices
+
+### Suchmaschine
+
+1. **Allgemein** → `google` (derzeit einzige Option)
+2. **Mehrsprachig** → passendes `lang`
+3. **Mehr Treffer** → `pages` erhöhen
+
+### Performance
+
+- **`pages`**: mehrere SERP-Seiten in einer Anfrage statt vieler Einzelaufrufe
+- **Sprache**: `lang` auf Zielregion abstimmen
+- **Anfrage**: präzise Keywords
+
+### Fehlerbehandlung
+
+```javascript
+try {
+    const response = await fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+            query: "artificial intelligence",
+            pages: 2,
+        }),
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+        // Handle successful result
+        console.log("Found results:", result.data.length);
+
+        // Separate search results from suggestions
+        const searchResults = result.data.filter((item) => item.url);
+        const suggestions = result.data.filter((item) => !item.url);
+
+        console.log("Search Results:", searchResults.length);
+        console.log("Suggestions:", suggestions.length);
+    } else {
+        // Handle search failure
+        console.error("Search failed:", result.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## Hohe Parallelität
+
+Die API **unterstützt hohe Parallelität**. Viele gleichzeitige Suchanfragen sind unkritisch:
+
+```javascript
+// Concurrent searching example
+const queries = ["machine learning", "artificial intelligence", "data science"];
+
+const searchPromises = queries.map((query) =>
+    fetch("/v1/search", {
+        method: "POST",
+        headers: {
+            Authorization: "Bearer YOUR_API_KEY",
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query, engine: "google", pages: 2 }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(searchPromises);
+console.log(`Completed ${results.length} searches simultaneously`);
+```
+
+## Limits und Credits
+
+- **Kein Ratenlimit** bei Parallelität — die API unterstützt hohe Parallelität nativ.
+- Verbrauch über Response-Header und `BillingChargeDetails` prüfen.
+
+### Credit-Modell (Suche + optionale Follow-up-Scrapes)
+
+1. **`search_pages`** — entspricht **`pages`** (Standard oft 1 Credit pro Seite).
+2. **`template_per_call`** — bei top-level **`template_id`** (Search-Template): einmal pro Request `pricing.perCall`.
+3. Mit **`scrape_options`** und erfolgreichen Follow-ups:
+   - **`search_result_scrape`** — `completed_scrape_count ×` Engine-Einheit (`calculateScrapeCredits`).
+   - **`search_result_scrape_template`** — bei **`scrape_options.template_id`**: pro erfolgreichem Follow-up die Scrape-Template-`pricing.perCall`. **Nur Search-Templates:** `metadata.charge_scrape_template_credits: false` deaktiviert diese Zeile (Engine-Zeile bleibt).
+
+Vollständige Spezifikation: Repository **`docs/api/search-scrape-credits-and-templates.md`**.
+
+## FAQ
+
+### Wann welche Spracheinstellung?
+
+- **`en`**: globale/internationale Treffer
+- **`zh`**: chinesischsprachige Inhalte
+- **Regional** (`en-GB`, `fr-CA`, …): lokalisierte SERPs
+
+### Warum weniger Treffer als erwartet?
+
+- Sehr spezifische oder seltene Begriffe
+- `lang` passt nicht zur Anfrage
+- Themengebiet-/Regionslimits der Suchmaschine
+- Netzwerkprobleme
+
+### Regionsspezifische Suche?
+
+Die API wählt anhand von `lang` passende Einstellungen. Sprachcodes zur Zielregion nutzen (z. B. `en-GB` für UK); ggf. regionale Begriffe in `query`.
+
+### Unterschied Treffer vs. Vorschläge?
+
+- **Treffer**: Titel, URL, Beschreibung, Quelle
+- **Vorschläge**: verwandte Queries oft ohne URL
+
+### Parallelität limitiert?
+
+Nein – **hohe Parallelität** ist nativ; Antworten kommen direkt.
+
+## Sprachen und Regionen
+
+Unterstützte `lang`-Werte (Auszug – vollständige Liste folgt):
+
+### Hauptsprachen
+
+- `all` – alle Sprachen
+
+#### **Englisch** 🌐
+
+- `en` - Global English
+- `en-AU` - English (Australia) 🇦🇺
+- `en-CA` - English (Canada) 🇨🇦
+- `en-GB` - English (United Kingdom) 🇬🇧
+- `en-IE` - English (Ireland) 🇮🇪
+- `en-IN` - English (India) 🇮🇳
+- `en-NZ` - English (New Zealand) 🇳🇿
+- `en-PH` - English (Philippines) 🇵🇭
+- `en-PK` - English (Pakistan) 🇵🇰
+- `en-SG` - English (Singapore) 🇸🇬
+- `en-US` - English (United States) 🇺🇸
+- `en-ZA` - English (South Africa) 🇿🇦
+
+#### **Chinesisch** 🌐
+
+- `zh` - Global Chinese
+- `zh-CN` - Chinese (China) 🇨🇳
+- `zh-HK` - Chinese (Hong Kong) 🇭🇰
+- `zh-TW` - Chinese (Taiwan) 🇹🇼
+
+#### **Spanisch** 🌐
+
+- `es` - Global Spanish
+- `es-AR` - Spanish (Argentina) 🇦🇷
+- `es-CL` - Spanish (Chile) 🇨🇱
+- `es-CO` - Spanish (Colombia) 🇨🇴
+- `es-ES` - Spanish (Spain) 🇪🇸
+- `es-MX` - Spanish (Mexico) 🇲🇽
+- `es-PE` - Spanish (Peru) 🇵🇪
+
+#### **Französisch** 🌐
+
+- `fr` - Global French
+- `fr-BE` - French (Belgium) 🇧🇪
+- `fr-CA` - French (Canada) 🇨🇦
+- `fr-CH` - French (Switzerland) 🇨🇭
+- `fr-FR` - French (France) 🇫🇷
+
+#### **Deutsch** 🌐
+
+- `de` - Global German
+- `de-AT` - German (Austria) 🇦🇹
+- `de-BE` - German (Belgium) 🇧🇪
+- `de-CH` - German (Switzerland) 🇨🇭
+- `de-DE` - German (Germany) 🇩🇪
+
+#### **Portugiesisch** 🌐
+
+- `pt` - Global Portuguese
+- `pt-BR` - Portuguese (Brazil) 🇧🇷
+- `pt-PT` - Portuguese (Portugal) 🇵🇹
+
+#### **Italienisch** 🌐
+
+- `it` - Global Italian
+- `it-CH` - Italian (Switzerland) 🇨🇭
+- `it-IT` - Italian (Italy) 🇮🇹
+
+#### **Japanisch** 🌐
+
+- `ja` - Global Japanese
+- `ja-JP` - Japanese (Japan) 🇯🇵
+
+#### **Koreanisch** 🌐
+
+- `ko` - Global Korean
+- `ko-KR` - Korean (South Korea) 🇰🇷
+
+#### **Russisch** 🌐
+
+- `ru` - Global Russian
+- `ru-RU` - Russian (Russia) 🇷🇺
+
+### Europäische Sprachen
+
+#### **Dutch** 🌐
+
+- `nl` - Global Dutch
+- `nl-BE` - Dutch (Belgium) 🇧🇪
+- `nl-NL` - Dutch (Netherlands) 🇳🇱
+
+#### **Polish** 🌐
+
+- `pl` - Global Polish
+- `pl-PL` - Polish (Poland) 🇵🇱
+
+#### **Czech** 🌐
+
+- `cs` - Global Czech
+- `cs-CZ` - Czech (Czech Republic) 🇨🇿
+
+#### **Hungarian** 🌐
+
+- `hu` - Global Hungarian
+- `hu-HU` - Hungarian (Hungary) 🇭🇺
+
+#### **Romanian** 🌐
+
+- `ro` - Global Romanian
+- `ro-RO` - Romanian (Romania) 🇷🇴
+
+#### **Greek** 🌐
+
+- `el` - Global Greek
+- `el-GR` - Greek (Greece) 🇬🇷
+
+#### **Bulgarian** 🌐
+
+- `bg` - Global Bulgarian
+- `bg-BG` - Bulgarian (Bulgaria) 🇧🇬
+
+#### **Croatian** 🌐
+
+- `hr` - Global Croatian
+
+#### **Slovak** 🌐
+
+- `sk` - Global Slovak
+
+#### **Slovenian** 🌐
+
+- `sl` - Global Slovenian
+
+#### **Estonian** 🌐
+
+- `et` - Global Estonian
+- `et-EE` - Estonian (Estonia) 🇪🇪
+
+#### **Latvian** 🌐
+
+- `lv` - Global Latvian
+
+#### **Lithuanian** 🌐
+
+- `lt` - Global Lithuanian
+
+#### **Finnish** 🌐
+
+- `fi` - Global Finnish
+- `fi-FI` - Finnish (Finland) 🇫🇮
+
+#### **Swedish** 🌐
+
+- `sv` - Global Swedish
+- `sv-SE` - Swedish (Sweden) 🇸🇪
+
+#### **Norwegian** 🌐
+
+- `nb` - Norwegian Bokmål
+- `nb-NO` - Norwegian Bokmål (Norway) 🇳🇴
+
+#### **Danish** 🌐
+
+- `da` - Global Danish
+- `da-DK` - Danish (Denmark) 🇩🇰
+
+#### **Icelandic** 🌐
+
+- `is` - Global Icelandic
+
+### Weitere Sprachen
+
+#### **Arabic** 🌐
+
+- `ar` - Global Arabic
+- `ar-SA` - Arabic (Saudi Arabia) 🇸🇦
+
+#### **Hebrew** 🇮🇱
+
+- `he` - Hebrew
+
+#### **Turkish** 🌐
+
+- `tr` - Global Turkish
+- `tr-TR` - Turkish (Turkey) 🇹🇷
+
+#### **Persian** 🌐
+
+- `fa` - Persian
+
+#### **Hindi** 🌐
+
+- `hi` - Hindi
+
+#### **Urdu** 🌐
+
+- `ur` - Urdu
+
+#### **Thai** 🌐
+
+- `th` - Global Thai
+- `th-TH` - Thai (Thailand) 🇹🇭
+
+#### **Vietnamese** 🌐
+
+- `vi` - Global Vietnamese
+- `vi-VN` - Vietnamese (Vietnam) 🇻🇳
+
+#### **Indonesian** 🌐
+
+- `id` - Global Indonesian
+- `id-ID` - Indonesian (Indonesia) 🇮🇩
+
+#### **Indian Languages**
+
+- `kn` - Kannada 🌐
+- `ml` - Malayalam 🌐
+- `mr` - Marathi 🌐
+- `ta` - Tamil 🌐
+- `te` - Telugu 🌐
+
+#### **Other European Languages**
+
+- `af` - Afrikaans 🌐
+- `be` - Belarusian 🌐
+- `ca` - Catalan 🌐
+- `cy` - Welsh 🌐
+- `eu` - Basque 🌐
+- `ga` - Irish 🌐
+- `gd` - Scottish Gaelic 🌐
+- `gl` - Galician 🌐
+- `sq` - Albanian 🌐
+- `uk` - Ukrainian 🌐
+
+### Hinweise
+
+- **Globale Codes** (`en`, `zh`, …): breitere Ergebnisse ohne feste Länderbindung
+- **Ländercodes** (`en-US`, `zh-CN`, …): stärker lokalisierte SERPs
+- Die API wählt passende Google-Domain und Spracheinstellungen
+- `lang` möglichst zur Sprache der `query` passend wählen

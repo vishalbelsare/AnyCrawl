@@ -1,0 +1,948 @@
+---
+title: Webhooks
+description: 스크래핑·크롤·맵·검색·예약 작업 등 AnyCrawl 전체 이벤트의 실시간 알림 수신
+icon: Webhook
+---
+
+## 소개
+
+Webhooks는 AnyCrawl 계정에서 이벤트가 발생하면 실시간 HTTP 알림을 받을 수 있게 합니다. 폴링 대신 이벤트가 있을 때 지정한 엔드포인트로 POST 요청이 자동 전송됩니다.
+
+**핵심**: 여러 이벤트 유형 구독, HMAC-SHA256 서명 검증, 지수 백오프 자동 재시도, 전달 이력 기록, 사설 IP 보호.
+
+### 핵심 기능
+
+- **이벤트 구독**: 스크래핑, 크롤, 맵, 검색, 예약 작업, 시스템 이벤트
+- **안전한 전달**: HMAC-SHA256으로 진위 검증
+- **자동 재시도**: 실패 시 지수 백오프 재시도
+- **전달 추적**: 모든 웹훅 전달 기록
+- **범위 필터**: 전체 이벤트 또는 특정 작업만
+- **사용자 정의 헤더**: 웹훅 요청에 HTTP 헤더 추가
+- **사설 IP 보호**: SSRF 방지
+
+## API 엔드포인트
+
+```
+POST   /v1/webhooks                              # 웹훅 구독 생성
+GET    /v1/webhooks                              # 목록
+GET    /v1/webhooks/:webhookId                   # 상세
+PUT    /v1/webhooks/:webhookId                   # 수정
+DELETE /v1/webhooks/:webhookId                   # 삭제
+GET    /v1/webhooks/:webhookId/deliveries        # 전달 이력
+POST   /v1/webhooks/:webhookId/test              # 테스트 전송
+PUT    /v1/webhooks/:webhookId/activate          # 활성화
+PUT    /v1/webhooks/:webhookId/deactivate        # 비활성화
+POST   /v1/webhooks/:webhookId/deliveries/:deliveryId/replay  # 실패 재전달
+GET    /v1/webhook-events                        # 지원 이벤트 목록
+```
+
+## 지원 이벤트
+
+### 작업(Job) 이벤트
+
+| 이벤트 | 설명 | 발생 시점 |
+|-------|-------------|----------------|
+| `scrape.created` | 스크래프 작업 생성 | 새 스크래프 작업이 큐에 들어감 |
+| `scrape.started` | 스크래프 시작 | 실행 시작 |
+| `scrape.completed` | 스크래프 완료 | 성공적으로 완료 |
+| `scrape.failed` | 스크래프 실패 | 오류 발생 |
+| `scrape.cancelled` | 스크래프 취소 | 수동 취소 |
+| `crawl.created` | 크롤 작업 생성 | 새 크롤 작업이 큐에 들어감 |
+| `crawl.started` | 크롤 시작 | 실행 시작 |
+| `crawl.completed` | 크롤 완료 | 성공적으로 완료 |
+| `crawl.failed` | 크롤 실패 | 오류 발생 |
+| `crawl.cancelled` | 크롤 취소 | 수동 취소 |
+
+### 예약 작업 이벤트
+
+| 이벤트 | 설명 | 발생 시점 |
+|-------|-------------|----------------|
+| `task.executed` | 작업 실행됨 | 예약 작업 실행 |
+| `task.failed` | 작업 실패 | 예약 작업 실패 |
+| `task.paused` | 작업 일시정지 | 일시정지됨 |
+| `task.resumed` | 작업 재개 | 재개됨 |
+
+### 검색 이벤트
+
+| 이벤트 | 설명 | 발생 시점 |
+|-------|-------------|----------------|
+| `search.created` | 검색 작업 생성 | 새 검색 작업이 큐에 들어감 |
+| `search.started` | 검색 시작 | 실행 시작 |
+| `search.completed` | 검색 완료 | 성공적으로 완료 |
+| `search.failed` | 검색 실패 | 오류 발생 |
+
+### Map 이벤트
+
+| 이벤트 | 설명 | 발생 시점 |
+|-------|-------------|----------------|
+| `map.created` | Map 작업 생성 | 새 Map 작업이 큐에 들어감 |
+| `map.started` | Map 시작 | 실행 시작 |
+| `map.completed` | Map 완료 | 성공적으로 완료 |
+| `map.failed` | Map 실패 | 오류 발생 |
+
+### 테스트 이벤트
+
+| 이벤트 | 설명 | 발생 시점 |
+|-------|-------------|----------------|
+| `webhook.test` | 테스트 이벤트 | 테스트 웹훅 수동 전송 |
+
+## 빠른 시작
+
+### 웹훅 만들기
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Production Notifications",
+    "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+    "event_types": ["scrape.completed", "scrape.failed", "crawl.completed"],
+    "scope": "all",
+    "timeout_seconds": 10,
+    "max_retries": 3
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/webhooks", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY",
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    name: "Production Notifications",
+    webhook_url: "https://your-domain.com/webhooks/anycrawl",
+    event_types: ["scrape.completed", "scrape.failed"],
+    scope: "all"
+  })
+});
+
+const data = await response.json();
+console.log("Webhook ID:", data.data.webhook_id);
+console.log("Secret:", data.data.secret);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    "https://api.anycrawl.dev/v1/webhooks",
+    headers={
+        "Authorization": "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json"
+    },
+    json={
+        "name": "Production Notifications",
+        "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+        "event_types": ["scrape.completed", "scrape.failed"],
+        "scope": "all"
+    }
+)
+
+data = response.json()
+print(f"Webhook ID: {data['data']['webhook_id']}")
+print(f"Secret: {data['data']['secret']}")
+```
+
+### 응답
+
+```json
+{
+  "success": true,
+  "data": {
+    "webhook_id": "webhook-uuid-here",
+    "secret": "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0u1v2w3x4y5z6",
+    "message": "Webhook created successfully. Save the secret - it won't be shown again."
+  }
+}
+```
+
+<Callout type="warn">
+**중요**: `secret`은 생성 직후 바로 저장하세요. 한 번만 표시되며 서명 검증에 필요합니다.
+</Callout>
+
+## 요청 파라미터
+
+### 웹훅 설정
+
+| 파라미터 | 타입 | 필수 | 기본값 | 설명 |
+|-----------|------|----------|---------|-------------|
+| `name` | string | 예 | - | 웹훅 이름(1-255자) |
+| `description` | string | 아니오 | - | 설명 |
+| `webhook_url` | string | 예 | - | 엔드포인트 URL(HTTPS 권장) |
+| `event_types` | string[] | 예 | - | 구독할 이벤트 유형 배열 |
+| `scope` | string | 아니오 | `"all"` | `"all"` 또는 `"specific"` |
+| `specific_task_ids` | string[] | 아니오 | - | `scope`가 specific일 때 필수 작업 ID |
+
+### 전달 설정
+
+| 파라미터 | 타입 | 필수 | 기본값 | 설명 |
+|-----------|------|----------|---------|-------------|
+| `timeout_seconds` | number | 아니오 | `10` | 요청 타임아웃(1-60초) |
+| `max_retries` | number | 아니오 | `3` | 최대 재시도(0-10) |
+| `retry_backoff_multiplier` | number | 아니오 | `2` | 백오프 배수(1-10) |
+| `custom_headers` | object | 아니오 | - | 사용자 정의 HTTP 헤더 |
+
+<Callout type="info">
+연속 10회 실패 시 웹훅이 자동 비활성화됩니다. 문제를 해결한 뒤 수동으로 다시 켤 수 있습니다.
+</Callout>
+
+### 메타데이터
+
+| 파라미터 | 타입 | 필수 | 기본값 | 설명 |
+|-----------|------|----------|---------|-------------|
+| `tags` | string[] | 아니오 | - | 분류용 태그 |
+| `metadata` | object | 아니오 | - | 사용자 정의 메타데이터 |
+
+## 웹훅 페이로드 형식
+
+### HTTP 헤더
+
+모든 웹훅 요청에 포함됩니다.
+
+```http
+Content-Type: application/json
+X-AnyCrawl-Signature: sha256=abc123...
+X-Webhook-Event: scrape.completed
+X-Webhook-Delivery-Id: delivery-uuid-1
+X-Webhook-Timestamp: 2026-01-27T10:00:00.000Z
+```
+
+### 페이로드 예
+
+#### scrape.completed
+
+```json
+{
+  "job_id": "job-uuid-1",
+  "status": "completed",
+  "url": "https://example.com",
+  "total": 10,
+  "completed": 10,
+  "failed": 0,
+  "credits_used": 5,
+  "created_at": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T10:00:00.000Z"
+}
+```
+
+#### scrape.failed
+
+```json
+{
+  "job_id": "job-uuid-1",
+  "status": "failed",
+  "url": "https://example.com",
+  "error_message": "Connection timeout",
+  "credits_used": 3,
+  "created_at": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T10:00:00.000Z"
+}
+```
+
+#### task.executed
+
+```json
+{
+  "task_id": "task-uuid-1",
+  "task_name": "Daily News Scrape",
+  "execution_id": "exec-uuid-1",
+  "execution_number": 45,
+  "status": "completed",
+  "job_id": "job-uuid-1",
+  "credits_used": 5,
+  "scheduled_for": "2026-01-27T09:00:00.000Z",
+  "completed_at": "2026-01-27T09:02:15.000Z"
+}
+```
+
+## 서명 검증
+
+### 왜 검증하나요?
+
+서명 검증으로 웹훅이 AnyCrawl에서 온 것이며 변조되지 않았음을 확인해 악의적 요청을 막습니다.
+
+### 검증 알고리즘
+
+AnyCrawl은 HMAC-SHA256으로 페이로드를 서명합니다.
+
+```
+signature = HMAC-SHA256(payload, webhook_secret)
+header_value = "sha256=" + hex(signature)
+```
+
+### 구현 예
+
+#### Node.js / Express
+
+```javascript
+const crypto = require('crypto');
+const express = require('express');
+
+function verifyWebhookSignature(payload, signature, secret) {
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(JSON.stringify(payload));
+  const expectedSignature = `sha256=${hmac.digest('hex')}`;
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+const app = express();
+app.use(express.json());
+
+app.post('/webhooks/anycrawl', (req, res) => {
+  const signature = req.headers['x-anycrawl-signature'];
+  const secret = process.env.WEBHOOK_SECRET;
+
+  // Verify signature
+  if (!verifyWebhookSignature(req.body, signature, secret)) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  // Extract event info
+  const eventType = req.headers['x-webhook-event'];
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  console.log(`Received event: ${eventType}`);
+  console.log(`Delivery ID: ${deliveryId}`);
+  console.log('Payload:', req.body);
+
+  // Respond quickly (< 5 seconds recommended)
+  res.status(200).json({ received: true });
+
+  // Process asynchronously
+  processWebhookAsync(eventType, req.body).catch(console.error);
+});
+
+app.listen(3000);
+```
+
+#### Python / Flask
+
+```python
+import hmac
+import hashlib
+import json
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+WEBHOOK_SECRET = 'your-webhook-secret-here'
+
+def verify_webhook_signature(payload, signature, secret):
+    expected_signature = 'sha256=' + hmac.new(
+        secret.encode('utf-8'),
+        json.dumps(payload).encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(signature, expected_signature)
+
+@app.route('/webhooks/anycrawl', methods=['POST'])
+def webhook_handler():
+    signature = request.headers.get('X-AnyCrawl-Signature')
+    payload = request.get_json()
+
+    # Verify signature
+    if not verify_webhook_signature(payload, signature, WEBHOOK_SECRET):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    # Extract event info
+    event_type = request.headers.get('X-Webhook-Event')
+    delivery_id = request.headers.get('X-Webhook-Delivery-Id')
+
+    print(f'Received event: {event_type}')
+    print(f'Delivery ID: {delivery_id}')
+    print(f'Payload: {payload}')
+
+    # Respond quickly
+    return jsonify({'received': True}), 200
+
+if __name__ == '__main__':
+    app.run(port=3000)
+```
+
+#### Go
+
+```go
+package main
+
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+    "os"
+)
+
+func verifyWebhookSignature(payload []byte, signature, secret string) bool {
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(payload)
+    expectedSignature := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(signature), []byte(expectedSignature))
+}
+
+func webhookHandler(w http.ResponseWriter, r *http.Request) {
+    signature := r.Header.Get("X-AnyCrawl-Signature")
+    eventType := r.Header.Get("X-Webhook-Event")
+    secret := os.Getenv("WEBHOOK_SECRET")
+
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        http.Error(w, "Error reading body", http.StatusBadRequest)
+        return
+    }
+
+    if !verifyWebhookSignature(body, signature, secret) {
+        http.Error(w, "Invalid signature", http.StatusUnauthorized)
+        return
+    }
+
+    var payload map[string]interface{}
+    if err := json.Unmarshal(body, &payload); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+
+    fmt.Printf("Received event: %s\n", eventType)
+    fmt.Printf("Payload: %+v\n", payload)
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]bool{"received": true})
+}
+
+func main() {
+    http.HandleFunc("/webhooks/anycrawl", webhookHandler)
+    http.ListenAndServe(":3000", nil)
+}
+```
+
+## 웹훅 관리
+
+### 전체 목록
+
+```bash tab="cURL"
+curl -X GET "https://api.anycrawl.dev/v1/webhooks" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/webhooks", {
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+
+const data = await response.json();
+console.log("Webhooks:", data.data);
+```
+
+### 응답
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "uuid": "webhook-uuid-1",
+      "name": "Production Notifications",
+      "webhook_url": "https://your-domain.com/webhooks/anycrawl",
+      "webhook_secret": "***hidden***",
+      "event_types": ["scrape.completed", "scrape.failed"],
+      "scope": "all",
+      "is_active": true,
+      "consecutive_failures": 0,
+      "total_deliveries": 145,
+      "successful_deliveries": 142,
+      "failed_deliveries": 3,
+      "last_success_at": "2026-01-27T10:00:00.000Z",
+      "last_failure_at": "2026-01-26T15:30:00.000Z",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+<Callout type="info">
+보안을 위해 목록·상세에서 `webhook_secret`은 항상 숨깁니다.
+</Callout>
+
+### 웹훅 수정
+
+```bash tab="cURL"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_types": ["scrape.completed", "scrape.failed", "crawl.completed"]
+  }'
+```
+
+<Callout type="info">
+웹훅 시크릿은 수정할 수 없습니다. 바꾸려면 삭제 후 다시 만드세요.
+</Callout>
+
+### 웹훅 테스트
+
+설정을 검증하려면 테스트 이벤트를 보냅니다.
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks/:webhookId/test" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+await fetch(`https://api.anycrawl.dev/v1/webhooks/${webhookId}/test`, {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+```
+
+**테스트 페이로드**:
+
+```json
+{
+  "message": "This is a test webhook from AnyCrawl",
+  "timestamp": "2026-01-27T10:00:00.000Z",
+  "webhook_id": "webhook-uuid-1"
+}
+```
+
+### 비활성화/활성화
+
+```bash tab="Deactivate"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/deactivate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```bash tab="Activate"
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### 웹훅 삭제
+
+```bash tab="cURL"
+curl -X DELETE "https://api.anycrawl.dev/v1/webhooks/:webhookId" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+<Callout type="warn">
+웹훅을 삭제하면 전달 이력도 모두 삭제됩니다.
+</Callout>
+
+### 실패한 전달 재생
+
+실패한 웹훅 전달을 수동으로 다시 시도합니다.
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/webhooks/:webhookId/deliveries/:deliveryId/replay" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+```javascript tab="JavaScript"
+await fetch(`https://api.anycrawl.dev/v1/webhooks/${webhookId}/deliveries/${deliveryId}/replay`, {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer YOUR_API_KEY"
+  }
+});
+```
+
+**응답**:
+
+```json
+{
+  "success": true,
+  "message": "Delivery replayed successfully",
+  "data": {
+    "delivery_id": "delivery-uuid-1",
+    "status": "pending"
+  }
+}
+```
+
+<Callout type="info">
+재생은 동일 페이로드로 새 전달 시도를 만듭니다. 엔드포인트 문제를 고친 뒤 실패 건을 다시 보낼 때 유용합니다.
+</Callout>
+
+## 전달 이력
+
+### 전달 목록 보기
+
+```bash tab="cURL"
+curl -X GET "https://api.anycrawl.dev/v1/webhooks/:webhookId/deliveries?limit=20" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+### 쿼리 파라미터
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|-----------|------|---------|-------------|
+| `limit` | number | `100` | 반환할 전달 수 |
+| `offset` | number | `0` | 건너뛸 전달 수 |
+| `status` | string | - | `delivered`, `failed`, `retrying`로 필터 |
+| `from` | string | - | 시작일(ISO 8601) |
+| `to` | string | - | 종료일(ISO 8601) |
+
+### 응답
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "uuid": "delivery-uuid-1",
+      "webhookSubscriptionUuid": "webhook-uuid-1",
+      "eventType": "scrape.completed",
+      "status": "delivered",
+      "attempt_number": 1,
+      "request_url": "https://your-domain.com/webhooks/anycrawl",
+      "request_method": "POST",
+      "response_status": 200,
+      "response_duration_ms": 125,
+      "created_at": "2026-01-27T10:00:00.000Z",
+      "delivered_at": "2026-01-27T10:00:00.125Z"
+    },
+    {
+      "uuid": "delivery-uuid-2",
+      "status": "failed",
+      "attempt_number": 3,
+      "error_message": "Connection timeout",
+      "error_code": "ETIMEDOUT",
+      "created_at": "2026-01-27T09:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "limit": 20,
+    "offset": 0,
+    "filters": {
+      "status": null,
+      "from": null,
+      "to": null
+    }
+  }
+}
+```
+
+## 재시도 메커니즘
+
+### 재시도 시점
+
+다음일 때 웹훅을 재시도합니다.
+- HTTP status code is not 2xx
+- Connection timeout occurs
+- Network errors happen
+
+### 재시도 일정
+
+기본 설정(`max_retries: 3`, `retry_backoff_multiplier: 2`):
+
+| 시도 | 지연 | 최초 이후 경과 |
+|---------|-------|--------------------|
+| 1차 재시도 | 1분 | 1분 |
+| 2차 재시도 | 2분 | 3분 |
+| 3차 재시도 | 4분 | 7분 |
+
+지연: `backoff_multiplier ^ (attempt - 1) × 1분`
+
+### 자동 비활성화
+
+**연속 10회 실패** 후 웹훅이 자동 비활성화됩니다.
+
+**다시 켜기**:
+
+```bash
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+## 범위 필터
+
+### 전체 이벤트(scope: "all")
+
+구독한 유형의 모든 이벤트 알림:
+
+```json
+{
+  "scope": "all",
+  "event_types": ["scrape.completed", "crawl.completed"]
+}
+```
+
+### 특정 작업만(scope: "specific")
+
+지정한 예약 작업에 대해서만 알림:
+
+```json
+{
+  "scope": "specific",
+  "specific_task_ids": ["task-uuid-1", "task-uuid-2"],
+  "event_types": ["task.executed", "task.failed"]
+}
+```
+
+## 사설 IP 보호
+
+### 기본 동작
+
+AnyCrawl은 사설 IP로의 웹훅 전달을 차단합니다.
+
+- `10.0.0.0/8`
+- `172.16.0.0/12`
+- `192.168.0.0/16`
+- `169.254.0.0/16`(링크 로컬)
+- `127.0.0.1` / `localhost`
+- IPv6 private addresses
+
+### 로컬 웹훅 허용(테스트 전용)
+
+로컬 개발 시:
+
+```bash
+ALLOW_LOCAL_WEBHOOKS=true
+```
+
+<Callout type="warn">
+프로덕션에서는 절대 켜지 마세요. 심각한 보안 위험이 있습니다.
+</Callout>
+
+## 모범 사례
+
+### 1. 빠르게 응답
+
+**5초** 안에 2xx 상태 코드 반환:
+
+```javascript
+app.post('/webhook', async (req, res) => {
+  // Verify signature
+  if (!verifySignature(req.body, req.headers['x-anycrawl-signature'])) {
+    return res.status(401).send('Invalid signature');
+  }
+
+  // Quick acknowledgment
+  res.status(200).json({ received: true });
+
+  // Process asynchronously
+  queue.add('process-webhook', req.body);
+});
+```
+
+### 2. 멱등성
+
+`X-Webhook-Delivery-Id`로 중복 처리 방지:
+
+```javascript
+const processedDeliveries = new Set();
+
+app.post('/webhook', (req, res) => {
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  if (processedDeliveries.has(deliveryId)) {
+    return res.status(200).json({ received: true, duplicate: true });
+  }
+
+  processedDeliveries.add(deliveryId);
+
+  // Process event...
+
+  res.status(200).json({ received: true });
+});
+```
+
+### 3. 적절한 상태 코드
+
+| 상태 코드 | 설명 | AnyCrawl 동작 |
+|-------------|-------------|-------------------|
+| 200-299 | 성공 | 재시도 없음 |
+| 400-499 | 클라이언트 오류 | 재시도 없음(실패로 기록) |
+| 500-599 | 서버 오류 | 백오프 재시도 |
+| 타임아웃 | 네트워크 타임아웃 | 백오프 재시도 |
+
+### 4. 활동 로깅
+
+```javascript
+app.post('/webhook', (req, res) => {
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+  const eventType = req.headers['x-webhook-event'];
+
+  logger.info('Webhook received', {
+    deliveryId,
+    eventType,
+    timestamp: req.headers['x-webhook-timestamp']
+  });
+
+  try {
+    processWebhook(req.body, eventType);
+    logger.info('Webhook processed', { deliveryId });
+    res.status(200).json({ received: true });
+  } catch (error) {
+    logger.error('Webhook failed', {
+      deliveryId,
+      error: error.message
+    });
+    res.status(500).json({ error: 'Processing failed' });
+  }
+});
+```
+
+### 5. 보안 체크리스트
+
+- ✅ 항상 서명 검증
+- ✅ 프로덕션은 HTTPS
+- ✅ URL에 시크릿 노출 금지
+- ✅ 속도 제한 구현
+- ✅ 이상 징후 모니터링
+- ✅ 페이로드 구조 검증
+
+## 활용 사례
+
+### Slack 알림
+
+스크래핑 결과를 Slack으로:
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const { job_id, status, url } = req.body;
+
+  await fetch(process.env.SLACK_WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: `Job ${status}: ${url}\nJob ID: ${job_id}`
+    })
+  });
+
+  res.status(200).json({ received: true });
+});
+```
+
+### 이메일 알림
+
+실패 시 이메일:
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const eventType = req.headers['x-webhook-event'];
+
+  if (eventType.endsWith('.failed')) {
+    await sendEmail({
+      to: 'admin@example.com',
+      subject: 'AnyCrawl Job Failed',
+      body: JSON.stringify(req.body, null, 2)
+    });
+  }
+
+  res.status(200).json({ received: true });
+});
+```
+
+### DB 로깅
+
+웹훅 이벤트를 DB에 저장:
+
+```javascript
+app.post('/webhooks/anycrawl', async (req, res) => {
+  const eventType = req.headers['x-webhook-event'];
+  const deliveryId = req.headers['x-webhook-delivery-id'];
+
+  await db.webhookEvents.create({
+    deliveryId,
+    eventType,
+    payload: req.body,
+    receivedAt: new Date()
+  });
+
+  res.status(200).json({ received: true });
+});
+```
+
+## 문제 해결
+
+### 이벤트가 안 옴
+
+**확인**:
+- Is the webhook active? (`is_active: true`)
+- Are event types correctly configured?
+- Is the webhook URL accessible from the internet?
+- Is it blocked by private IP protection?
+- Check scope settings (all vs. specific)
+
+### 서명 검증 실패
+
+**흔한 원인**:
+- Using wrong secret (check webhook creation response)
+- Not stringifying payload before hashing
+- Including extra whitespace or formatting in JSON
+- Using wrong HMAC algorithm (must be SHA-256)
+
+### 실패율이 높음
+
+**대응**:
+- Check your endpoint is responding within 5 seconds
+- Return proper HTTP status codes
+- Review error messages in delivery history
+- Test locally with ngrok or similar tools
+
+### 웹훅 자동 비활성화
+
+**원인**: 연속 10회 실패
+
+**대응**:
+1. Fix the underlying issue (endpoint, signature verification, etc.)
+2. Test with the test endpoint
+3. Reactivate the webhook:
+
+```bash
+curl -X PUT "https://api.anycrawl.dev/v1/webhooks/:webhookId/activate" \
+  -H "Authorization: Bearer <your-api-key>"
+```
+
+## 디버깅 도구
+
+### 테스트 도구
+
+- [webhook.site](https://webhook.site) — 웹훅 요청 확인
+- [requestbin.com](https://requestbin.com) — 요청 검사
+- [ngrok](https://ngrok.com) — 로컬 터널
+
+### 로컬 개발
+
+ngrok으로 로컬 서버 노출:
+
+```bash
+ngrok http 3000
+```
+
+ngrok URL을 웹훅 URL로 사용:
+
+```
+https://abc123.ngrok.io/webhooks/anycrawl
+```
+
+## 제한
+
+| 항목 | 제한 |
+|------|-------|
+| 웹훅 이름 길이 | 1-255자 |
+| 웹훅 URL | 프로덕션은 HTTPS 권장 |
+| 타임아웃 | 1-60초 |
+| 최대 재시도 | 0-10 |
+| 페이로드 크기 | 최대 1MB |
+| 사용자 정의 헤더 | 최대 20개 |
+| 웹훅당 이벤트 유형 | 제한 없음 |
+
+## 관련 문서
+
+- [예약 작업](./scheduled-tasks) — 반복 작업 자동화
+- [Scrape API](./scrape) — 스크래핑 엔드포인트
+- [Crawl API](./crawl) — 크롤 엔드포인트

@@ -1,6 +1,6 @@
 {
     "name": "@anycrawl/search",
-    "version": "1.0.0-beta.15",
+    "version": "1.0.0-beta.26",
     "private": true,
     "type": "module",
     "scripts": {
@@ -8,7 +8,7 @@
         "build": "dotenv-run -r ../.. -- tsc",
         "clean": "rm -rf dist",
         "typecheck": "tsc --noEmit",
-        "test": "dotenv-run -r ../.. -- jest --detectOpenHandles --forceExit",
+        "test": "dotenv-run -r ../.. -- jest --detectOpenHandles --forceExit --passWithNoTests",
         "test:watch": "dotenv-run -r ../.. -- jest --watch --detectOpenHandles",
         "test:coverage": "dotenv-run -r ../.. -- jest --coverage --detectOpenHandles --forceExit"
     },

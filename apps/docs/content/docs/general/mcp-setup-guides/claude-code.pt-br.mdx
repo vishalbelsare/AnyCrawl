@@ -1,0 +1,110 @@
+---
+title: Claude Code
+description: Adicione web scraping e busca ao Claude Code com o AnyCrawl MCP
+icon: Terminal
+---
+
+Adicione capacidades de scraping e busca na web ao Claude Code com o AnyCrawl MCP.
+
+## Configuração rápida
+
+### 1. Obtenha sua chave de API
+
+Cadastre-se em [anycrawl.dev](https://anycrawl.dev) e copie sua chave de API no painel.
+
+### 2. Adicione o servidor MCP AnyCrawl
+
+Execute no terminal:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+Substitua `your-api-key` pela sua chave real do AnyCrawl.
+
+Pronto. Agora você pode buscar e fazer scraping da web no Claude Code.
+
+## Demonstração rápida
+
+Experimente no Claude Code:
+
+**Buscar na web:**
+
+```
+Search for the latest Next.js 15 features
+```
+
+**Fazer scraping de uma página:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Obter documentação:**
+
+```
+Find and scrape the Stripe API docs for payment intents
+```
+
+**Rastrear um site:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+O Claude usará automaticamente as ferramentas de busca, scrape e crawl do AnyCrawl.
+
+## Ferramentas disponíveis
+
+Após configurar, o Claude Code terá acesso a:
+
+- **anycrawl_scrape** — Faz scraping de uma única URL e extrai conteúdo
+- **anycrawl_crawl** — Rastreia várias páginas de um site
+- **anycrawl_search** — Busca na web e opcionalmente faz scrape dos resultados
+- **anycrawl_crawl_status** — Verifica o status do job de crawl
+- **anycrawl_crawl_results** — Obtém resultados de um job de crawl
+- **anycrawl_cancel_crawl** — Cancela um crawl em execução
+
+## Verificar instalação
+
+Para confirmar que o servidor MCP está configurado:
+
+```bash
+claude mcp list
+```
+
+Você deve ver `anycrawl` na lista de servidores MCP.
+
+## Solução de problemas
+
+### Servidor não responde
+
+1. Verifique se a chave de API é válida
+2. Certifique-se de ter Node.js 18+
+3. Tente remover e adicionar o servidor de novo:
+
+```bash
+claude mcp remove anycrawl
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+### Erros de permissão
+
+Garanta que o `npx` possa executar. Pode ser necessário:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Depois configure com o pacote global:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- anycrawl-mcp
+```
+
+## Próximos passos
+
+- Saiba mais sobre [opções de scraping](../scrape)
+- Explore [recursos de crawling](../crawl)
+- Veja [recursos de busca](../search)
+- Consulte a [documentação completa do servidor MCP](../mcp)

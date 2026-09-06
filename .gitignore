@@ -29,6 +29,7 @@ coverage
 out/
 build
 dist
+*.tsbuildinfo
 
 # Debug
 npm-debug.log*
@@ -68,8 +69,6 @@ AY_*.md
 
 /docs/
 
-/templates/
-
 # claude
 .claude/
 
@@ -85,3 +84,5 @@ AY_*.md
 logs/security/
 AGENTS.md
 CLAUDE.md
+
+.pnpm-store

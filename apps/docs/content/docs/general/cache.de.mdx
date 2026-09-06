@@ -1,0 +1,61 @@
+---
+title: Cache
+description: Cache-Verhalten für die Scrape-, Crawl- und Map-APIs.
+icon: Database
+---
+
+## Überblick
+
+AnyCrawl verwendet zwei Cache-Ebenen:
+
+- **Page Cache**: für `/v1/scrape` und seitenbezogene Verarbeitung in `/v1/crawl`
+- **Map Cache**: für URL-Discovery-Ergebnisse von `/v1/map`
+
+## Gemeinsame Parameter
+
+### `max_age` (ms)
+
+- Steuert das **Lesen** aus dem Cache.
+- `0`: erzwungene Aktualisierung (Cache-Lesen wird übersprungen)
+- `> 0`: zwischengespeicherte Daten innerhalb dieses Alters zulassen
+- weggelassen: Server-Standard verwenden
+
+### `store_in_cache`
+
+- Gilt für Scrape-/Crawl-Seitenausgaben.
+- `true` (Standard): Cache schreiben
+- `false`: Cache-Schreiben überspringen
+
+### `use_index` (nur Map)
+
+- `true` (Standard): Map darf den Page-Cache-Index als zusätzliche Quelle nutzen
+- `false`: diese Quelle deaktivieren
+
+## Verhalten der Endpunkte
+
+### `/v1/scrape`
+
+- Kann den Page Cache lesen, bevor ein neuer Job eingereiht wird.
+- Bei Cache-Treffer enthält die Antwort Cache-Metadaten (z. B. `cachedAt` / `maxAge`).
+
+### `/v1/crawl`
+
+- Liest derzeit **keinen** Page Cache für vollständige Crawl-Anfragen.
+- Unterstützt weiterhin schreibbezogene Cache-Steuerung in den Optionen pro Seite.
+
+### `/v1/map`
+
+- Kann den Map Cache lesen.
+- Die Antwort enthält kein öffentliches `fromCache`-Feld (Cache-Nutzung ist intern).
+
+## Praktische Tipps
+
+- Verwenden Sie `max_age: 0`, wenn Sie sofort frische Daten benötigen.
+- Verwenden Sie `store_in_cache: false` für stark dynamische Seiten, um instabile Snapshots zu vermeiden.
+- Deaktivieren Sie bei Map `use_index`, wenn die Discovery nur Sitemap, Suche und Seitenlinks nutzen soll.
+
+## Verwandte Dokumentation
+
+- [Scrape-API](./scrape)
+- [Crawl-API](./crawl)
+- [Map-API](./map)

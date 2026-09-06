@@ -1,0 +1,418 @@
+---
+title: Docker デプロイ
+description: 設定オプションとベストプラクティスに沿って Docker で AnyCrawl をセルフホストする手順
+icon: Hammer
+---
+
+## 事前ビルド済みイメージでの Docker
+
+AnyCrawl は [GitHub Container Registry](https://github.com/any4ai/AnyCrawl/packages) から事前ビルド済み Docker イメージを提供しています。ソースからビルドせずに AnyCrawl をすばやくデプロイできます。
+
+### 利用可能な事前ビルドイメージ
+
+- **anycrawl**：オールインワン。すべてのサービスと依存関係を含みます。
+- **anycrawl-api**：メイン API サービス
+- **anycrawl-scrape-cheerio**：Cheerio スクレイプエンジン
+- **anycrawl-scrape-playwright**：Playwright スクレイプエンジン
+- **anycrawl-scrape-puppeteer**：Puppeteer スクレイプエンジン
+
+## クイックスタート
+
+AnyCrawl 用のオールインワン事前ビルドイメージ `ghcr.io/any4ai/anycrawl:latest` があり、すべてのサービスと依存関係を含みます。次のコマンドで起動できます。
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+**注意**：arm64 イメージには `scrape-puppeteer` サービスが含まれていません。Puppeteer がどうしても必要な場合は、`docker run` に `platform` を `linux/amd64` に指定します。
+
+```bash
+docker run -p 8080:8080 --platform linux/amd64 ghcr.io/any4ai/anycrawl:latest
+```
+
+> ネイティブ arm64 イメージより性能は落ちる場合があります。
+
+バックグラウンド実行：
+
+```bash
+docker run -d -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+Arm64 で Puppeteer をサポートしない構成で使う場合：
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest-arm64
+```
+
+### 環境変数付き
+
+```bash
+# カスタム設定で実行
+docker run -d \
+  -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e ANYCRAWL_API_AUTH_ENABLED=false \
+  -e ANYCRAWL_HEADLESS=true \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+### `.env` ファイル付き
+
+```bash
+# ローカルの .env をマウント
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/.env:/usr/src/app/.env:ro \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+## Docker でのビルド
+
+独自イメージをビルドする場合の手順です。
+
+### 前提
+
+次がインストールされていることを確認してください。
+
+- **Docker**：20.10 以上
+- **Docker Compose**：2.0 以上
+
+### Docker と Docker Compose のインストール
+
+#### macOS
+
+```bash
+# Homebrew
+brew install docker docker-compose
+
+# または Docker Desktop
+# https://www.docker.com/products/docker-desktop
+```
+
+#### Ubuntu / Debian
+
+```bash
+# Install Docker
+# Add Docker's official GPG key:
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Add the repository to Apt sources:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+## クイックスタート
+
+### 1. リポジトリをクローン
+
+```bash
+git clone https://github.com/any4ai/AnyCrawl.git
+cd AnyCrawl
+```
+
+### 2. サービスを起動
+
+```bash
+# ビルドしてすべて起動
+docker compose up --build
+
+# バックグラウンド
+docker compose up --build -d
+```
+
+### 3. デプロイの確認
+
+```bash
+# サービス状態
+docker compose ps
+
+# API の動作確認
+curl http://localhost:8080/health
+```
+
+## サービス構成
+
+AnyCrawl はマイクロサービス構成で、主に次のサービスがあります。
+
+### コアサービス
+
+| サービス名        | 説明                              | ポート | 依存 |
+| ------------------- | ---------------------------------------- | ---- | ------------ |
+| `api`               | API ゲートウェイとメインインターフェース   | 8080 | redis        |
+| `scrape-puppeteer`  | Puppeteer スクレイプエンジン                | -    | redis        |
+| `scrape-playwright` | Playwright スクレイプエンジン               | -    | redis        |
+| `scrape-cheerio`    | Cheerio スクレイプエンジン（SPA 非対応） | -    | redis        |
+| `redis`             | メッセージキューとキャッシュ                  | 6379 | -            |
+
+## 環境変数
+
+### 基本
+
+| 変数名       | 説明         | 既定      | 例                     |
+| ------------------- | ------------------- | ------------ | --------------------------- |
+| `NODE_ENV`          | 実行環境 | `production` | `production`, `development` |
+| `ANYCRAWL_API_PORT` | API ポート    | `8080`       | `8080`                      |
+
+### スクレイピング
+
+| 変数名                    | 説明                                          | 既定  | 例                          |
+| -------------------------------- | ---------------------------------------------------- | -------- | -------------------------------- |
+| `ANYCRAWL_HEADLESS`              | ヘッドレスモード                                    | `true`   | `true`, `false`                  |
+| `ANYCRAWL_PROXY_URL`             | ベースプロキシの URL                            | -        | `http://proxy:8080`              |
+| `ANYCRAWL_PROXY_STEALTH_URL`     | ステルスプロキシの URL                         | -        | `http://residential-proxy:8080`  |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | ステルス利用時の追加クレジット     | `5`      | `5`                              |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS`    | ステルス / auto プロキシの既定タイムアウト（ms）    | `120000` | `120000`                         |
+| `ANYCRAWL_IGNORE_SSL_ERROR`      | SSL エラーを無視                                    | `true`   | `true`, `false`                  |
+
+### データベース
+
+| 変数名                | 説明              | 既定                       |
+| ---------------------------- | ------------------------ | ----------------------------- |
+| `ANYCRAWL_API_DB_TYPE`       | DB の種類            | `sqlite`                      |
+| `ANYCRAWL_API_DB_CONNECTION` | DB 接続パス | `/usr/src/app/db/database.db` |
+
+### Redis
+
+| 変数名        | 説明          | 既定              |
+| -------------------- | -------------------- | -------------------- |
+| `ANYCRAWL_REDIS_URL` | Redis の URL | `redis://redis:6379` |
+
+### 認証
+
+| 変数名               | 説明               | 既定 |
+| --------------------------- | ------------------------- | ------- |
+| `ANYCRAWL_API_AUTH_ENABLED` | API 認証を有効にする | `false` |
+
+## カスタム設定
+
+### 環境ファイルの作成
+
+```bash
+cp .env.example .env
+```
+
+### `.env` の例
+
+```bash
+# Basic configuration
+NODE_ENV=production
+ANYCRAWL_API_PORT=8080
+
+# Scraping configuration
+ANYCRAWL_HEADLESS=true
+ANYCRAWL_PROXY_URL=
+ANYCRAWL_PROXY_STEALTH_URL=
+ANYCRAWL_PROXY_STEALTH_CREDITS=5
+ANYCRAWL_STEALTH_TIMEOUT_MS=120000
+ANYCRAWL_IGNORE_SSL_ERROR=true
+
+# Database configuration
+ANYCRAWL_API_DB_TYPE=sqlite
+ANYCRAWL_API_DB_CONNECTION=/usr/src/app/db/database.db
+
+# Redis configuration
+ANYCRAWL_REDIS_URL=redis://redis:6379
+
+# Authentication configuration
+ANYCRAWL_API_AUTH_ENABLED=false
+```
+
+## データの永続化
+
+### ボリューム
+
+```yaml
+volumes:
+    - ./storage:/usr/src/app/storage # Scraping data storage
+    - ./db:/usr/src/app/db # Database files
+    - redis-data:/data # Redis data
+```
+
+### バックアップ
+
+```bash
+# Backup database
+docker compose exec api cp /usr/src/app/db/database.db /usr/src/app/storage/backup.db
+
+# Backup Redis data
+docker compose exec redis redis-cli SAVE
+docker compose cp redis:/data/dump.rdb ./backup/
+```
+
+## よく使うコマンド
+
+### サービス管理
+
+```bash
+# Start services
+docker compose up -d
+
+# Stop services
+docker compose down
+
+# Restart specific service
+docker compose restart api
+
+# View service logs
+docker compose logs -f api
+```
+
+### スケール
+
+```bash
+# Scale scraping service instances
+docker compose up -d --scale scrape-puppeteer=3
+docker compose up -d --scale scrape-playwright=2
+```
+
+## 監視
+
+```bash
+# View service status
+docker compose ps
+
+# View resource usage
+docker stats
+
+# View specific service logs
+docker compose logs -f --tail=100 api
+```
+
+## トラブルシューティング
+
+### よくある問題
+
+#### 1. ポート競合
+
+```bash
+# Check port usage
+lsof -i :8080
+
+# Modify port mapping
+# Change ports configuration in docker-compose.yml
+ports:
+  - "8081:8080"  # Change local port to 8081
+```
+
+#### 2. メモリ不足
+
+```bash
+# Check container memory usage
+docker stats
+
+# Increase Docker available memory (Docker Desktop)
+# Docker Desktop -> Settings -> Resources -> Memory
+```
+
+#### 3. DB 接続失敗
+
+```bash
+# Check database file permissions
+ls -la ./db/
+
+# Recreate database volume
+docker compose down -v
+docker compose up --build
+```
+
+#### 4. Redis 接続失敗
+
+```bash
+# Check Redis service status
+docker compose exec redis redis-cli ping
+
+# View Redis logs
+docker compose logs redis
+```
+
+### デバッグモード
+
+```bash
+# Set environment variables to enable debugging
+export NODE_ENV=development
+export DEBUG=anycrawl:*
+
+# Start services
+docker compose up --build
+```
+
+## 本番デプロイ
+
+### セキュリティ
+
+1. **認証を有効にする**：
+
+```bash
+ANYCRAWL_API_AUTH_ENABLED=true
+```
+
+有効化後は ApiKey を追加し、リクエストヘッダで使います。
+
+### API キーの生成
+
+認証を有効にした場合（`ANYCRAWL_API_AUTH_ENABLED=true`）、リポジトリルートで次を実行します。
+
+```bash
+pnpm --filter api key:generate
+# optionally name the key
+pnpm --filter api key:generate -- default
+```
+
+出力される `uuid`、`key`、`credits` のうち、`Authorization: Bearer <KEY>` には `key` を使います。
+
+#### Docker コンテナ内で実行
+
+Docker Compose の場合：
+
+```bash
+docker compose exec api pnpm --filter api key:generate
+docker compose exec api pnpm --filter api key:generate -- default
+```
+
+単一コンテナの場合（`<container_name_or_id>` を置き換え）：
+
+```bash
+docker exec -it <container_name_or_id> pnpm --filter api key:generate
+docker exec -it <container_name_or_id> pnpm --filter api key:generate -- default
+```
+
+2. **HTTPS を使う**：
+
+参考：
+
+```yaml
+services:
+    nginx:
+        image: nginx:alpine
+        ports:
+            - "443:443"
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf
+            - ./ssl:/etc/ssl/certs
+```
+
+`nginx` をリバースプロキシとして利用します。
+
+## アップデートとメンテナンス
+
+### サービスの更新
+
+```bash
+# Pull latest images
+docker compose pull
+
+# Rebuild and start
+docker compose up --build -d
+
+# Clean up old images
+docker image prune -f
+```

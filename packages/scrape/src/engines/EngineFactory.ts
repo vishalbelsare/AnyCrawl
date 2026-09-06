@@ -1,5 +1,10 @@
 import { RequestQueueV2, LaunchContext } from "crawlee";
+import { config } from "@anycrawl/libs";
 import type { EngineOptions } from "../types/engine.js";
+import {
+    getCloakBrowserPlaywrightLauncher,
+    getCloakBrowserPuppeteerLauncher,
+} from "../core/CloakBrowserLauncher.js";
 
 // Use type-only reference to avoid runtime import of Base and engines
 export type Engine = import("./Base.js").BaseEngine;
@@ -11,16 +16,16 @@ export interface IEngineFactory {
 
 // Default configurations
 const defaultOptions: EngineOptions = {
-    requestHandlerTimeoutSecs: process.env.ANYCRAWL_REQUEST_HANDLER_TIMEOUT_SECS ? parseInt(process.env.ANYCRAWL_REQUEST_HANDLER_TIMEOUT_SECS) : 600,
-    keepAlive: process.env.ANYCRAWL_KEEP_ALIVE === "false" ? false : true,
-    useSessionPool: true,  // Enable session pool for cookie persistence
+    requestHandlerTimeoutSecs: config.navigation.requestHandlerTimeoutSecs,
+    keepAlive: config.engine.keepAlive,
+    useSessionPool: true,
 };
 
-if (process.env.ANYCRAWL_MIN_CONCURRENCY) {
-    defaultOptions.minConcurrency = parseInt(process.env.ANYCRAWL_MIN_CONCURRENCY);
+if (config.engine.minConcurrency !== undefined) {
+    defaultOptions.minConcurrency = config.engine.minConcurrency;
 }
-if (process.env.ANYCRAWL_MAX_CONCURRENCY) {
-    defaultOptions.maxConcurrency = parseInt(process.env.ANYCRAWL_MAX_CONCURRENCY);
+if (config.engine.maxConcurrency !== undefined) {
+    defaultOptions.maxConcurrency = config.engine.maxConcurrency;
 }
 
 // Build platform-aware Chromium args to avoid instability on macOS/Windows
@@ -31,12 +36,28 @@ const defaultLaunchContext: Partial<LaunchContext> = {
             const baseArgs = [
                 "--no-first-run",
                 "--disable-accelerated-2d-canvas",
+                ...(config.engine.lightMode ? [
+                    "--disable-background-networking",
+                    "--disable-breakpad",
+                    "--disable-component-extensions-with-background-pages",
+                    "--disable-default-apps",
+                    "--disable-extensions",
+                    "--disable-features=TranslateUI",
+                    "--disable-hang-monitor",
+                    "--disable-popup-blocking",
+                    "--disable-prompt-on-repost",
+                    "--disable-sync",
+                    "--metrics-recording-only",
+                    "--password-store=basic",
+                    "--use-mock-keychain",
+                    "--mute-audio",
+                    "--force-color-profile=srgb",
+                ] : []),
             ];
-            const sslArgs = (process.env.ANYCRAWL_IGNORE_SSL_ERROR === "true")
+            const sslArgs = config.engine.ignoreSSLError
                 ? ["--ignore-certificate-errors", "--ignore-certificate-errors-spki-list"]
                 : [];
             if (isLinux) {
-                // Only apply these flags on Linux/Docker where they're needed
                 return [
                     "--no-sandbox",
                     "--disable-setuid-sandbox",
@@ -47,7 +68,6 @@ const defaultLaunchContext: Partial<LaunchContext> = {
                     ...sslArgs,
                 ];
             }
-            // On macOS/Windows, avoid single-process/no-sandbox which cause random page crashes
             return [
                 ...baseArgs,
                 ...sslArgs,
@@ -57,19 +77,19 @@ const defaultLaunchContext: Partial<LaunchContext> = {
             width: 1920,
             height: 1080
         },
-        ignoreHTTPSErrors: process.env.ANYCRAWL_IGNORE_SSL_ERROR === "true" ? true : false,
+        ignoreHTTPSErrors: config.engine.ignoreSSLError,
     },
-    // Add user agent if set
-    ...(process.env.ANYCRAWL_USER_AGENT ? {
-        userAgent: process.env.ANYCRAWL_USER_AGENT
+    useIncognitoPages: config.engine.browserIsolateContexts,
+    ...(config.engine.userAgent ? {
+        userAgent: config.engine.userAgent
     } : {}),
 };
 
 const defaultHttpOptions: Record<string, any> = {
-    ignoreSslErrors: process.env.ANYCRAWL_IGNORE_SSL_ERROR === "true" ? true : false,
+    ignoreSslErrors: config.engine.ignoreSSLError,
 };
 
-function mergeLaunchContexts(
+export function mergeLaunchContexts(
     baseLaunchContext: EngineOptions["launchContext"] | undefined,
     overrideLaunchContext: EngineOptions["launchContext"] | undefined
 ): EngineOptions["launchContext"] | undefined {
@@ -87,6 +107,7 @@ function mergeLaunchContexts(
             ...(overrideLaunchContext?.launchOptions || {}),
             ...(mergedArgs.length > 0 ? { args: mergedArgs } : {}),
         },
+        ...(baseLaunchContext?.launcher ? { launcher: baseLaunchContext.launcher } : {}),
     };
 }
 
@@ -109,7 +130,7 @@ abstract class BaseEngineFactory implements IEngineFactory {
         const mod = await import(this.engineModule);
         const EngineClass = mod[this.engineClass];
         const proxyConfiguration = await getProxyConfiguration();
-        const engineSpecificOptions = this.getEngineSpecificOptions();
+        const engineSpecificOptions = await this.getEngineSpecificOptions();
         const mergedLaunchContext = mergeLaunchContexts(
             engineSpecificOptions.launchContext as EngineOptions["launchContext"] | undefined,
             options?.launchContext
@@ -125,7 +146,7 @@ abstract class BaseEngineFactory implements IEngineFactory {
         });
     }
 
-    protected abstract getEngineSpecificOptions(): Record<string, any>;
+    protected abstract getEngineSpecificOptions(): Record<string, any> | Promise<Record<string, any>>;
 }
 
 // Concrete factory implementations
@@ -145,9 +166,13 @@ export class PlaywrightEngineFactory extends BaseEngineFactory {
     protected engineModule = "./Playwright.js";
     protected engineClass = "PlaywrightEngine";
 
-    protected getEngineSpecificOptions(): Record<string, any> {
+    protected async getEngineSpecificOptions(): Promise<Record<string, any>> {
+        const launcher = await getCloakBrowserPlaywrightLauncher();
         return {
-            launchContext: defaultLaunchContext,
+            launchContext: {
+                ...defaultLaunchContext,
+                launcher,
+            },
         };
     }
 }
@@ -156,9 +181,13 @@ export class PuppeteerEngineFactory extends BaseEngineFactory {
     protected engineModule = "./Puppeteer.js";
     protected engineClass = "PuppeteerEngine";
 
-    protected getEngineSpecificOptions(): Record<string, any> {
+    protected async getEngineSpecificOptions(): Promise<Record<string, any>> {
+        const launcher = await getCloakBrowserPuppeteerLauncher();
         return {
-            launchContext: defaultLaunchContext,
+            launchContext: {
+                ...defaultLaunchContext,
+                launcher,
+            },
         };
     }
 }

@@ -1,0 +1,84 @@
+---
+title: Bắt đầu nhanh
+description: Cách dùng API thu thập và crawl web của AnyCrawl để trích xuất dữ liệu sẵn sàng cho LLM từ bất kỳ trang web nào
+icon: Album
+---
+
+## Giới thiệu
+
+Sinh ra cho LLM. Crawler và scraper đa luồng, hiệu năng cao, dùng được ngay. Với OpenAPI thân thiện lập trình viên, trả về dữ liệu sạch, có cấu trúc, tối ưu cho LLM.
+
+AnyCrawl có các tính năng sau:
+
+<Cards>
+
+<Card icon={<CpuIcon className="text-purple-300" />} title="Hiệu năng cao">
+    Hiệu năng cao, đa luồng.
+</Card>
+
+<Card icon={<GithubIcon className="text-blue-300" />} title="Mã nguồn mở hoàn toàn">
+    Mã nguồn mở, có trên GitHub.
+</Card>
+
+<Card icon={<OpenAIIcon />} title='Thân thiện LLM'>
+Dữ liệu sạch, có cấu trúc cho LLM.
+</Card>
+<Card icon={<OpenAPIIcon />} title='OpenAPI'>
+Thân thiện OpenAPI.
+
+</Card>
+
+</Cards>
+
+## Quy ước API
+
+### Đặt tên tham số
+
+API AnyCrawl tuân theo quy ước đặt tên nhất quán:
+
+- **Tham số request**: Chủ yếu `snake_case`
+  - Ví dụ thường gặp: `webhook_url`, `event_types`, `cron_expression`, `max_retries`
+  - Lưu ý: một số trường riêng từng endpoint dùng camelCase (ví dụ `timeRange` trong Search).
+
+- **Trường response**: Dùng định dạng `snake_case`
+  - Ví dụ: `task_id`, `webhook_id`, `next_execution_at`, `task_type`, `cron_expression`, `is_active`
+
+Với body request, hãy dựa vào bảng tham số/OpenAPI của từng endpoint làm nguồn sự thật.
+
+### Định dạng response
+
+Mọi response API đều theo cấu trúc chuẩn:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Optional message"
+}
+```
+
+- `success`: Boolean cho biết request có thành công không
+- `data`: Payload trả về (object hoặc array)
+- `message`: Thông báo tùy chọn, dễ đọc
+
+### Response lỗi
+
+Response lỗi kèm thông tin chi tiết:
+
+```json
+{
+  "success": false,
+  "error": "Error type",
+  "message": "Human-readable error message",
+  "details": { ... }
+}
+```
+
+Mã HTTP thường gặp:
+- `200` - Thành công
+- `400` - Bad Request (lỗi validation)
+- `401` - Unauthorized (API key không hợp lệ)
+- `402` - Payment Required (không đủ credits)
+- `404` - Not Found
+- `429` - Too Many Requests (vượt rate limit)
+- `500` - Internal Server Error

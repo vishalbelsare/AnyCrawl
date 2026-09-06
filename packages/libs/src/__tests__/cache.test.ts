@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@jest/globals";
-import { shouldCache } from "../cache/index.js";
+import { computeCacheKey, shouldCache } from "../cache/index.js";
 
 describe("shouldCache", () => {
     it("returns false for title-only markdown payloads", () => {
@@ -33,5 +33,37 @@ describe("shouldCache", () => {
         };
 
         expect(shouldCache(options, result)).toBe(true);
+    });
+});
+
+describe("computeCacheKey", () => {
+    it("separates browser runtime cache entries for playwright", () => {
+        const base = {
+            url: "https://example.com",
+            engine: "playwright",
+            formats: ["markdown"],
+        };
+
+        const defaultRuntime = computeCacheKey(base);
+        const cloakRuntime = computeCacheKey({
+            ...base,
+            browser_runtime: "cloakbrowser",
+        });
+
+        expect(defaultRuntime.urlHash).toBe(cloakRuntime.urlHash);
+        expect(defaultRuntime.optionsHash).not.toBe(cloakRuntime.optionsHash);
+    });
+
+    it("does not let browser runtime affect cheerio cache entries", () => {
+        const base = {
+            url: "https://example.com",
+            engine: "cheerio",
+            formats: ["markdown"],
+        };
+
+        expect(computeCacheKey(base)).toEqual(computeCacheKey({
+            ...base,
+            browser_runtime: "cloakbrowser",
+        }));
     });
 });

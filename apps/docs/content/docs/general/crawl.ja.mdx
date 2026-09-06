@@ -1,0 +1,437 @@
+---
+title: クロール
+description: サイト全体をクロールし、LLM 向けの構造化データに変換する
+icon: Bug
+---
+
+## はじめに
+
+AnyCrawl のクロール API は、シード URL から複数ページを発見・処理し、各ページに `/v1/scrape` と同じ抽出パイプラインを適用します。**非同期**です。すぐに `job_id` が返り、状態をポーリングして結果をページ単位で取得します。
+
+**主な特徴**
+
+- **非同期ジョブ**：クロールをキューに入れ、後から結果を取得
+- **マルチエンジン**：`auto`（既定）、`cheerio`、`playwright`、`puppeteer`
+- **柔軟な範囲制御**：`strategy`、`max_depth`、`include_paths`、`exclude_paths`
+- **ページ単位のオプション**：`scrape_options` で `/v1/scrape` のオプションを再利用
+- **ページネーション**：`skip` で結果をストリームし、ペイロードサイズを制御
+
+### API エンドポイント
+
+```
+POST    https://api.anycrawl.dev/v1/crawl
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}/status
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}?skip=0
+DELETE  https://api.anycrawl.dev/v1/crawl/{jobId}
+```
+
+## 使用例
+
+### クロールジョブを作成
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://anycrawl.dev",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 100,
+    "exclude_paths": ["/blog/*"],
+    "scrape_options": {
+      "formats": ["markdown"],
+      "timeout": 60000
+    }
+  }'
+```
+
+### `scrape_paths` による選択的スクレイプ
+
+`scrape_paths` を使うと、リンク発見のためにページを訪問しつつ、本文抽出を省略できます。コストとストレージを抑えられます。
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://shop.example.com",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 200,
+    "include_paths": ["/*"],
+    "scrape_paths": ["/products/*/details", "/products/*/reviews"],
+    "scrape_options": {
+      "formats": ["markdown", "json"]
+    }
+  }'
+```
+
+この例では：
+
+- `/*` に一致するページはすべて**訪問**（リンク発見）されます
+- `/products/*/details` または `/products/*/reviews` に一致するページだけ**本文が抽出・保存**されます
+- カテゴリやナビゲーションなどはクロールのみでスクレイプされず、クレジットとストレージを節約します
+
+```javascript tab="JavaScript"
+const start = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://anycrawl.dev",
+        engine: "cheerio",
+        strategy: "same-domain",
+        max_depth: 5,
+        limit: 100,
+        exclude_paths: ["/blog/*"],
+        scrape_options: { formats: ["markdown"], timeout: 60000 },
+    }),
+});
+const startResult = await start.json();
+const jobId = startResult.data.job_id;
+```
+
+```python tab="Python"
+import requests
+resp = requests.post(
+    'https://api.anycrawl.dev/v1/crawl',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://anycrawl.dev',
+        'engine': 'cheerio',
+        'strategy': 'same-domain',
+        'max_depth': 5,
+        'limit': 100,
+        'exclude_paths': ['/blog/*'],
+    'scrape_options': { 'formats': ['markdown'], 'timeout': 60000 }
+    }
+)
+start = resp.json()
+job_id = start['data']['job_id']
+```
+
+### 状態のポーリング
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396/status"
+```
+
+```javascript tab="JavaScript"
+const statusRes = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}/status`, {
+    headers: { Authorization: "Bearer YOUR_API_KEY" },
+});
+const status = await statusRes.json();
+```
+
+### 結果の取得（ページネーション）
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=0"
+```
+
+```javascript tab="JavaScript"
+let skip = 0;
+while (true) {
+    const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`, {
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+    });
+    const page = await res.json();
+    // process page.data
+    if (!page.next) break;
+    const nextUrl = new URL(page.next);
+    skip = Number(nextUrl.searchParams.get("skip") || 0);
+}
+```
+
+### ジョブのキャンセル
+
+```bash tab="cURL"
+curl -X DELETE -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396"
+```
+
+## リクエストパラメータ
+
+| パラメータ           | 型            | 必須 | 既定       | 説明                                                                                                              |
+| ------------------- | --------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `url`               | string          | はい      | -             | クロール開始のシード URL                                                                                               |
+| `template_id`       | string          | いいえ       | -             | このクロールで使うテンプレート ID                                                                                        |
+| `variables`         | object          | いいえ       | -             | テンプレート変数（`template_id` 指定時のみ）                                                            |
+| `engine`            | enum            | いいえ       | `auto`        | ページ単位のエンジン：`auto`、`cheerio`、`playwright`、`puppeteer`                                                   |
+| `exclude_paths`     | array of string | いいえ       | -             | 除外パス（glob 風）、例：`/blog/*`                                                                        |
+| `include_paths`     | array of string | いいえ       | -             | クロールに含めるパス（除外の後に適用）                                                             |
+| `scrape_paths`      | array of string | いいえ       | -             | 本文抽出対象のパス。一致した URL のみ内容を保存。未設定なら含まれる URL のみスクレイプ |
+| `max_depth`         | number          | いいえ       | `10`          | シードからの最大深さ                                                                                              |
+| `strategy`          | enum            | いいえ       | `same-domain` | 範囲：`all`、`same-domain`、`same-hostname`、`same-origin`                                                        |
+| `limit`             | number          | いいえ       | `100`         | クロールする最大ページ数                                                                                         |
+| `max_age`           | number          | いいえ       | -             | キャッシュ最大経過時間（ms）。`0` でキャッシュ読み取りをスキップ。省略時はサーバー既定                                                |
+| `store_in_cache`    | boolean         | いいえ       | `true`        | ページ単位のスクレイプで Page Cache に書き込むか                                                                          |
+| `retry`             | boolean         | いいえ       | `false`       | 失敗時に再試行するか                                                                                               |
+| `proxy`             | string (URI)    | いいえ       | -             | 任意のプロキシ URL                                                                                                        |
+| `formats`           | array of enum   | いいえ       | `["markdown"]`| ページ単位の出力形式                                                                                       |
+| `timeout`           | number          | いいえ       | `60000`       | リクエスト単位のタイムアウト（ms）                                                                                                  |
+| `wait_for`          | number          | いいえ       | -             | 抽出前の待機（ms）。ブラウザエンジンのみ                                                                        |
+| `wait_until`        | enum            | いいえ       | -             | ブラウザの待機条件：`load`、`domcontentloaded`、`networkidle`、`commit`                        |
+| `wait_for_selector` | string, object, or array | いいえ | -          | セレクタ待ち（ブラウザのみ）。`wait_for` より優先。                               |
+| `include_tags`      | array of string | いいえ       | -             | 一致する CSS セレクタの要素のみ含める                                                                            |
+| `exclude_tags`      | array of string | いいえ       | -             | 一致する CSS セレクタの要素を除外                                                                                 |
+| `only_main_content` | boolean         | いいえ       | `true`        | 本文のみ抽出（ヘッダー・フッター・ナビ等を除く）                                                    |
+| `json_options`      | object          | いいえ       | -             | 構造化 JSON 抽出（schema、user_prompt、schema_name、schema_description）                             |
+| `extract_source`    | enum            | いいえ       | `markdown`    | JSON 抽出元：`markdown`（既定）または `html`                                                               |
+| `ocr_options`       | boolean         | いいえ       | `false`       | Markdown 画像のみ OCR 強化。`html`/`rawHtml` には影響しない。                       |
+| `scrape_options`    | object          | いいえ       | -             | ページ単位オプション（`/v1/scrape` と同じ。トップレベル `url`/`engine` を除く）                                  |
+
+### `scrape_options` のフィールド
+
+| フィールド               | 型                     | 既定        | 備考                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `formats`           | array of enum            | `["markdown"]` | 出力：`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`、`summary`、`links`                               |
+| `timeout`           | number                   | `60000`        | リクエスト単位タイムアウト（ms）                                                                                                                    |
+| `wait_for`          | number                   | -              | 抽出前待機（ms）。ブラウザのみ。`wait_for_selector` より下位                                                 |
+| `wait_for_selector` | string, object, or array | -              | ブラウザのみ。CSS 文字列、オブジェクト `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }`、または配列。順に待機。`wait_for` より優先。 |
+| `include_tags`      | array of string          | -              | 一致する CSS セレクタの要素のみ                                                                                              |
+| `exclude_tags`      | array of string          | -              | 一致する CSS セレクタを除外                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | 本文のみ抽出                                                                                                                                    |
+| `proxy`             | string (URI)             | -              | 任意のプロキシ URL                                                                                                                          |
+| `json_options`      | object                   | -              | 構造化 JSON 抽出（schema、user_prompt、schema_name、schema_description）                                               |
+| `extract_source`    | enum                     | `markdown`     | JSON 抽出元：`markdown`（既定）または `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | Markdown 画像のみ OCR 強化。`html`/`rawHtml` には影響しない。                                         |
+| `max_age`           | number                   | -              | キャッシュ最大経過時間（ms）。`0` で読み取りスキップ。省略時はサーバー既定                                                                     |
+| `store_in_cache`    | boolean                  | `true`         | ページ単位で Page Cache に書き込むか                                                                                              |
+
+### キャッシュの挙動
+
+- クロールは現状 **Page Cache を読み取りません**が、書き込みは行われる場合があります。
+- `scrape_options` を渡す場合は、その中でキャッシュ制御を設定してください。
+
+## レスポンス形式
+
+### 1) 作成（HTTP 200）
+
+```json
+{
+    "success": true,
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "created",
+        "message": "Crawl job has been queued for processing"
+    }
+}
+```
+
+#### 想定エラー
+
+- 400 バリデーションエラー
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid enum value...",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            { "field": "engine", "message": "Invalid enum value", "code": "invalid_enum_value" }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+- 401 認証エラー
+
+```json
+{ "success": false, "error": "Invalid API key" }
+```
+
+### 2) 状態（HTTP 200）
+
+```json
+{
+    "success": true,
+    "message": "Job status retrieved successfully",
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "completed",
+        "start_time": "2025-05-25T07:56:44.162Z",
+        "expires_at": "2025-05-26T07:56:44.162Z",
+        "credits_used": 0,
+        "total": 120,
+        "completed": 30,
+        "failed": 2
+    }
+}
+```
+
+### 3) 結果ページ（HTTP 200）
+
+```json
+{
+    "success": true,
+    "status": "pending",
+    "total": 120,
+    "completed": 30,
+    "credits_used": 12,
+    "next": "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=100",
+    "data": [
+        {
+            "url": "https://anycrawl.dev/",
+            "title": "AnyCrawl",
+            "markdown": "# AnyCrawl...",
+            "timestamp": "2025-05-25T07:56:44.162Z"
+        }
+    ]
+}
+```
+
+#### 想定エラー
+
+- 400 無効なジョブ ID / 見つからない
+
+```json
+{ "success": false, "error": "Invalid job ID", "message": "Job ID must be a valid UUID" }
+```
+
+### 4) キャンセル（HTTP 200）
+
+```json
+{
+    "success": true,
+    "message": "Job cancelled successfully",
+    "data": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396", "status": "cancelled" }
+}
+```
+
+#### 想定エラー
+
+- 404 見つからない
+- 409 ジョブは既に完了
+
+```json
+{
+    "success": false,
+    "error": "Job already finished",
+    "message": "Finished jobs cannot be cancelled"
+}
+```
+
+## ベストプラクティス
+
+- 単一ページはコスト削減のため `/v1/scrape`、サイト全体は `/v1/crawl`。
+- `strategy`、`max_depth`、パスルールで範囲とコストを調整。
+- `scrape_paths` でナビ／カテゴリは訪問のみ、本文ページだけスクレイプする。
+- `formats` は必要なものだけに絞る。
+- `skip` でページングし、巨大なレスポンスを避ける。
+
+### `scrape_paths` によるコスト最適化
+
+**`scrape_paths` なし（既定）**：
+
+- 含まれるページすべて → 訪問＋本文抽出＋保存
+
+**`scrape_paths` あり**：
+
+- `include_paths` に含まれるが `scrape_paths` にないページ → **訪問のみ**（リンク発見）
+- `include_paths` と `scrape_paths` の両方に一致 → 訪問＋本文抽出＋保存
+
+例：
+
+- EC：カテゴリはすべてクロールし、商品詳細だけスクレイプ
+- ドキュメント：ナビはすべて巡回し、記事本文だけ抽出
+- ニュース：セクションは閲覧し、全文記事だけ保存
+
+## エラー処理の例
+
+```javascript
+async function fetchAllResults(jobId) {
+    let skip = 0;
+    while (true) {
+        const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const page = await res.json();
+        // handle page.data here
+        if (!page.next) break;
+        const next = new URL(page.next);
+        skip = Number(next.searchParams.get("skip") || 0);
+    }
+}
+```
+
+## 高同時実行の利用
+
+クロールキューは複数ジョブの同時実行に対応します。複数のシードを投入し、それぞれ独立にポーリングします。
+
+```javascript
+const seeds = ["https://site-a.com", "https://site-b.com", "https://site-c.com"];
+const jobs = await Promise.all(
+    seeds.map((url) =>
+        fetch("https://api.anycrawl.dev/v1/crawl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, engine: "cheerio" }),
+        }).then((r) => r.json())
+    )
+);
+```
+
+## FAQ
+
+### `/v1/crawl` と `/v1/scrape` の違いは？
+
+`/v1/scrape` は単一 URL を同期で取得し、すぐ内容を返します。`/v1/crawl` はシードから複数ページを発見し、非同期で処理します。
+
+### 範囲とコストを抑えるには？
+
+`strategy`、`max_depth`、`limit`、パスルール（`include_paths`、`exclude_paths`、`scrape_paths`）を使います。
+
+### `include_paths` と `scrape_paths` の違いは？
+
+- `include_paths`：どの URL を**訪問**するか（リンク発見）
+- `scrape_paths`：どの URL を**本文抽出・保存**するか
+
+`scrape_paths` 未設定なら、含まれる URL はすべてスクレイプされます（後方互換）。
+
+### コストを下げるには？
+
+ナビ／カテゴリはリンク発見のためだけ訪問し、本文は `scrape_paths` に合うページだけ保存します。
+
+### 結果のページネーションは？
+
+`skip` クエリを使います。レスポンスに `next` があれば、次のページ取得に従います。
+
+### なぜ `html`/`markdown` が返らないジョブがある？
+
+`scrape_options.formats` に必要な形式が含まれ、かつ選んだエンジンがそれをサポートしているか確認してください。
+
+## 状態の値
+
+ジョブの `status` はジョブモデルで定義された値に従います。
+
+| 状態      | 意味                                               |
+| ----------- | ----------------------------------------------------- |
+| `pending`   | キュー待ちまたは実行中（未完了）       |
+| `completed` | 正常完了                             |
+| `failed`    | エラーで終了                               |
+| `cancelled` | キャンセル済み。以降の処理は実行されない |
+
+## OpenAPI（自動生成）
+
+自動生成ドキュメントは API リファレンスを参照してください。
+
+- `POST /v1/crawl`
+- `GET /v1/crawl/{jobId}/status`
+- `GET /v1/crawl/{jobId}`
+- `DELETE /v1/crawl/{jobId}`

@@ -7,12 +7,13 @@ import morgan from "morgan";
 import responseTime from "response-time";
 import { logMiddleware } from "./middlewares/LogMiddleware.js";
 import { authMiddleware } from "./middlewares/AuthMiddleware.js";
-import { checkCreditsMiddleware } from "./middlewares/CheckCreditsMiddleware.js";
 import { deductCreditsMiddleware } from "./middlewares/DeductCreditsMiddleware.js";
 import { log, ConsoleStream } from "@anycrawl/libs/log";
+import { appConfig } from "@anycrawl/libs";
 
 export const app: Application = express();
 const port = process.env.ANYCRAWL_API_PORT || 8080;
+const host = process.env.ANYCRAWL_API_HOST || "0.0.0.0";
 
 app.disable("x-powered-by");
 app.use(cors());
@@ -64,20 +65,17 @@ app.use("/v1/public", v1PublicRouter);
 
 // check Auth
 app.use(authMiddleware);
-// check credits
-app.use(checkCreditsMiddleware);
-// deduct credits after successful requests
+// deduct credits after successful requests (fail-closed: asserts chargeable requests passed the
+// route-level credit gate; the gate itself is now attached per billing route inside the v1 router)
 app.use(deductCreditsMiddleware);
 // load routers
 app.use("/v1", v1Router);
 
 // Start the server
-const server = app.listen(port, async () => {
-    const authEnabled = process.env.ANYCRAWL_API_AUTH_ENABLED === "true";
-    const creditsEnabled = process.env.ANYCRAWL_API_CREDITS_ENABLED === "true";
+const server = app.listen(Number(port), host, async () => {
     log.info(`✨ Server is running on port ${port}`);
-    log.info(`🔐 Auth enabled: ${authEnabled}`);
-    log.info(`💳 Credits deduction enabled: ${creditsEnabled}`);
+    log.info(`🔐 Auth enabled: ${appConfig.authEnabled}`);
+    log.info(`💳 Credits deduction enabled: ${appConfig.creditsEnabled}`);
 });
 
 // Align server timeouts with typical proxy defaults to reduce unexpected resets

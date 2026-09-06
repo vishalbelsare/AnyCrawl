@@ -31,7 +31,7 @@
         "check:deps": "dotenv-run -- knip",
         "check:phantom-deps": "dotenv-run -- knip --include=unlisted",
         "create:test:template": "cd packages/template-client && pnpm create:test:template",
-        "templates:generate": "tsx templates/generate-sql.ts",
+        "templates:generate": "tsx templates/generate-sql.ts --dialect both --validate",
         "templates:apply": "dotenv-run -- tsx templates/apply-all-sql.ts"
     },
     "devDependencies": {
@@ -46,7 +46,7 @@
     },
     "packageManager": "pnpm@10.12.4",
     "engines": {
-        "node": ">=18"
+        "node": ">=20"
     },
     "dependencies": {
         "axios": "^1.12.2"

@@ -5,6 +5,15 @@ import { createFromSource } from "fumadocs-core/search/server";
 const localeMap = {
     "zh-cn": "english",
     "zh-tw": "english",
+    es: "spanish",
+    vi: "english",
+    ja: "english",
+    ko: "english",
+    "pt-br": "portuguese",
+    fr: "french",
+    de: "german",
+    ru: "english",
+    th: "english",
 };
 
 export const { GET } = createFromSource(source, undefined, { localeMap });

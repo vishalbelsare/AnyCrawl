@@ -1,0 +1,439 @@
+---
+title: Crawl
+description: ครอลทั้งเว็บไซต์และแปลงเป็นข้อมูลมีโครงสร้างพร้อมสำหรับ LLM
+icon: Bug
+---
+
+## บทนำ
+
+API การครอลของ AnyCrawl ค้นพบและประมวลผลหลายหน้าจาก URL seed โดยใช้ pipeline การแยกข้อมูลต่อหน้าเดียวกับ `/v1/scrape` เป็นแบบอะซิงโครนัส: คุณได้รับ `job_id` ทันที จากนั้น poll สถานะและดึงผลเป็นหน้าๆ
+
+**คุณสมบัติหลัก**
+
+- **งานแบบอะซิงโครนัส**: จัดคิวการครอลแล้วดึงผลภายหลัง
+- **รองรับหลายเครื่องมือ**: `auto` (ค่าเริ่มต้น), `cheerio`, `playwright`, `puppeteer`
+- **ควบคุมขอบเขตยืดหยุ่น**: `strategy`, `max_depth`, `include_paths`, `exclude_paths`
+- **ตัวเลือกต่อหน้า**: ใช้ตัวเลือก `/v1/scrape` ซ้ำภายใต้ `scrape_options`
+- **แบ่งหน้า**: สตรีมผลผ่าน `skip` เพื่อควบคุมขนาดเพย์โหลด
+
+### เอนด์พอยต์ API
+
+```
+POST    https://api.anycrawl.dev/v1/crawl
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}/status
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}?skip=0
+DELETE  https://api.anycrawl.dev/v1/crawl/{jobId}
+```
+
+## ตัวอย่างการใช้งาน
+
+### สร้างงานครอล
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://anycrawl.dev",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 100,
+    "exclude_paths": ["/blog/*"],
+    "scrape_options": {
+      "formats": ["markdown"],
+      "timeout": 60000
+    }
+  }'
+```
+
+### การดึงข้อมูลแบบเลือกด้วย scrape_paths
+
+ใช้ `scrape_paths` เพื่อเข้าชมหน้าเพื่อค้นพบลิงก์โดยไม่แยกเนื้อหา ช่วยลดต้นทุนและพื้นที่จัดเก็บ:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://shop.example.com",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 200,
+    "include_paths": ["/*"],
+    "scrape_paths": ["/products/*/details", "/products/*/reviews"],
+    "scrape_options": {
+      "formats": ["markdown", "json"]
+    }
+  }'
+```
+
+ในตัวอย่างนี้:
+
+- หน้าทั้งหมดที่ตรง `/*` จะถูก**เข้าชม**เพื่อค้นพบลิงก์
+- เฉพาะหน้าที่ตรง `/products/*/details` หรือ `/products/*/reviews` เท่านั้นที่จะ**แยกและบันทึกเนื้อหา**
+- หน้าหมวด หน้านำทาง ฯลฯ ถูกครอลแต่ไม่ถูก scrape ช่วยประหยัดเครดิตและพื้นที่จัดเก็บ
+
+```javascript tab="JavaScript"
+const start = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://anycrawl.dev",
+        engine: "cheerio",
+        strategy: "same-domain",
+        max_depth: 5,
+        limit: 100,
+        exclude_paths: ["/blog/*"],
+        scrape_options: { formats: ["markdown"], timeout: 60000 },
+    }),
+});
+const startResult = await start.json();
+const jobId = startResult.data.job_id;
+```
+
+```python tab="Python"
+import requests
+resp = requests.post(
+    'https://api.anycrawl.dev/v1/crawl',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://anycrawl.dev',
+        'engine': 'cheerio',
+        'strategy': 'same-domain',
+        'max_depth': 5,
+        'limit': 100,
+        'exclude_paths': ['/blog/*'],
+    'scrape_options': { 'formats': ['markdown'], 'timeout': 60000 }
+    }
+)
+start = resp.json()
+job_id = start['data']['job_id']
+```
+
+### Poll สถานะ
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396/status"
+```
+
+```javascript tab="JavaScript"
+const statusRes = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}/status`, {
+    headers: { Authorization: "Bearer YOUR_API_KEY" },
+});
+const status = await statusRes.json();
+```
+
+### ดึงผล (แบ่งหน้า)
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=0"
+```
+
+```javascript tab="JavaScript"
+let skip = 0;
+while (true) {
+    const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`, {
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+    });
+    const page = await res.json();
+    // process page.data
+    if (!page.next) break;
+    const nextUrl = new URL(page.next);
+    skip = Number(nextUrl.searchParams.get("skip") || 0);
+}
+```
+
+### ยกเลิกงาน
+
+```bash tab="cURL"
+curl -X DELETE -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396"
+```
+
+## พารามิเตอร์คำขอ
+
+| พารามิเตอร์           | ชนิด            | จำเป็น | ค่าเริ่มต้น       | คำอธิบาย                                                                                                              |
+| ------------------- | --------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `url`               | string          | ใช่      | -             | Seed URL เริ่มการครอล                                                                                               |
+| `template_id`       | string          | ไม่       | -             | ID เทมเพลตสำหรับการครอลนี้                                                                                        |
+| `variables`         | object          | ไม่       | -             | ตัวแปรเทมเพลต (ใช้เมื่อมี `template_id`)                                                            |
+| `engine`            | enum            | ไม่       | `auto`        | เครื่องมือดึงข้อมูลต่อหน้า: `auto`, `cheerio`, `playwright`, `puppeteer`                                                   |
+| `exclude_paths`     | array of string | ไม่       | -             | กฎพาธที่ยกเว้น (แบบ glob) เช่น `/blog/*`                                                                        |
+| `include_paths`     | array of string | ไม่       | -             | กฎพาธที่รวมสำหรับการครอล (ใช้หลังการยกเว้น)                                                             |
+| `scrape_paths`      | array of string | ไม่       | -             | กฎพาธสำหรับการแยกเนื้อหา เฉพาะ URL ที่ตรงจะบันทึกเนื้อหา หากไม่ตั้ง ทุก URL ที่รวมจะถูก scrape |
+| `max_depth`         | number          | ไม่       | `10`          | ความลึกสูงสุดจาก seed URL                                                                                              |
+| `strategy`          | enum            | ไม่       | `same-domain` | ขอบเขตการครอล: `all`, `same-domain`, `same-hostname`, `same-origin`                                                        |
+| `limit`             | number          | ไม่       | `100`         | จำนวนหน้าสูงสุดที่ครอล                                                                                         |
+| `max_age`           | number          | ไม่       | -             | อายุแคชสูงสุด (ms) ใช้ `0` เพื่อข้ามการอ่านแคช ไม่ระบุใช้ค่าเริ่มต้นของเซิร์ฟเวอร์                                                |
+| `store_in_cache`    | boolean         | ไม่       | `true`        | เขียน Page Cache สำหรับการ scrape ต่อหน้าหรือไม่                                                                          |
+| `retry`             | boolean         | ไม่       | `false`       | ลองใหม่เมื่อล้มเหลวหรือไม่                                                                                               |
+| `proxy`             | string (URI)    | ไม่       | -             | URL proxy (ไม่บังคับ)                                                                                                        |
+| `formats`           | array of enum   | ไม่       | `["markdown"]`| รูปแบบผลลัพธ์สำหรับการ scrape ต่อหน้า                                                                                       |
+| `timeout`           | number          | ไม่       | `60000`       | Timeout ต่อคำขอ (ms)                                                                                                  |
+| `wait_for`          | number          | ไม่       | -             | หน่วงก่อนแยก (ms) เฉพาะเครื่องมือเบราว์เซอร์                                                                        |
+| `wait_until`        | enum            | ไม่       | -             | เงื่อนไขรอการนำทางสำหรับเครื่องมือเบราว์เซอร์: `load`, `domcontentloaded`, `networkidle`, `commit`                        |
+| `wait_for_selector` | string, object, or array | ไม่ | -          | รอ selector หนึ่งหรือหลายตัว (เฉพาะเครื่องมือเบราว์เซอร์) มีความสำคัญเหนือ `wait_for`                               |
+| `include_tags`      | array of string | ไม่       | -             | รวมเฉพาะองค์ประกอบที่ตรง CSS selector                                                                            |
+| `exclude_tags`      | array of string | ไม่       | -             | ยกเว้นองค์ประกอบที่ตรง CSS selector                                                                                 |
+| `only_main_content` | boolean         | ไม่       | `true`        | แยกเฉพาะเนื้อหาหลัก ตัดหัว ท้าย นำทาง ฯลฯ                                                    |
+| `json_options`      | object          | ไม่       | -             | ตัวเลือกการดึง JSON มีโครงสร้าง (schema, user_prompt, schema_name, schema_description)                             |
+| `extract_source`    | enum            | ไม่       | `markdown`    | แหล่งที่ดึง JSON: `markdown` (ค่าเริ่มต้น) หรือ `html`                                                               |
+| `ocr_options`       | boolean         | ไม่       | `false`       | เปิด OCR เสริมสำหรับรูปใน markdown เท่านั้น มีผลกับ markdown ไม่กับ `html`/`rawHtml`                       |
+| `scrape_options`    | object          | ไม่       | -             | ตัวเลือก scrape ต่อหน้า (ฟิลด์เดียวกับ `/v1/scrape` ยกเว้น `url`/`engine` ระดับบนสุด)                                  |
+
+### ฟิลด์ `scrape_options`
+
+| ฟิลด์               | ชนิด                     | ค่าเริ่มต้น       | หมายเหตุ                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `formats`           | array of enum            | `["markdown"]` | รูปแบบผลลัพธ์: `markdown`, `html`, `text`, `screenshot`, `screenshot@fullPage`, `rawHtml`, `json`, `summary`, `links`                               |
+| `timeout`           | number                   | `60000`        | Timeout ต่อคำขอ (ms)                                                                                                                    |
+| `wait_for`          | number                   | -              | หน่วงก่อนแยก (ms) เฉพาะเครื่องมือเบราว์เซอร์ ลำดับต่ำกว่า `wait_for_selector`                                                 |
+| `wait_for_selector` | string, object, or array | -              | รอ selector หนึ่งหรือหลายตัว (เฉพาะเครื่องมือเบราว์เซอร์) รับสตริง CSS selector อ็อบเจ็กต์ `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }` หรืออาร์เรย์ รอตามลำดับ มีความสำคัญเหนือ `wait_for` |
+| `include_tags`      | array of string          | -              | รวมเฉพาะองค์ประกอบที่ตรง CSS selector                                                                                              |
+| `exclude_tags`      | array of string          | -              | ยกเว้นองค์ประกอบที่ตรง CSS selector                                                                                                   |
+| `only_main_content` | boolean                  | `true`         | แยกเฉพาะเนื้อหาหลัก ตัดหัว ท้าย นำทาง ฯลฯ                                                                        |
+| `proxy`             | string (URI)             | -              | URL proxy (ไม่บังคับ)                                                                                                                          |
+| `json_options`      | object                   | -              | ตัวเลือกการดึง JSON มีโครงสร้าง (schema, user_prompt, schema_name, schema_description)                                               |
+| `extract_source`    | enum                     | `markdown`     | แหล่งที่ดึง JSON: `markdown` (ค่าเริ่มต้น) หรือ `html`                                                                                 |
+| `ocr_options`       | boolean                  | `false`        | เปิด OCR เสริมสำหรับรูปใน markdown เท่านั้น มีผลกับ markdown ไม่กับ `html`/`rawHtml`                                         |
+| `max_age`           | number                   | -              | อายุแคชสูงสุด (ms) ใช้ `0` เพื่อข้ามการอ่านแคช ไม่ระบุใช้ค่าเริ่มต้นของเซิร์ฟเวอร์                                                                     |
+| `store_in_cache`    | boolean                  | `true`         | เขียน Page Cache สำหรับการ scrape ต่อหน้าหรือไม่                                                                                              |
+
+### พฤติกรรมแคช
+
+- การครอลปัจจุบัน**ไม่**อ่าน Page Cache แต่อาจยังเขียนได้
+- หากส่ง `scrape_options` ให้ตั้งค่าแคชภายในนั้น
+
+## รูปแบบการตอบกลับ
+
+### 1) สร้าง (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "created",
+        "message": "Crawl job has been queued for processing"
+    }
+}
+```
+
+#### ข้อผิดพลาดที่เป็นไปได้
+
+- 400 ข้อผิดพลาดการตรวจสอบ
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid enum value...",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            { "field": "engine", "message": "Invalid enum value", "code": "invalid_enum_value" }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+- 401 ข้อผิดพลาดการยืนยันตัวตน
+
+```json
+{ "success": false, "error": "Invalid API key" }
+```
+
+### 2) สถานะ (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job status retrieved successfully",
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "completed",
+        "start_time": "2025-05-25T07:56:44.162Z",
+        "expires_at": "2025-05-26T07:56:44.162Z",
+        "credits_used": 0,
+        "total": 120,
+        "completed": 30,
+        "failed": 2
+    }
+}
+```
+
+### 3) หน้าผลลัพธ์ (HTTP 200)
+
+```json
+{
+    "success": true,
+    "status": "pending",
+    "total": 120,
+    "completed": 30,
+    "credits_used": 12,
+    "next": "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=100",
+    "data": [
+        {
+            "url": "https://anycrawl.dev/",
+            "title": "AnyCrawl",
+            "markdown": "# AnyCrawl...",
+            "timestamp": "2025-05-25T07:56:44.162Z"
+        }
+    ]
+}
+```
+
+#### ข้อผิดพลาดที่เป็นไปได้
+
+- 400 job id ไม่ถูกต้อง / ไม่พบ
+
+```json
+{ "success": false, "error": "Invalid job ID", "message": "Job ID must be a valid UUID" }
+```
+
+### 4) ยกเลิก (HTTP 200)
+
+```json
+{
+    "success": true,
+    "message": "Job cancelled successfully",
+    "data": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396", "status": "cancelled" }
+}
+```
+
+#### ข้อผิดพลาดที่เป็นไปได้
+
+- 404 ไม่พบ
+- 409 งานเสร็จแล้ว
+
+```json
+{
+    "success": false,
+    "error": "Job already finished",
+    "message": "Finished jobs cannot be cancelled"
+}
+```
+
+## แนวทางปฏิบัติที่ดี
+
+- ใช้ `/v1/scrape` สำหรับหน้าเดียวเพื่อลดต้นทุน ใช้ `/v1/crawl` สำหรับข้อมูลทั้งไซต์
+- ปรับ `strategy`, `max_depth` และกฎพาธเพื่อควบคุมขอบเขตและต้นทุน
+- ใช้ `scrape_paths` เพื่อลดต้นทุน: ครอลหน้านำทาง/หมวดเพื่อลิงก์ แต่ scrape เฉพาะหน้าเนื้อหา
+- ใช้ `formats` จำกัดขนาดผลตามที่ต้องการจริง
+- แบ่งหน้าผลด้วย `skip` เพื่อหลีกเลี่ยงการตอบกลับใหญ่เกินไป
+
+### ปรับต้นทุนด้วย scrape_paths
+
+พารามิเตอร์ `scrape_paths` ช่วยปรับต้นทุนการครอล:
+
+**ไม่มี `scrape_paths` (ค่าเริ่มต้น)**:
+
+- ทุกหน้าที่รวม → เข้าชม + แยกเนื้อหา + บันทึก
+
+**มี `scrape_paths`**:
+
+- หน้าอยู่ใน `include_paths` แต่ไม่อยู่ใน `scrape_paths` → เข้าชมเท่านั้น (เพื่อค้นพบลิงก์)
+- หน้าที่อยู่ทั้งใน `include_paths` และ `scrape_paths` → เข้าชม + แยกเนื้อหา + บันทึก
+
+ตัวอย่างกรณีใช้งาน:
+
+- อีคอมเมิร์ซ: ครอลทุกหมวด แต่ scrape เฉพาะหน้ารายละเอียดสินค้า
+- เอกสาร: เข้าชมทุกหน้านำทาง แต่แยกเฉพาะเนื้อหาบทความ
+- ข่าว: เรียกดูทุกส่วน แต่บันทึกเฉพาะบทความเต็ม
+
+## ตัวอย่างการจัดการข้อผิดพลาด
+
+```javascript
+async function fetchAllResults(jobId) {
+    let skip = 0;
+    while (true) {
+        const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const page = await res.json();
+        // handle page.data here
+        if (!page.next) break;
+        const next = new URL(page.next);
+        skip = Number(next.searchParams.get("skip") || 0);
+    }
+}
+```
+
+## การใช้งาน concurrency สูง
+
+คิวการครอลรองรับหลายงานพร้อมกัน ส่งหลายงานครอลแล้ว poll แยกกันได้:
+
+```javascript
+const seeds = ["https://site-a.com", "https://site-b.com", "https://site-c.com"];
+const jobs = await Promise.all(
+    seeds.map((url) =>
+        fetch("https://api.anycrawl.dev/v1/crawl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, engine: "cheerio" }),
+        }).then((r) => r.json())
+    )
+);
+```
+
+## คำถามที่พบบ่อย
+
+### `/v1/crawl` ต่างจาก `/v1/scrape` อย่างไร?
+
+`/v1/scrape` ดึง URL เดียวแบบซิงโครนัสและคืนเนื้อหาทันที `/v1/crawl` ค้นหลายหน้าจาก seed URL และรันแบบอะซิงโครนัส
+
+### จำกัดขอบเขตและต้นทุนการครอลอย่างไร?
+
+ใช้ `strategy`, `max_depth`, `limit` และกฎพาธ (`include_paths`, `exclude_paths`, `scrape_paths`)
+
+### `include_paths` กับ `scrape_paths` ต่างกันอย่างไร?
+
+- `include_paths`: ควบคุมว่า URL ใดถูก**เข้าชม** (เพื่อค้นพบลิงก์)
+- `scrape_paths`: ควบคุมว่า URL ใดมี**การแยกและบันทึกเนื้อหา**
+
+หากไม่ตั้ง `scrape_paths` ทุก URL ที่รวมจะถูก scrape (พฤติกรรมเข้ากันได้ย้อนหลัง)
+
+### ลดต้นทุนการครอลได้อย่างไร?
+
+ใช้ `scrape_paths` เพื่อเข้าชมหน้านำทาง/หมวดเพื่อค้นพบลิงก์โดยไม่บันทึกเนื้อหา แยกและบันทึกเฉพาะหน้าที่ตรงรูปแบบ `scrape_paths`
+
+### แบ่งหน้าผลอย่างไร?
+
+ใช้พารามิเตอร์ query `skip` หากการตอบกลับมี `next` ให้ตามไปดึงหน้าถัดไป
+
+### ทำไมบางงานไม่คืน `html`/`markdown`?
+
+ให้แน่ใจว่าใส่รูปแบบที่ต้องการใน `scrape_options.formats` และเครื่องมือที่เลือกรองรับ
+
+## ค่าสถานะ
+
+`status` ของงานตามโมเดลงาน:
+
+| สถานะ      | ความหมาย                                               |
+| ----------- | ----------------------------------------------------- |
+| `pending`   | งานอยู่ในคิวหรือกำลังดำเนินการ (ยังไม่เสร็จ)       |
+| `completed` | งานสำเร็จ                             |
+| `failed`    | งานจบด้วยข้อผิดพลาด                               |
+| `cancelled` | งานถูกยกเลิก ไม่มีการประมวลผลต่อ |
+
+## OpenAPI (สร้างอัตโนมัติ)
+
+ดู API Reference สำหรับเอกสารที่สร้างอัตโนมัติ:
+
+- `POST /v1/crawl`
+- `GET /v1/crawl/{jobId}/status`
+- `GET /v1/crawl/{jobId}`
+- `DELETE /v1/crawl/{jobId}`

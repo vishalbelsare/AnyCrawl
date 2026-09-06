@@ -1,0 +1,110 @@
+---
+title: Claude Code
+description: Добавьте веб-скрапинг и поиск в Claude Code с помощью AnyCrawl MCP
+icon: Terminal
+---
+
+Добавьте в Claude Code возможности веб-скрапинга и поиска с помощью AnyCrawl MCP.
+
+## Быстрая настройка
+
+### 1. Получите API-ключ
+
+Зарегистрируйтесь на [anycrawl.dev](https://anycrawl.dev) и скопируйте API-ключ в панели управления.
+
+### 2. Добавьте сервер AnyCrawl MCP
+
+Выполните в терминале:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+Замените `your-api-key` на ваш настоящий API-ключ AnyCrawl.
+
+Готово! Теперь можно искать и скрапить веб из Claude Code.
+
+## Быстрое демо
+
+Попробуйте в Claude Code:
+
+**Поиск в интернете:**
+
+```
+Search for the latest Next.js 15 features
+```
+
+**Скрапинг страницы:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**Документация:**
+
+```
+Find and scrape the Stripe API docs for payment intents
+```
+
+**Обход сайта:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Claude автоматически будет использовать инструменты поиска, скрапинга и обхода AnyCrawl.
+
+## Доступные инструменты
+
+После настройки в Claude Code доступны:
+
+- **anycrawl_scrape** — скрапинг одного URL и извлечение контента
+- **anycrawl_crawl** — обход нескольких страниц сайта
+- **anycrawl_search** — поиск в интернете с опциональным скрапингом результатов
+- **anycrawl_crawl_status** — статус задачи обхода
+- **anycrawl_crawl_results** — результаты задачи обхода
+- **anycrawl_cancel_crawl** — отмена выполняющейся задачи обхода
+
+## Проверка установки
+
+Чтобы убедиться, что MCP настроен:
+
+```bash
+claude mcp list
+```
+
+В списке настроенных MCP-серверов должен быть `anycrawl`.
+
+## Устранение неполадок
+
+### Сервер не отвечает
+
+1. Проверьте, что API-ключ действителен
+2. Убедитесь, что установлен Node.js 18+
+3. Попробуйте удалить и добавить сервер снова:
+
+```bash
+claude mcp remove anycrawl
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+### Ошибки прав
+
+Убедитесь, что `npx` может выполняться. Возможно, выполните:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+Затем настройте глобальный пакет:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- anycrawl-mcp
+```
+
+## Дальше
+
+- Подробнее об [опциях скрапинга](../scrape)
+- [Возможности обхода](../crawl)
+- [Поиск](../search)
+- Полная [документация MCP-сервера](../mcp)

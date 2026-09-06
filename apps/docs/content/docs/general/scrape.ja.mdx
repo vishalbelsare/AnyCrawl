@@ -1,0 +1,604 @@
+---
+title: スクレイプ
+description: URL をスクレイプし、LLM 向けの構造化データに変換する
+icon: Crosshair
+---
+
+## はじめに
+
+AnyCrawl のスクレイプ API は、任意の Web ページを大規模言語モデル（LLM）向けに最適化した構造化データに変換します。Cheerio、Playwright、Puppeteer など複数エンジンをサポートし、HTML、Markdown、JSON など複数形式で出力できます。
+
+**主な特徴**：API は**すぐに同期的に結果を返します**。ポーリングや Webhook は不要です。**高い同時実行**にもネイティブ対応し、大規模スクレイプに適しています。
+
+### 主な機能
+
+- **マルチエンジン**：`auto`（自動選択、既定）、`cheerio`（静的 HTML、最速）、`playwright`（クロスブラウザの JS レンダリング）、`puppeteer`（Chrome 向け JS レンダリング）
+- **LLM 向け**：コンテンツを自動抽出・整形し、Markdown を生成
+- **プロキシ**：HTTP/HTTPS プロキシに対応
+- **堅牢なエラー処理**：包括的なエラー処理と再試行
+- **高パフォーマンス**：**ネイティブな高同時実行**と非同期キュー処理
+- **即時応答**：**同期 API** — ポーリングなしで結果を取得
+
+## API エンドポイント
+
+```
+POST https://api.anycrawl.dev/v1/scrape
+```
+
+## 使用例
+
+### cURL
+
+#### 基本（既定の auto エンジン）
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### Playwright で動的コンテンツをスクレイプ
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://spa-example.com",
+    "engine": "playwright"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://spa-example.com",
+        engine: "playwright",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://spa-example.com',
+        'engine': 'playwright'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+#### プロキシ付きでスクレイプ
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "engine": "playwright",
+    "proxy": "http://proxy.example.com:8080"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        engine: "playwright",
+        proxy: "http://proxy.example.com:8080",
+    }),
+});
+const result = await response.json();
+console.log(result.data.markdown);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'engine': 'playwright',
+        'proxy': 'http://proxy.example.com:8080'
+    }
+)
+result = response.json()
+print(result['data']['markdown'])
+```
+
+## リクエストパラメータ
+
+| パラメータ                | 型                     | 必須 | 既定値         | 説明                                                                                                                                 |
+| ------------------- | ------------------------ | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `url`               | string                   | はい   | -              | スクレイプする URL。有効な HTTP/HTTPS であること                                                                                           |
+| `template_id`       | string                   | いいえ   | -              | 今回のスクレイプで使うテンプレート ID                                                                                                                |
+| `variables`         | object                   | いいえ   | -              | テンプレート変数（`template_id` 指定時のみ）                                                                                            |
+| `engine`            | enum                     | いいえ   | `auto`         | エンジン：`auto`、`cheerio`、`playwright`、`puppeteer`                                                                     |
+| `formats`           | array                    | いいえ   | `["markdown"]` | 出力形式：`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`、`summary`、`links`                         |
+| `timeout`           | number                   | いいえ   | `60000`        | タイムアウト（ミリ秒）。省略時：`proxy=stealth` / `proxy=auto` では `120000`、それ以外は `60000`。 |
+| `retry`             | boolean                  | いいえ   | `false`        | 失敗時に再試行するか                                                                                                                       |
+| `max_age`           | number                   | いいえ   | -              | キャッシュ最大経過時間（ミリ秒）。`0` で読み取りスキップ。省略時はサーバー既定                                                             |
+| `store_in_cache`    | boolean                  | いいえ   | `true`         | 今回のスクレイプで Page Cache に書き込むか                                                                                                           |
+| `wait_for`          | number                   | いいえ   | -              | 抽出前の待機（ミリ秒）。ブラウザエンジンのみ。`wait_for_selector` より下位                                                           |
+| `wait_until`        | enum                     | いいえ   | -              | ブラウザのナビゲーション待機：`load`、`domcontentloaded`、`networkidle`、`commit`                                                         |
+| `wait_for_selector` | string、object または array  | いいえ   | -              | セレクタ待ち（ブラウザのみ）。CSS 文字列、オブジェクト `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }`、または混在配列。順に待機。`wait_for` より優先。 |
+| `include_tags`      | array                    | いいえ   | -              | 含めるタグ。例：`h1`                                                                                                               |
+| `exclude_tags`      | array                    | いいえ   | -              | 除外するタグ。例：`h1`                                                                                                               |
+| `only_main_content` | boolean                  | いいえ   | `true`         | 本文のみ抽出（ヘッダー・フッター・ナビ等を除く。`include_tags` が優先）                                                                        |
+| `proxy`             | string (URI)             | いいえ   | -              | プロキシ URL。形式：`http://proxy:port` または `https://proxy:port`                                                                    |
+| `json_options`      | json                     | いいえ   | -              | JSON オプション。例：`{"schema": {}, "user_prompt": "Extract key fields"}`                                                              |
+| `extract_source`    | enum                     | いいえ   | `markdown`     | JSON 抽出元：`markdown`（既定）または `html`                                                                                         |
+| `ocr_options`       | boolean                  | いいえ   | `false`        | Markdown 画像のみ OCR 強化。Markdown に OCR テキストブロックを追加。`html`/`rawHtml` は変えない。                                        |
+
+### キャッシュの挙動
+
+- `max_age` がキャッシュ読み取りを制御します。`0` は強制更新です。
+- `store_in_cache=false` で書き込みをスキップします。
+- キャッシュヒット時、レスポンスに `cachedAt` と `maxAge`（ミリ秒）が含まれます。
+
+### エンジンの種類
+
+**注意**：`playwright` と `puppeteer` はどちらも Chromium を使えますが、目的と能力が異なります。
+
+#### `auto`（既定）
+
+- **用途**：最適なエンジンが分からないとき
+- **利点**：ページを分析し最適なエンジンを選択 — 静的は `cheerio`、JS 重いページは `playwright`
+- **動き**：まず軽い HTTP リクエスト。JS レンダリングが必要ならブラウザエンジンへ
+- **向いている用途**：手動選択なしで汎用スクレイプ
+
+#### `cheerio`
+
+- **用途**：静的 HTML
+- **利点**：最速、リソース最小
+- **制限**：JavaScript 非実行、動的コンテンツは不可
+- **向いている用途**：ニュース、ブログ、静的サイト
+
+#### `playwright`
+
+- **用途**：JS レンダリングが必要なモダンサイト、クロスブラウザ検証
+- **利点**：自動待機が強く安定
+- **制限**：リソース消費が大きい
+- **向いている用途**：複雑な Web アプリ
+
+#### `puppeteer`
+
+- **利点**：Chrome DevTools 連携、性能指標、高速実行
+- **制限**：**ARM CPU 非対応**
+
+### 出力形式
+
+`formats` でレスポンスに含める形式を指定します。
+
+#### `markdown`
+
+- **内容**：HTML をクリーンな Markdown に変換
+- **用途**：LLM 処理、ドキュメント、分析
+- **向いている用途**：テキスト中心、記事、ブログ
+
+#### `html`
+
+- **内容**：整形済み HTML
+- **用途**：構造を保った HTML が必要なとき
+- **向いている用途**：HTML 構造を維持したいコンテンツ
+
+#### `text`
+
+- **内容**：装飾のないプレーンテキスト
+- **用途**：簡易なテキスト抽出
+- **向いている用途**：キーワード抽出など
+
+#### `screenshot`
+
+- **内容**：表示領域のスクリーンショット
+- **用途**：ページの視覚的表現
+- **制限**：`playwright` / `puppeteer` のみ
+- **向いている用途**：表示確認、UI テスト
+
+#### `screenshot@fullPage`
+
+- **内容**：折りたたみ下を含む全ページ
+- **用途**：ページ全体の視覚的キャプチャ
+- **制限**：`playwright` / `puppeteer` のみ
+- **向いている用途**：文書化、アーカイブ
+
+#### `rawHtml`
+
+- **内容**：加工前の生 HTML
+- **用途**：サーバーから受け取ったそのままの HTML が必要なとき
+- **向いている用途**：解析、デバッグ、元構造の保持
+
+#### `summary`
+
+- **内容**：AI によるページ要約
+- **用途**：素早い理解、要約、ダイジェスト
+- **向いている用途**：ニュース集約、調査、要約生成
+
+#### `links`
+
+- **内容**：ページ内リンクを文字列配列で抽出
+- **用途**：リンク発見、サイトマップ準備、リンク分析
+- **特徴**：相対 URL を絶対 URL に変換、重複・フラグメント除去
+- **向いている用途**：クローラ構築、サイト構造の把握
+
+### `json_options` オブジェクト
+
+次のキーを受け取ります。
+
+- `schema`：抽出に使うスキーマ
+- `user_prompt`：抽出用プロンプト
+- `schema_name`：任意。出力名
+- `schema_description`：任意。出力の説明
+
+#### 例
+
+```json
+{
+    "schema": {},
+    "user_prompt": "Extract the title and content of the page"
+}
+```
+
+または
+
+```json
+{
+    "schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string"
+            },
+            "company_name": {
+                "type": "string"
+            },
+            "summary": {
+                "type": "string"
+            },
+            "is_open_source": {
+                "type": "boolean"
+            }
+        },
+        "required": ["company_name", "summary"]
+    },
+    "user_prompt": "Extract the company name, summary, and if it is open source"
+}
+```
+
+## レスポンス形式
+
+### 成功（HTTP 200）
+
+#### スクレイプ成功
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://mock.httpstatus.io/200",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "title": "",
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">200 OK</pre></body></html>",
+        "screenshot": "http://localhost:8080/v1/public/storage/file/screenshot-c9fb76c4-2d7b-41f9-9141-b9ec9af58b39.jpeg",
+        "timestamp": "2025-07-01T04:38:02.951Z"
+    }
+}
+```
+
+#### キャッシュヒット
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "status": "completed",
+        "jobId": "c9fb76c4-2d7b-41f9-9141-b9ec9af58b39",
+        "cachedAt": "2026-02-08T12:34:56.000Z",
+        "maxAge": 172800000
+    }
+}
+```
+
+### エラー
+
+#### 400 — バリデーションエラー
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "details": {
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'",
+                "code": "invalid_enum_value"
+            }
+        ],
+        "messages": [
+            "Invalid enum value. Expected 'auto' | 'playwright' | 'cheerio' | 'puppeteer', received 'invalid'"
+        ]
+    }
+}
+```
+
+#### 401 — 認証エラー
+
+```json
+{
+    "success": false,
+    "error": "Invalid API key"
+}
+```
+
+### スクレイプ失敗
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 404 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/404",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 404 ",
+        "code": 404,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "34cd1d26-eb83-40ce-9d63-3be1a901f4a3",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">404 Not Found</pre></body></html>",
+        "screenshot": "screenshot-34cd1d26-eb83-40ce-9d63-3be1a901f4a3.jpeg",
+        "timestamp": "2025-07-01T04:36:20.978Z",
+        "statusCode": 404,
+        "statusMessage": ""
+    }
+}
+```
+
+または
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 502 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/502",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 502 ",
+        "code": 502,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "5fc50008-07e0-4913-a6af-53b0b3e0214b",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">502 Bad Gateway</pre></body></html>",
+        "screenshot": "screenshot-5fc50008-07e0-4913-a6af-53b0b3e0214b.jpeg",
+        "timestamp": "2025-07-01T04:39:59.981Z",
+        "statusCode": 502,
+        "statusMessage": ""
+    }
+}
+```
+
+または
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available: 400 ",
+    "data": {
+        "url": "https://mock.httpstatus.io/400",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available: 400 ",
+        "code": 400,
+        "metadata": [
+            {
+                "name": "color-scheme",
+                "content": "light dark"
+            }
+        ],
+        "jobId": "0081747c-1fc5-44f9-800c-e27b24b55a2c",
+        "title": "",
+        "html": "<html><head><meta name=\"color-scheme\" content=\"light dark\"></head><body><pre style=\"word-wrap: break-word; white-space: pre-wrap;\">400 Bad Request</pre></body></html>",
+        "screenshot": "screenshot-0081747c-1fc5-44f9-800c-e27b24b55a2c.jpeg",
+        "timestamp": "2025-07-01T04:38:24.136Z",
+        "statusCode": 400,
+        "statusMessage": ""
+    }
+}
+```
+
+または
+
+```json
+{
+    "success": false,
+    "error": "Scrape task failed",
+    "message": "Page is not available",
+    "data": {
+        "url": "https://httpstat.us/401",
+        "status": "failed",
+        "type": "http_error",
+        "message": "Page is not available"
+    }
+}
+```
+
+## ベストプラクティス
+
+### エンジン選択
+
+1. **迷う／汎用** → `auto`（既定）— サーバーが最適なエンジンを選択
+2. **静的サイト**（ニュース、ブログ、ドキュメント）→ `cheerio`
+3. **複雑な SPA**（JS レンダリング必須）→ `playwright` または `puppeteer`
+
+### パフォーマンス
+
+- 静的コンテンツのバルクでは `cheerio` を優先
+- JS レンダリングが必要なときだけ `playwright` / `puppeteer`
+- IP ブロック回避のためローテーションプロキシを検討し、プロキシは安定させる
+- **高同時実行を活用** — API は多数の並列リクエストを効率よく処理
+
+### エラー処理
+
+```javascript
+try {
+    const response = await fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    const result = await response.json();
+
+    if (result.success && result.data.status === "completed") {
+        // Handle successful result
+        console.log(result.data.markdown);
+    } else {
+        // Handle scraping failure
+        console.error("Scraping failed:", result.data.error);
+    }
+} catch (error) {
+    // Handle network error
+    console.error("Request failed:", error);
+}
+```
+
+## 高同時実行
+
+API は**ネイティブに高同時実行**に対応しています。レート制限を気にせず複数リクエストを送れます。
+
+```javascript
+// Concurrent scraping example
+const urls = ["https://example1.com", "https://example2.com", "https://example3.com"];
+
+const scrapePromises = urls.map((url) =>
+    fetch("/v1/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, engine: "cheerio" }),
+    }).then((res) => res.json())
+);
+
+// All requests execute concurrently and return immediately
+const results = await Promise.all(scrapePromises);
+```
+
+## よくある質問
+
+### Q: エンジンはいつ使い分ける？
+
+A: エンジンごとに特徴があります。
+
+- **Auto**（既定）：URL ごとに最適化 — まず Cheerio で高速に、JS が必要なら Playwright へ
+- **Cheerio**：静的 HTML。最速。JS は実行しない
+- **Playwright**：複雑なアプリ。安定性と自動待機。将来さらにブラウザ種別を拡張予定
+- **Puppeteer**：Chrome/Chromium のみ。ARM 非対応。関連 Docker イメージは提供しません
+
+### Q: スクレイプに失敗するのはなぜ？
+
+A: 例えば次の理由があります。
+
+- サイトがクローラをブロック（403/404）
+- JS が必要なのに cheerio を使っている
+- 認証や特別なヘッダが必要
+- ネットワークの問題
+
+### Q: ログインが必要なサイトは？
+
+A: 現状 API は認証付きセッションをサポートしません。
+
+- 公開ページをスクレイプする
+- 認証が必要な内容は別の方法で取得する
+
+### Q: プロキシの要件は？
+
+A:
+
+- デフォルトで高品質プロキシを提供しています。特別な要件がなければ自前設定は不要です。
+- HTTP/HTTPS プロキシに対応
+- 形式：`http://host:port` または `https://host:port`
+- プロキシは安定していることが重要です
+
+### Q: 並列リクエストにレート制限は？
+
+A: ありません。API は**高同時実行**をネイティブにサポートしています。複数リクエストを同時に送れ、すべて即座に応答します。

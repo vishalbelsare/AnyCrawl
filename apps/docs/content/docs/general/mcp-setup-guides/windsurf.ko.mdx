@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: AnyCrawl MCP로 Windsurf에 웹 스크래핑과 검색 추가
+icon: Wind
+---
+
+# Windsurf에서 MCP 웹 검색·스크래핑
+
+AnyCrawl MCP로 Windsurf에 웹 스크래핑과 검색 기능을 추가합니다.
+
+## 빠른 설정
+
+### 1. API 키 받기
+
+[anycrawl.dev](https://anycrawl.dev)에 가입한 뒤 대시보드에서 API 키를 복사합니다.
+
+### 2. Windsurf에 추가
+
+`~/.codeium/windsurf/mcp_config.json`에 다음을 추가합니다.
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+`your-api-key`를 실제 AnyCrawl API 키로 바꿉니다.
+
+### 3. Windsurf 재시작
+
+완료되었습니다. Windsurf에서 웹을 검색하고 스크래핑할 수 있습니다.
+
+## 빠른 데모
+
+Windsurf에서 다음을 시도해 보세요.
+
+**웹 검색:**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**페이지 스크래핑:**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**문서 가져오기:**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**사이트 크롤:**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Windsurf의 AI 에이전트가 AnyCrawl 도구를 자동으로 사용합니다.
+
+## 문제 해결
+
+### 서버가 응답하지 않음
+
+1. API 키가 유효한지 확인합니다.
+2. Node.js 18+가 설치되어 있는지 확인합니다.
+3. 설정을 변경한 뒤 Windsurf를 다시 시작합니다.
+
+### 권한 오류
+
+npx 실행 권한이 있는지 확인하세요. 패키지를 전역 설치해야 할 수 있습니다.
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+설정을 전역 패키지를 쓰도록 바꿉니다.
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## 다음 단계
+
+- [스크래핑 옵션](../scrape) 자세히 보기
+- [크롤 기능](../crawl) 살펴보기
+- [검색 기능](../search) 확인
+- 전체 [MCP 서버 문서](../mcp) 보기

@@ -1,0 +1,61 @@
+---
+title: Cache
+description: Comportement du cache pour les API Scrape, Crawl et Map.
+icon: Database
+---
+
+## Vue d’ensemble
+
+AnyCrawl utilise deux niveaux de cache :
+
+- **Cache de page** : utilisé par `/v1/scrape` et le traitement au niveau page dans `/v1/crawl`
+- **Cache Map** : utilisé par `/v1/map` pour les résultats de découverte d’URL
+
+## Paramètres communs
+
+### `max_age` (ms)
+
+- Contrôle le comportement de **lecture** du cache.
+- `0` : forcer le rafraîchissement (ignorer la lecture du cache)
+- `> 0` : autoriser les données mises en cache dans cette fenêtre d’âge
+- omis : utiliser la valeur par défaut du serveur
+
+### `store_in_cache`
+
+- S’applique aux sorties de page scrape/crawl.
+- `true` (par défaut) : écrire dans le cache
+- `false` : ne pas écrire dans le cache
+
+### `use_index` (Map uniquement)
+
+- `true` (par défaut) : autoriser Map à utiliser l’index du cache de page comme source supplémentaire
+- `false` : désactiver cette source
+
+## Comportement par endpoint
+
+### `/v1/scrape`
+
+- Peut lire le cache de page avant de mettre en file un nouveau job.
+- En cas de hit cache, la réponse inclut des métadonnées de cache (par ex. `cachedAt` / `maxAge`).
+
+### `/v1/crawl`
+
+- Ne lit **pas** actuellement le cache de page pour les requêtes de crawl complètes.
+- Prend toujours en charge les contrôles d’écriture liés au cache dans les options de scrape par page.
+
+### `/v1/map`
+
+- Peut lire le cache Map.
+- La réponse n’inclut pas de champ public `fromCache` (l’usage du cache est interne).
+
+## Conseils pratiques
+
+- Utilisez `max_age: 0` lorsque vous avez besoin de données à jour immédiatement.
+- Utilisez `store_in_cache: false` pour les pages très dynamiques afin d’éviter d’écrire des instantanés instables.
+- Pour Map, désactivez `use_index` si vous voulez que la découverte ne s’appuie que sur le sitemap, la recherche ou les liens de page.
+
+## Documentation associée
+
+- [API Scrape](./scrape)
+- [API Crawl](./crawl)
+- [API Map](./map)

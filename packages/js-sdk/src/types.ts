@@ -1,7 +1,7 @@
 export type ApiResponse<T> = { success: true; data: T } | { success: false; error: string; message?: string; data?: any };
 
 export type ExtractSource = 'html' | 'markdown';
-export type Engine = 'playwright' | 'cheerio' | 'puppeteer';
+export type Engine = 'auto' | 'playwright' | 'cheerio' | 'puppeteer';
 export type ScrapeFormat = 'markdown' | 'html' | 'text' | 'screenshot' | 'screenshot@fullPage' | 'rawHtml' | 'json' | 'summary' | 'links';
 
 // Project-aligned JSON schema (@anycrawl/libs: jsonSchemaType)
@@ -23,12 +23,26 @@ export type JsonOptions = {
 export type ProxyMode = 'auto' | 'base' | 'stealth';
 
 /**
+ * Human-like interaction behavior (mouse/keyboard/scroll). Browser engines (Playwright) only.
+ * - "auto": enable only when escalating (stealth proxy or a retry after a block)
+ * - "on": force human-like behavior from the first attempt
+ * - "off": never enable, even under stealth/retry
+ */
+export type HumanizeMode = 'auto' | 'on' | 'off';
+
+/**
  * Resolved proxy mode returned in responses
  * - "base": Using ANYCRAWL_PROXY_URL (default)
  * - "stealth": Using ANYCRAWL_PROXY_STEALTH_URL
  * - "custom": Using a custom proxy URL
  */
 export type ResolvedProxyMode = 'base' | 'stealth' | 'custom';
+
+/** Selector or object form for wait_for_selector (Playwright/Puppeteer only) */
+export type WaitForSelector =
+    | string
+    | { selector: string; timeout?: number; state?: 'attached' | 'visible' | 'hidden' | 'detached' }
+    | ({ selector: string; timeout?: number; state?: 'attached' | 'visible' | 'hidden' | 'detached' } | string)[];
 
 export type ScrapeOptionsInput = {
     /**
@@ -39,15 +53,26 @@ export type ScrapeOptionsInput = {
      * - Custom URL: A full proxy URL string (e.g., "http://user:pass@proxy:8080")
      */
     proxy?: ProxyMode | string;
+    /**
+     * Human-like interaction behavior (browser engines only). Default "auto":
+     * only activates under stealth proxy or on a retry after a block.
+     */
+    humanize?: HumanizeMode;
     formats?: ScrapeFormat[];
     timeout?: number;
     retry?: boolean;
     wait_for?: number;
     wait_until?: 'load' | 'domcontentloaded' | 'networkidle' | 'commit';
+    /** Selector(s) to wait for before extraction (browser engines only) */
+    wait_for_selector?: WaitForSelector;
     include_tags?: string[];
     exclude_tags?: string[];
+    /** When true, filter to main content only; when false, preserve full page structure */
+    only_main_content?: boolean;
     json_options?: JsonOptions;
     extract_source?: ExtractSource;
+    /** Enable OCR for markdown images */
+    ocr_options?: boolean;
 
     /**
      * Cache max age in milliseconds.
@@ -66,7 +91,11 @@ export type ScrapeOptionsInput = {
 
 export type ScrapeRequest = {
     url: string;
-    engine: Engine;
+    engine?: Engine;
+    /** Template ID to use (merges with template defaults) */
+    template_id?: string;
+    /** Template variables for URL/option substitution */
+    variables?: Record<string, any>;
 } & ScrapeOptionsInput;
 
 export type ScrapeResultSuccess = {
@@ -104,6 +133,8 @@ export type CrawlOptions = {
     retry?: boolean;
     exclude_paths?: string[];
     include_paths?: string[];
+    /** Paths to scrape content from; only matching URLs get content extracted */
+    scrape_paths?: string[];
     max_depth?: number;
     strategy?: 'all' | 'same-domain' | 'same-hostname' | 'same-origin';
     limit?: number;
@@ -112,7 +143,11 @@ export type CrawlOptions = {
 
 export type CrawlRequest = {
     url: string;
-    engine: Engine;
+    engine?: Engine;
+    /** Template ID to use */
+    template_id?: string;
+    /** Template variables for URL/option substitution */
+    variables?: Record<string, any>;
 } & CrawlOptions; // scrape options must be nested under scrape_options
 
 export type CrawlJobResponse = {
@@ -143,16 +178,32 @@ export type CrawlResultsResponse = {
     data: any[];
 };
 
+export type SearchEngine = 'google' | 'searxng' | 'ac-engine';
+
 export type SearchRequest = {
-    engine?: 'google';
+    engine?: SearchEngine;
     query: string;
     limit?: number;
     offset?: number;
     pages?: number;
     lang?: any;
     country?: any;
-    scrape_options?: (Omit<ScrapeOptionsInput, 'retry'> & { engine: Engine });
+    /** Time range filter: day | week | month | year */
+    timeRange?: 'day' | 'week' | 'month' | 'year';
+    /** Search source: web | images | news (SearXNG) */
+    sources?: 'web' | 'images' | 'news';
+    scrape_options?: (Omit<ScrapeOptionsInput, 'retry'> & {
+        engine: Engine;
+        /** Scrape-type template for search result follow-up fetches */
+        template_id?: string;
+        variables?: Record<string, any>;
+    });
+    /** 0: off, 1: medium, 2: high, null: default (Google only) */
     safe_search?: number | null;
+    /** Template ID to use */
+    template_id?: string;
+    /** Template variables */
+    variables?: Record<string, any>;
 };
 
 export type SearchResult = {
@@ -167,6 +218,119 @@ export type CrawlAndWaitResult = {
     status: CrawlStatus;
     total: number;
     completed: number;
+    creditsUsed: number;
+    data: any[];
+};
+
+// ---------------------------------------------------------------------------
+// Dedicated template endpoints (POST /v1/template/{ref}/execute, GET /v1/template/{ref})
+// ---------------------------------------------------------------------------
+
+/** The kind of API call a template drives. */
+export type TemplateType = 'scrape' | 'search' | 'crawl';
+
+/**
+ * Body accepted by POST /v1/template/{ref}/execute.
+ * Only these fields are permitted — every other option comes from the template.
+ * `url` is used by scrape/crawl templates; `query` by search templates. Either may
+ * be optional if the template predefines it.
+ */
+export type TemplateExecuteRequest = {
+    url?: string;
+    query?: string;
+    variables?: Record<string, any>;
+};
+
+/**
+ * Result of executing a template, discriminated by the template's type:
+ * - scrape -> ScrapeResult
+ * - search -> SearchResult[]
+ * - crawl  -> CrawlJobResponse (async; poll /v1/crawl/{job_id})
+ */
+export type TemplateExecuteResult = ScrapeResult | SearchResult[] | CrawlJobResponse;
+
+/** A single variable a template declares in its call-spec. */
+export type TemplateVariableSpec = {
+    type: 'string' | 'number' | 'boolean' | 'url';
+    required?: boolean;
+    defaultValue?: any;
+    description?: string;
+} & Record<string, any>;
+
+/**
+ * Redacted call-spec returned by GET /v1/template/{ref}. Describes a template's
+ * inputs, pricing and endpoint for discovery. Never exposes internal handlers.
+ */
+export type TemplateSpec = {
+    template_id: string;
+    slug: string | null;
+    name: string;
+    description?: string | null;
+    template_type: TemplateType;
+    version: number | string;
+    endpoint: {
+        method: string;
+        path: string;
+    };
+    variables: Record<string, TemplateVariableSpec>;
+    pricing?: {
+        perCall?: number;
+        currency?: string;
+    } & Record<string, any>;
+    allowed_domains?: {
+        type?: 'exact' | 'glob';
+        patterns?: string[];
+    } | null;
+};
+
+// Batch scrape types (async job model; options are shared across all URLs)
+export type BatchScrapeRequest = {
+    urls: string[];
+    engine?: Engine;
+    /** When true (default), invalid URLs are skipped and returned in invalid_urls */
+    ignore_invalid_urls?: boolean;
+    /** Template ID to use (merges with template defaults) */
+    template_id?: string;
+    /** Template variables for URL/option substitution */
+    variables?: Record<string, any>;
+} & ScrapeOptionsInput;
+
+export type BatchScrapeJobResponse = {
+    job_id: string;
+    status: 'created';
+    total: number;
+    invalid_urls?: string[];
+    message: string;
+};
+
+export type BatchScrapeStatus = CrawlStatus;
+export type BatchScrapeStatusResponse = {
+    job_id: string;
+    status: BatchScrapeStatus;
+    total: number;
+    completed: number;
+    failed: number;
+    credits_used: number;
+    expires_at?: string;
+};
+
+export type BatchScrapeResultsResponse = {
+    success: true;
+    status: BatchScrapeStatus;
+    total: number;
+    completed: number;
+    failed?: number;
+    creditsUsed: number;
+    next?: string | null;
+    data: any[];
+};
+
+export type BatchScrapeAndWaitResult = {
+    job_id: string;
+    status: BatchScrapeStatus;
+    total: number;
+    completed: number;
+    failed: number;
     creditsUsed: number;
     data: any[];
 };
@@ -190,3 +354,312 @@ export type MapRequest = {
 export type MapResult = {
     links: MapLink[];
 };
+
+// Scheduled Tasks
+export type ScheduledTaskType = 'scrape' | 'crawl' | 'search' | 'template';
+export type ConcurrencyMode = 'skip' | 'queue';
+
+export type CreateScheduledTaskRequest = {
+    name: string;
+    description?: string | null;
+    cron_expression: string;
+    timezone?: string;
+    task_type: ScheduledTaskType;
+    task_payload: Record<string, any>;
+    concurrency_mode?: ConcurrencyMode;
+    max_executions_per_day?: number | null;
+    tags?: string[];
+    metadata?: Record<string, any>;
+    webhook_ids?: string[];
+    webhook_url?: string;
+};
+
+export type UpdateScheduledTaskRequest = Partial<CreateScheduledTaskRequest>;
+
+/** Base fields for ScheduledTask (API returns snake_case). All optional for flexibility. */
+export interface ScheduledTaskBase {
+    task_id?: string;
+    name?: string;
+    description?: string | null;
+    task_type?: ScheduledTaskType;
+    task_payload?: Record<string, any>;
+    cron_expression?: string;
+    timezone?: string;
+    concurrency_mode?: ConcurrencyMode;
+    max_executions_per_day?: number | null;
+    is_active?: boolean;
+    is_paused?: boolean;
+    pause_reason?: string | null;
+    next_execution_at?: string | null;
+    last_execution_at?: string | null;
+    total_executions?: number;
+    successful_executions?: number;
+    failed_executions?: number;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export type ScheduledTask = ScheduledTaskBase & Record<string, any>;
+
+export type ScheduledTaskCreateResponse = {
+    task_id: string;
+    next_execution_at: string | null;
+};
+
+/** Base fields for ScheduledTaskExecution (API returns snake_case). All optional for flexibility. */
+export interface ScheduledTaskExecutionBase {
+    execution_id?: string;
+    uuid?: string;
+    scheduled_task_uuid?: string;
+    execution_number?: number;
+    status?: string;
+    started_at?: string | null;
+    completed_at?: string | null;
+    job_uuid?: string | null;
+    error_message?: string | null;
+    triggered_by?: string;
+    scheduled_for?: string;
+    created_at?: string;
+}
+
+export type ScheduledTaskExecution = ScheduledTaskExecutionBase & Record<string, any>;
+
+export type ScheduledTaskExecutionsResponse = {
+    data: ScheduledTaskExecution[];
+    meta?: { limit: number; offset: number };
+};
+
+// Webhooks
+export type CreateWebhookRequest = {
+    name: string;
+    description?: string;
+    webhook_url: string;
+    event_types: string[];
+    scope?: 'all' | 'specific';
+    specific_task_ids?: string[];
+    custom_headers?: Record<string, string>;
+    timeout_seconds?: number;
+    max_retries?: number;
+    retry_backoff_multiplier?: number;
+    tags?: string[];
+    metadata?: Record<string, any>;
+};
+
+export type UpdateWebhookRequest = Partial<CreateWebhookRequest>;
+
+/** Base fields for Webhook (API returns snake_case). All optional for flexibility. */
+export interface WebhookBase {
+    webhook_id?: string;
+    name?: string;
+    description?: string | null;
+    webhook_url?: string;
+    event_types?: string[];
+    scope?: 'all' | 'specific';
+    specific_task_ids?: string[] | null;
+    is_active?: boolean;
+    total_deliveries?: number;
+    successful_deliveries?: number;
+    failed_deliveries?: number;
+    created_at?: string;
+    updated_at?: string;
+}
+
+export type Webhook = WebhookBase & Record<string, any>;
+
+export type WebhookCreateResponse = {
+    webhook_id: string;
+    secret: string;
+    message: string;
+};
+
+/** Base fields for WebhookDelivery (API returns snake_case). All optional for flexibility. */
+export interface WebhookDeliveryBase {
+    delivery_id?: string;
+    uuid?: string;
+    webhook_subscription_uuid?: string;
+    event_type?: string;
+    status?: string;
+    attempt_number?: number;
+    response_status?: number | null;
+    created_at?: string;
+}
+
+export type WebhookDelivery = WebhookDeliveryBase & Record<string, any>;
+
+export type WebhookDeliveriesResponse = {
+    data: WebhookDelivery[];
+    meta?: { limit: number; offset: number; filters?: any };
+};
+
+export type WebhookEventsResponse = {
+    event_types: string[];
+    categories: Record<string, string[]>;
+};
+
+// ---------------------------------------------------------------------------
+// Monitors (web change / price monitoring)
+// ---------------------------------------------------------------------------
+
+export type MonitorType = 'webpage' | 'price';
+export type MonitorTrackMode = 'text' | 'json' | 'mixed';
+export type MonitorChannel = 'webhook' | 'email';
+
+export type MonitorTarget = {
+    url: string;
+    engine?: 'auto' | 'cheerio' | 'playwright' | 'puppeteer';
+    options?: Record<string, any>;
+    /** Read-only legacy metadata; fixed-country routing is unsupported for new requests. */
+    location?: { country: string };
+};
+
+export type MonitorNotifyOptions = {
+    channels?: MonitorChannel[];
+    email_recipients?: string[];
+    only_meaningful?: boolean;
+    thresholds?: { price_change_pct?: number };
+};
+
+export type CreateMonitorRequest = {
+    name: string;
+    description?: string | null;
+    monitor_type?: MonitorType;
+    cron_expression: string;
+    timezone?: string;
+    targets: MonitorTarget[];
+    goal?: string;
+    track_mode?: MonitorTrackMode;
+    extract_schema?: Record<string, any>;
+    diff_options?: {
+        ignore_selectors?: string[];
+        only_main_content?: boolean;
+        min_change_ratio?: number;
+    };
+    notify_options?: MonitorNotifyOptions;
+    concurrency_mode?: ConcurrencyMode;
+    max_executions_per_day?: number | null;
+    tags?: string[];
+    metadata?: Record<string, any>;
+};
+
+export type UpdateMonitorRequest = Partial<Omit<CreateMonitorRequest, 'monitor_type' | 'goal' | 'extract_schema' | 'tags' | 'metadata'>> & {
+    is_active?: boolean;
+    goal?: string | null;
+    extract_schema?: Record<string, unknown> | null;
+    tags?: string[] | null;
+    metadata?: Record<string, unknown> | null;
+};
+
+export interface MonitorBase {
+    uuid: string;
+    name: string;
+    description: string | null;
+    monitor_type: MonitorType;
+    scheduled_task_uuid: string | null;
+    targets: MonitorTarget[];
+    goal: string | null;
+    track_mode: MonitorTrackMode;
+    extract_schema: Record<string, unknown> | null;
+    diff_options: CreateMonitorRequest['diff_options'] | null;
+    notify_options: MonitorNotifyOptions | null;
+    is_active: boolean;
+    is_paused: boolean;
+    pause_reason: string | null;
+    in_progress: boolean;
+    revision: number;
+    last_check_state: MonitorCheck['state'] | null;
+    last_check_error: string | null;
+    last_check_at: string | null;
+    cron_expression: string;
+    timezone: string;
+    next_execution_at: string | null;
+    last_execution_at: string | null;
+    tags: string[] | null;
+    metadata: Record<string, unknown> | null;
+    capabilities: { location: false; ignore_selectors: 'text_lines'; targets_per_check: 1 };
+    created_at: string;
+    updated_at: string;
+}
+
+export type Monitor = MonitorBase;
+
+export type MonitorCreateResponse = {
+    monitor_id: string;
+    scheduled_task_id: string;
+    track_mode: MonitorTrackMode;
+    next_execution_at: string | null;
+};
+
+export interface MonitorSnapshotBase {
+    uuid: string;
+    monitor_uuid: string;
+    task_execution_uuid: string | null;
+    check_uuid: string | null;
+    monitor_revision: number;
+    sequence_number: number;
+    url: string;
+    content_hash: string;
+    content_complete: boolean;
+    status: 'new' | 'same' | 'changed' | 'removed' | 'error';
+    captured_at: string;
+}
+export type MonitorSnapshotSummary = MonitorSnapshotBase;
+export type MonitorSnapshot = MonitorSnapshotBase & {
+    /** Detail endpoint only; text is a bounded preview. */
+    content?: string | null;
+    extracted?: unknown;
+    content_truncated?: boolean;
+    content_length?: number;
+};
+export type MonitorSnapshotDetail = MonitorSnapshotBase & {
+    content: string | null;
+    extracted: unknown;
+    content_truncated: boolean;
+    content_length: number;
+};
+export type MonitorJudgment = { meaningful: boolean | null; confidence: 'low' | 'medium' | 'high'; reason: string; status?: 'complete' | 'unavailable' | 'incomplete' };
+export type MonitorNotificationStatus = 'legacy' | 'none' | 'pending' | 'queued' | 'delivered' | 'failed' | 'skipped';
+export interface MonitorChangeBase {
+    uuid: string;
+    monitor_uuid: string;
+    check_uuid: string | null;
+    url: string;
+    change_type: 'content' | 'text' | 'price_up' | 'price_down' | 'stock' | 'new' | 'removed';
+    from_snapshot_uuid: string | null;
+    to_snapshot_uuid: string | null;
+    diff_text?: string | null;
+    diff_json: Array<{ path: string; from?: unknown; to?: unknown; delta?: number; currency?: string; fromCurrency?: string }> | null;
+    judgment: MonitorJudgment | null;
+    notified: boolean;
+    notification_status: MonitorNotificationStatus;
+    created_at: string;
+    notifications?: MonitorNotification[];
+}
+export type MonitorChange = MonitorChangeBase;
+export type MonitorChangeFeedItem = Pick<MonitorChange, 'uuid' | 'monitor_uuid' | 'url' | 'change_type' | 'judgment' | 'notified' | 'notification_status' | 'created_at'> & { monitor_name: string; monitor_type: MonitorType };
+export type MonitorPage<T> = { data: T[]; pagination: { has_more: boolean; next_cursor: string | null } };
+export type MonitorPageParams = { limit?: number; offset?: number; cursor?: string };
+export interface MonitorCheck {
+    uuid: string;
+    sequence_number: number;
+    monitor_revision: number;
+    state: 'pending' | 'ready' | 'processing' | 'completed' | 'failed';
+    result_status: string | null;
+    source_error: { message: string; code?: string } | null;
+    attempts: number;
+    last_error: string | null;
+    created_at: string;
+    processed_at: string | null;
+}
+export interface MonitorNotification {
+    uuid: string;
+    check_uuid: string;
+    change_uuid: string | null;
+    channel: MonitorChannel;
+    event_type: string;
+    recipient: string | null;
+    status: 'pending' | 'processing' | 'retrying' | 'queued' | 'delivered' | 'failed' | 'skipped';
+    attempts: number;
+    last_error: string | null;
+    created_at: string;
+    delivered_at: string | null;
+}

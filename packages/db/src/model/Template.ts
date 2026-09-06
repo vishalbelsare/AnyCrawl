@@ -1,9 +1,16 @@
 import { getDB, schemas } from "../db/index.js";
 import { eq, sql } from "drizzle-orm";
 import type { TemplateConfig } from "@anycrawl/libs";
+import {
+    validateSlug,
+    isSlugUniqueViolation,
+    SlugValidationError,
+    type SlugValidationDeps,
+} from "./slug.js";
 
 export interface CreateTemplateParams {
     templateId: string;
+    slug?: string | null;
     name: string;
     description?: string;
     tags: string[];
@@ -16,6 +23,8 @@ export interface CreateTemplateParams {
     customHandlers?: any;
     metadata?: any;
     variables?: any;
+    runtime?: any;
+    outputSchema?: any;
     createdBy: string;
     publishedBy?: string;
     reviewedBy?: string;
@@ -32,24 +41,36 @@ export class Template {
     static async create(params: CreateTemplateParams): Promise<TemplateConfig> {
         const db = await getDB();
 
+        // Validate slug at the model choke point so every write path is covered.
+        // Only runs when a slug is actually provided (nullable slug stays valid).
+        if (params.slug != null) {
+            await validateSlug(params.slug, {
+                selfTemplateId: params.templateId,
+                deps: Template.slugValidationDeps(),
+            });
+        }
+
         const templateData = {
             templateId: params.templateId,
+            slug: params.slug ?? null,
             name: params.name,
-            description: params.description || '',
+            description: params.description || "",
             tags: params.tags,
-            version: '1.0.0',
+            version: "1.0.0",
             templateType: params.templateType,
             pricing: params.pricing,
             reqOptions: params.reqOptions,
             customHandlers: params.customHandlers || null,
             metadata: params.metadata || {},
             variables: params.variables || null,
+            runtime: params.runtime ?? null,
+            outputSchema: params.outputSchema ?? null,
             createdBy: params.createdBy,
             publishedBy: params.publishedBy || null,
             reviewedBy: params.reviewedBy || null,
-            status: params.status || 'draft',
-            reviewStatus: params.reviewStatus || 'pending',
-            reviewNotes: params.reviewNotes || '',
+            status: params.status || "draft",
+            reviewStatus: params.reviewStatus || "pending",
+            reviewNotes: params.reviewNotes || "",
             trusted: params.trusted || false,
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -57,7 +78,22 @@ export class Template {
             reviewedAt: params.reviewedBy ? new Date() : null,
         };
 
-        const result = await db.insert(schemas.templates).values(templateData).returning();
+        let result;
+        try {
+            result = await db.insert(schemas.templates).values(templateData).returning();
+        } catch (error) {
+            // Race with a concurrent writer: pre-check passed but the DB unique
+            // constraint fired. Surface a clean 409 rather than a raw driver error.
+            if (params.slug != null && isSlugUniqueViolation(error)) {
+                throw new SlugValidationError(
+                    "SLUG_CONFLICT",
+                    params.slug,
+                    `Template slug "${params.slug}" is already in use.`,
+                    409
+                );
+            }
+            throw error;
+        }
         return Template.mapDbToTemplate(result[0]);
     }
 
@@ -80,6 +116,55 @@ export class Template {
     }
 
     /**
+     * Get template by UUID (primary key)
+     */
+    static async getByUuid(uuid: string): Promise<TemplateConfig | null> {
+        const db = await getDB();
+        const result = await db
+            .select()
+            .from(schemas.templates)
+            .where(eq(schemas.templates.uuid, uuid))
+            .limit(1);
+
+        if (result.length === 0) {
+            return null;
+        }
+
+        return Template.mapDbToTemplate(result[0]);
+    }
+
+    /**
+     * Get template by vanity slug
+     */
+    static async getBySlug(slug: string): Promise<TemplateConfig | null> {
+        const db = await getDB();
+        const result = await db
+            .select()
+            .from(schemas.templates)
+            .where(eq(schemas.templates.slug, slug))
+            .limit(1);
+
+        if (result.length === 0) {
+            return null;
+        }
+
+        return Template.mapDbToTemplate(result[0]);
+    }
+
+    /**
+     * Resolve a template by an ambiguous reference (vanity slug OR templateId).
+     * Precedence: slug wins (public-facing preferred identifier), then fall back to templateId.
+     * Write-time validation guarantees a slug never equals any templateId, so this is deterministic.
+     */
+    static async resolveByRef(ref: string): Promise<TemplateConfig | null> {
+        const bySlug = await Template.getBySlug(ref);
+        if (bySlug) {
+            return bySlug;
+        }
+        return Template.get(ref);
+    }
+
+    /**
      * Update template
      */
     static async update(
@@ -88,30 +173,57 @@ export class Template {
     ): Promise<TemplateConfig | null> {
         const db = await getDB();
 
+        // Validate slug at the model choke point. Setting slug to null clears it
+        // (no validation needed); only a non-null new slug is validated.
+        if (updates.slug != null) {
+            await validateSlug(updates.slug, {
+                selfTemplateId: templateId,
+                deps: Template.slugValidationDeps(),
+            });
+        }
+
         const updateData: any = {
             updatedAt: new Date(),
         };
 
+        if (updates.slug !== undefined) updateData.slug = updates.slug ?? null;
         if (updates.name !== undefined) updateData.name = updates.name;
         if (updates.description !== undefined) updateData.description = updates.description;
         if (updates.tags !== undefined) updateData.tags = updates.tags;
         if (updates.templateType !== undefined) updateData.templateType = updates.templateType;
         if (updates.pricing !== undefined) updateData.pricing = updates.pricing;
         if (updates.reqOptions !== undefined) updateData.reqOptions = updates.reqOptions;
-        if (updates.customHandlers !== undefined) updateData.customHandlers = updates.customHandlers || null;
+        if (updates.customHandlers !== undefined)
+            updateData.customHandlers = updates.customHandlers || null;
         if (updates.metadata !== undefined) updateData.metadata = updates.metadata;
         if (updates.variables !== undefined) updateData.variables = updates.variables || null;
+        if (updates.runtime !== undefined) updateData.runtime = updates.runtime ?? null;
+        if (updates.outputSchema !== undefined) updateData.outputSchema = updates.outputSchema ?? null;
         if (updates.status !== undefined) updateData.status = updates.status;
         if (updates.reviewStatus !== undefined) updateData.reviewStatus = updates.reviewStatus;
         if (updates.reviewNotes !== undefined) updateData.reviewNotes = updates.reviewNotes;
         if (updates.trusted !== undefined) updateData.trusted = updates.trusted;
         if (updates.version !== undefined) updateData.version = updates.version;
 
-        const result = await db
-            .update(schemas.templates)
-            .set(updateData)
-            .where(eq(schemas.templates.templateId, templateId))
-            .returning();
+        let result;
+        try {
+            result = await db
+                .update(schemas.templates)
+                .set(updateData)
+                .where(eq(schemas.templates.templateId, templateId))
+                .returning();
+        } catch (error) {
+            // Race with a concurrent writer on the unique slug column -> clean 409.
+            if (updates.slug != null && isSlugUniqueViolation(error)) {
+                throw new SlugValidationError(
+                    "SLUG_CONFLICT",
+                    updates.slug,
+                    `Template slug "${updates.slug}" is already in use.`,
+                    409
+                );
+            }
+            throw error;
+        }
 
         if (result.length === 0) {
             return null;
@@ -162,9 +274,7 @@ export class Template {
      */
     static async deleteIfExists(templateId: string): Promise<void> {
         const db = await getDB();
-        await db
-            .delete(schemas.templates)
-            .where(eq(schemas.templates.templateId, templateId));
+        await db.delete(schemas.templates).where(eq(schemas.templates.templateId, templateId));
     }
 
     /**
@@ -181,12 +291,29 @@ export class Template {
     }
 
     /**
+     * Build the DB lookups used by slug validation (anti-ambiguity + uniqueness).
+     * Kept here so validateSlug stays DB-agnostic and unit-testable via mock deps.
+     */
+    private static slugValidationDeps(): SlugValidationDeps {
+        return {
+            templateIdExists: (candidate: string) => Template.exists(candidate),
+            getBySlug: async (slug: string) => {
+                const existing = await Template.getBySlug(slug);
+                return existing ? { templateId: existing.templateId } : null;
+            },
+        };
+    }
+
+    /**
      * Map database row to TemplateConfig
      */
     private static mapDbToTemplate(row: any): TemplateConfig {
         return {
             uuid: row.uuid,
             templateId: row.templateId,
+            slug: row.slug ?? null,
+            // L3: current immutable revision pointer (db column current_revision_uuid).
+            currentRevisionId: (row as any).currentRevisionUuid ?? null,
             name: row.name,
             description: row.description,
             tags: row.tags || [],
@@ -197,6 +324,8 @@ export class Template {
             customHandlers: row.customHandlers || undefined,
             metadata: row.metadata || {},
             variables: row.variables || undefined,
+            runtime: row.runtime ?? undefined,
+            outputSchema: row.outputSchema ?? undefined,
             createdBy: row.createdBy,
             publishedBy: row.publishedBy,
             reviewedBy: row.reviewedBy,

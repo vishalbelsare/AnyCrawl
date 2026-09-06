@@ -1,0 +1,458 @@
+---
+title: MCP サーバー
+description: Model Context Protocol（MCP）で Cursor、Claude、VS Code に AnyCrawl の Web スクレイピングを統合する
+icon: Zap
+---
+
+**AnyCrawl MCP Server** — Model Context Protocol（MCP）経由で、Cursor、Claude、その他の LLM クライアント向けに強力な Web スクレイピングとクロールを提供します。
+
+## 機能
+
+- Web のスクレイピング、クロール、コンテンツ抽出
+- 検索と発見
+- バッチ処理と同時実行
+- クラウドとセルフホストの両方に対応
+- 進捗のリアルタイム追跡
+- SSE 対応
+
+## インストール
+
+### npx で実行
+
+```bash
+ANYCRAWL_API_KEY=YOUR-API-KEY npx -y anycrawl-mcp
+```
+
+### ホスト型 API を使う
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/mcp"
+        }
+    }
+}
+```
+
+### 手動インストール
+
+```bash
+npm install -g anycrawl-mcp-server
+ANYCRAWL_API_KEY=YOUR-API-KEY anycrawl-mcp
+```
+
+## Cursor で使う
+
+AnyCrawl MCP サーバーを Cursor に追加します。
+
+1. Cursor の設定を開く
+2. Features > MCP Servers に移動
+3. 「+ Add new global MCP server」をクリック
+4. 次の設定を入力する
+
+```json
+{
+    "mcpServers": {
+        "anycrawl-mcp": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "YOUR-API-KEY"
+            }
+        }
+    }
+}
+```
+
+## VS Code で使う
+
+VS Code のユーザー設定（JSON）に次のブロックを追加します。
+
+```json
+{
+    "mcp": {
+        "inputs": [
+            {
+                "type": "promptString",
+                "id": "apiKey",
+                "description": "AnyCrawl API Key",
+                "password": true
+            }
+        ],
+        "servers": {
+            "anycrawl": {
+                "command": "npx",
+                "args": ["-y", "anycrawl-mcp"],
+                "env": {
+                    "ANYCRAWL_API_KEY": "${input:apiKey}"
+                }
+            }
+        }
+    }
+}
+```
+
+## Claude Desktop で使う
+
+Claude の設定ファイルに次を追加します。
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "url": "https://mcp.anycrawl.dev/{YOUR_API_KEY}/sse"
+        }
+    }
+}
+```
+
+## 設定
+
+### 環境変数
+
+#### クラウド API に必須
+
+- `ANYCRAWL_API_KEY`：AnyCrawl の API キー
+    - クラウド API を使う場合は必須（既定）
+    - セルフホストでは任意
+- `ANYCRAWL_BASE_URL`：AnyCrawl API のベース URL
+    - 任意
+    - セルフホストでは必須
+
+### 設定例
+
+#### クラウド（基本）
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key-here"
+npx -y anycrawl-mcp
+```
+
+#### セルフホスト
+
+```bash
+export ANYCRAWL_API_KEY="your-api-key"
+export ANYCRAWL_BASE_URL="https://your-instance.com"
+npx -y anycrawl-mcp
+```
+
+## 利用できるツール
+
+### 1. スクレイプツール（`anycrawl_scrape`）
+
+単一 URL をスクレイプし、複数形式でコンテンツを抽出します。
+
+**向いている用途：**
+
+- 1 ページからの抽出
+- 素早いデータ取得
+- 特定 URL の試験
+
+**パラメータ：**
+
+- `url`（必須）：スクレイプする URL
+- `engine`（任意）：スクレイプエンジン（`auto`、`playwright`、`cheerio`、`puppeteer`）。既定は `auto`
+- `formats`（任意）：出力形式（`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`）
+- `timeout`（任意）：タイムアウト（ミリ秒。既定：300000）
+- `wait_for`（任意）：ページ読み込み待ち時間
+- `include_tags`（任意）：含める HTML タグ
+- `exclude_tags`（任意）：除外する HTML タグ
+- `json_options`（任意）：JSON 抽出オプション
+- `ocr_options`（任意）：Markdown 画像のみ OCR 強化。`html` / `rawHtml` は変更しません
+
+**例：**
+
+```json
+{
+    "name": "anycrawl_scrape",
+    "arguments": {
+        "url": "https://example.com",
+        "engine": "cheerio",
+        "formats": ["markdown", "html"],
+        "timeout": 30000
+    }
+}
+```
+
+### 2. クロールツール（`anycrawl_crawl`）
+
+サイトから複数ページをクロールするジョブを開始します。既定では完了まで待ち、SDK の `client.crawl` で集約結果を返します（既定：3 秒ごとにポーリング、60 秒でタイムアウト）。
+
+**向いている用途：**
+
+- 関連ページが複数あるサイトからの抽出
+- サイト全体の分析
+- バルク収集
+
+**パラメータ：**
+
+- `url`（必須）：クロールの起点 URL
+- `engine`（任意）：スクレイプエンジン（`auto`、`playwright`、`cheerio`、`puppeteer`）。既定は `auto`
+- `max_depth`（任意）：最大クロール深さ（既定：10）
+- `limit`（任意）：最大ページ数（既定：100）
+- `strategy`（任意）：クロール戦略（`all`、`same-domain`、`same-hostname`、`same-origin`）
+- `exclude_paths`（任意）：除外する URL パターン
+- `include_paths`（任意）：含める URL パターン
+- `scrape_options`（任意）：各ページのスクレイプオプション
+- `poll_seconds`（任意）：待機時のポーリング間隔（秒。既定：3）
+- `timeout_ms`（任意）：待機全体のタイムアウト（ミリ秒。既定：60000）
+
+**例：**
+
+```json
+{
+    "name": "anycrawl_crawl",
+    "arguments": {
+        "url": "https://example.com/blog",
+        "engine": "playwright",
+        "max_depth": 2,
+        "limit": 50,
+        "strategy": "same-domain",
+        "poll_seconds": 3,
+        "timeout_ms": 60000
+    }
+}
+```
+
+返却：`{ "job_id": "...", "status": "completed", "total": N, "completed": N, "credits_used": N, "data": [...] }`。
+
+### 3. クロール状態ツール（`anycrawl_crawl_status`）
+
+クロールジョブの状態を確認します。
+
+**パラメータ：**
+
+- `job_id`（必須）：クロールジョブ ID
+
+**例：**
+
+```json
+{
+    "name": "anycrawl_crawl_status",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 4. クロール結果ツール（`anycrawl_crawl_results`）
+
+クロールジョブの結果を取得します。
+
+**パラメータ：**
+
+- `job_id`（必須）：クロールジョブ ID
+- `skip`（任意）：スキップする件数（ページネーション）
+
+**例：**
+
+```json
+{
+    "name": "anycrawl_crawl_results",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "skip": 0
+    }
+}
+```
+
+### 5. クロールキャンセルツール（`anycrawl_cancel_crawl`）
+
+保留中のクロールジョブをキャンセルします。
+
+**パラメータ：**
+
+- `job_id`（必須）：キャンセルするジョブ ID
+
+**例：**
+
+```json
+{
+    "name": "anycrawl_cancel_crawl",
+    "arguments": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396"
+    }
+}
+```
+
+### 6. 検索ツール（`anycrawl_search`）
+
+AnyCrawl の検索エンジンで Web を検索します。
+
+**向いている用途：**
+
+- 複数サイトにまたがる情報の発見
+- 調査・探索
+- どのサイトに情報があるか分からないとき
+
+**パラメータ：**
+
+- `query`（必須）：検索クエリ
+- `engine`（任意）：検索エンジン（`google`）
+- `limit`（任意）：最大結果数（既定：5）
+- `offset`（任意）：スキップする件数（既定：0）
+- `pages`（任意）：検索するページ数
+- `lang`（任意）：言語コード
+- `country`（任意）：国コード
+- `scrape_options`（任意）：検索結果をスクレイプするオプション
+- `safeSearch`（任意）：セーフサーチ（0=オフ、1=中、2=厳しい）
+
+**例：**
+
+```json
+{
+    "name": "anycrawl_search",
+    "arguments": {
+        "query": "latest AI research papers 2024",
+        "engine": "google",
+        "limit": 5,
+        "scrape_options": {
+            "engine": "cheerio",
+            "formats": ["markdown"]
+        }
+    }
+}
+```
+
+## 出力形式
+
+### Markdown
+
+LLM 向けに整形されたクリーンな Markdown。
+
+### HTML
+
+書式を保った生の HTML。
+
+### Text
+
+装飾の少ないプレーンテキスト。
+
+### Screenshot
+
+ページのビジュアルスクリーンショット。
+
+### Screenshot@fullPage
+
+折りたたみ下を含む全ページスクリーンショット。
+
+### Raw HTML
+
+加工していない HTML。
+
+### JSON
+
+カスタムスキーマによる構造化データ抽出。
+
+## エンジン
+
+### Auto（既定）
+
+- エンジンを自動選択
+- URL ごとに最適なエンジンを選ぶ
+- 汎用スクレイプ向け
+
+### Cheerio
+
+- 高速で軽量
+- 静的コンテンツ向け
+- サーバーサイドレンダリング
+
+### Playwright
+
+- フルブラウザ自動化
+- JavaScript レンダリング
+- 動的コンテンツ向け
+
+### Puppeteer
+
+- Chrome / Chromium 自動化
+- 機能と性能のバランス
+
+## エラー処理
+
+サーバーは包括的なエラー処理を行います。
+
+- **バリデーションエラー**：不正なパラメータや必須フィールドの欠如
+- **API エラー**：詳細メッセージ付きの AnyCrawl API エラー
+- **ネットワークエラー**：接続やタイムアウト
+
+## ログ
+
+詳細なログが利用できます。
+
+- **Debug**：操作の詳細
+- **Info**：一般的な状態
+- **Warn**：致命的でない問題
+- **Error**：重大な失敗
+
+ログレベルは環境変数で設定します。
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+## 開発
+
+### 前提
+
+- Node.js 18+
+- npm
+
+### セットアップ
+
+```bash
+git clone https://github.com/any4ai/anycrawl-mcp-server.git
+cd anycrawl-mcp-server
+npm ci
+```
+
+### ビルド
+
+```bash
+npm run build
+```
+
+### テスト
+
+```bash
+npm test
+```
+
+### Lint
+
+```bash
+npm run lint
+```
+
+### フォーマット
+
+```bash
+npm run format
+```
+
+## コントリビューション
+
+1. リポジトリをフォークする
+2. フィーチャーブランチを作成する
+3. テストを実行：`npm test`
+4. プルリクエストを送る
+
+## ライセンス
+
+MIT License — 詳細は LICENSE ファイルを参照
+
+## サポート
+
+- GitHub Issues：[バグ報告・機能要望](https://github.com/any4ai/anycrawl-mcp-server/issues)
+- ドキュメント：[AnyCrawl API ドキュメント](https://docs.anycrawl.dev)
+- メール：help@anycrawl.dev
+
+## AnyCrawl について
+
+AnyCrawl は強力な Node.js / TypeScript クローラーで、Web サイトを LLM 向けデータに変換し、Google / Bing / Baidu などから構造化 SERP を取得します。バルク処理向けのネイティブなマルチスレッドと複数出力形式に対応しています。
+
+- **Web サイト**：https://anycrawl.dev
+- **GitHub**：https://github.com/any4ai/anycrawl
+- **API**：https://api.anycrawl.dev

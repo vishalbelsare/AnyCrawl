@@ -1,0 +1,328 @@
+---
+title: โหมด JSON
+description: ดึงข้อมูลมีโครงสร้างจากหน้าเว็บด้วย LLM พร้อมการตรวจสอบ JSON schema
+icon: Database
+---
+
+## บทนำ
+
+โหมด JSON ช่วยให้คุณดึงข้อมูลมีโครงสร้างจากหน้าเว็บใดก็ได้ด้วยโมเดลภาษาขนาดใหญ่ (LLM)
+
+AnyCrawl ให้คุณกำหนด JSON schema และพรอมต์เพื่อกำหนดกระบวนการดึงข้อมูล ให้ผลลัพธ์ตรงกับรูปแบบที่ต้องการ
+
+## ตัวอย่างการใช้งาน
+
+โหมด JSON รองรับการดึงข้อมูลแบบมีโครงสร้างสามแบบ:
+
+1. **เฉพาะพรอมต์**: ใช้พรอมต์ภาษาธรรมชาติอธิบายสิ่งที่ต้องการดึง LLM เป็นผู้กำหนดโครงสร้างผลลัพธ์
+2. **เฉพาะ Schema**: กำหนด JSON schema เพื่อจำกัดโครงสร้างผลลัพธ์อย่างเข้มงวด LLM เป็นผู้เติมเนื้อหา
+3. **พรอมต์ + Schema**: ผสม schema กับพรอมต์เพื่อควบคุมโครงสร้างและเนื้อหาอย่างแม่นยำ
+
+เคล็ดลับ: ตั้ง `extract_source` เพื่อควบคุมว่าการดึงแบบมีโครงสร้างจะอ่านจาก `markdown` ที่สร้างขึ้นหรือ `html` ต้นฉบับ ค่าเริ่มต้นคือ `markdown` ใช้ `html` เมื่อ markdown สูญเสียโครงสร้างสำคัญ
+
+สำคัญ: ต้องใส่ `"json"` ใน `formats` เมื่อใช้ `json_options` มิฉะนั้นการตอบกลับจะไม่มีข้อมูล JSON ที่ดึงแล้ว
+
+---
+
+### 1. เฉพาะพรอมต์ (โครงสร้างยืดหยุ่น)
+
+**ขั้นตอน:**
+
+1. ตั้ง URL ของหน้าเป้าหมาย
+2. เขียนพรอมต์อธิบายข้อมูลที่ต้องการดึง
+3. ส่งคำขอ
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "user_prompt": "Extract the company mission, open source status, and employee count."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            user_prompt: "Extract the company mission, open source status, and employee count.",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'user_prompt': 'Extract the company mission, open source status, and employee count.'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 2. เฉพาะ Schema (โครงสร้างเข้มงวด)
+
+**ขั้นตอน:**
+
+1. ตั้ง URL ของหน้าเป้าหมาย
+2. กำหนด JSON schema สำหรับฟิลด์และชนิดที่ต้องการ
+3. ส่งคำขอ
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      }
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 3. พรอมต์ + Schema (โครงสร้างและเนื้อหาแบบมีแนวทาง)
+
+**ขั้นตอน:**
+
+1. ตั้ง URL ของหน้าเป้าหมาย
+2. กำหนด JSON schema สำหรับโครงสร้างผลลัพธ์
+3. เขียนพรอมต์เพื่อกำหนดการดึงข้อมูล
+4. ส่งคำขอ
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      },
+      "user_prompt": "Extract the company mission (string), open source status (boolean), and employee count (number)."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+            user_prompt:
+                "Extract the company mission (string), open source status (boolean), and employee count (number).",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema,
+            'user_prompt': 'Extract the company mission (string), open source status (boolean), and employee count (number).'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+## อ็อบเจ็กต์ json_options
+
+พารามิเตอร์ `json_options` เป็นอ็อบเจ็กต์ที่รับพารามิเตอร์ดังนี้:
+
+- `schema`: schema ที่ใช้ในการดึงข้อมูล
+- `user_prompt`: พรอมต์ผู้ใช้สำหรับการดึงข้อมูล
+- `schema_name`: ชื่อของผลลัพธ์ที่ต้องการสร้าง (ไม่บังคับ)
+- `schema_description`: คำอธิบายของผลลัพธ์ที่ต้องการสร้าง (ไม่บังคับ)
+
+### JSON Schema
+
+schema สำหรับการดึงข้อมูล ฟิลด์ทั่วไปได้แก่:
+
+- `type`: ชนิดของค่า ชนิดที่รองรับแสดงด้านล่าง
+- `properties`: (สำหรับ `object`) อ็อบเจ็กต์ที่ระบุฟิลด์และ schema ของแต่ละฟิลด์
+- `required`: (สำหรับ `object`) อาร์เรย์ของชื่อฟิลด์ที่จำเป็น
+
+#### ชนิดที่รองรับ
+
+| ชนิด      | คำอธิบาย                | ตัวอย่าง                                 |
+| --------- | -------------------------- | --------------------------------------- |
+| `string`  | ข้อความ                  | ชื่อบริษัท คำอธิบาย หัวข้อ      |
+| `number`  | ค่าตัวเลข             | ราคา จำนวน คะแนน             |
+| `boolean` | ค่าจริง/เท็จ          | แฟล็กความพร้อม ตัวบ่งชี้ฟีเจอร์  |
+| `object`  | โครงสร้างซ้อน          | รายละเอียดที่อยู่ สเปกสินค้า |
+| `array`   | รายการค่าหรืออ็อบเจ็กต์ | แท็ก หมวดหมู่ รายการฟีเจอร์         |
+
+### ตัวอย่าง Schema
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "company_name": {
+            "type": "string"
+        },
+        "is_open_source": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "employee_count": {
+            "type": "number"
+        }
+    },
+    "required": ["company_name"]
+}
+```
+
+
+## เอกสารที่เกี่ยวข้อง
+
+- [Scrape API](./scrape) - การดึงข้อมูลพื้นฐานพร้อมการดึง JSON
+- [Crawl API](./crawl) - การครอลพร้อมตัวเลือกการดึง JSON
+- [ระบบเทมเพลต](./template) - เทมเพลตการดึงข้อมูลขั้นสูง

@@ -1,0 +1,361 @@
+---
+title: Map
+description: Extraia todos os URLs de um site usando sitemap, mecanismo de busca e análise de links da página.
+icon: Map
+---
+
+## Introdução
+
+A API Map do AnyCrawl extrai URLs de um site combinando várias fontes de descoberta: análise de sitemap, resultados de mecanismos de busca e extração de links em HTML. Isso oferece descoberta abrangente de URLs para mapeamento do site, indexação de conteúdo e planejamento de crawls.
+
+**Destaque**: a API **retorna dados de imediato, de forma síncrona** — sem polling nem webhooks. Combina três fontes de URL para máxima cobertura.
+
+### Recursos principais
+
+- **Descoberta multi-fonte**: combina análise de sitemap, resultados de busca e extração de links na página
+- **Suporte a sitemap**: analisa robots.txt e sitemap.xml (incluindo índices de sitemap e gzip)
+- **Integração com busca**: usa automaticamente o operador `site:` nos mecanismos de busca para descoberta de URLs
+- **Extração de links**: extrai todos os links `<a href>` da página alvo
+- **Filtro por domínio**: filtre por domínio exato ou inclua subdomínios
+- **Resposta imediata**: **API síncrona** — resultados na hora, sem polling
+
+## Endpoint da API
+
+```
+POST https://api.anycrawl.dev/v1/map
+```
+
+## Exemplos de uso
+
+### cURL
+
+#### Mapeamento básico de URLs
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data); // Array of URLs with metadata
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### Incluir subdomínios
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "include_subdomains": true,
+    "limit": 1000
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        include_subdomains: true,
+        limit: 1000,
+    }),
+});
+const result = await response.json();
+// Includes URLs from blog.example.com, docs.example.com, etc.
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'include_subdomains': True,
+        'limit': 1000
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+#### Pular análise do sitemap
+
+Para resultados mais rápidos quando você só precisa de links da página e da busca:
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/map" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "ignore_sitemap": true
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/map", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        ignore_sitemap: true,
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+response = requests.post(
+    'https://api.anycrawl.dev/v1/map',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'ignore_sitemap': True
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## Parâmetros da requisição
+
+| Parâmetro | Tipo | Obrigatório | Padrão | Descrição |
+| --------- | ---- | -------- | ------- | ----------- |
+| `url` | string | Sim | - | URL alvo do mapa; deve ser HTTP/HTTPS válido |
+| `limit` | number | Não | `5000` | Número máximo de URLs a retornar (1–50000) |
+| `include_subdomains` | boolean | Não | `false` | Incluir URLs de subdomínios (ex.: blog.example.com) |
+| `ignore_sitemap` | boolean | Não | `false` | Pular análise do sitemap; usar apenas busca e links da página |
+| `max_age` | number | Não | - | Idade máxima do cache (ms). Use `0` para pular leitura do cache; omita para o padrão do servidor |
+| `use_index` | boolean | Não | `true` | Se deve usar o índice do Page Cache (`page_cache`) como fonte adicional de URLs |
+
+### Comportamento de cache
+
+- `max_age` controla leituras do Map Cache. `0` força atualização.
+- `use_index=false` desativa a fonte do índice do Page Cache (só tem efeito se o Page Cache estiver habilitado).
+- `/v1/map` não retorna `fromCache` na resposta (uso de cache é interno).
+
+### Fontes de descoberta de URLs
+
+A API Map combina três fontes:
+
+#### 1. Análise de sitemap
+
+- Analisa `robots.txt` para localizar sitemaps
+- Tenta caminhos comuns: `/sitemap.xml`, `/sitemap.xml.gz`
+- Suporta índices de sitemap (sitemaps que apontam para outros)
+- Suporta sitemaps compactados com gzip
+
+#### 2. Resultados de mecanismo de busca
+
+- Usa automaticamente o operador `site:dominio.com` para descobrir páginas indexadas
+- Fornece metadados de título e descrição para URLs descobertos
+
+#### 3. Extração de links da página
+
+- Extrai todos os links `<a href>` do HTML da página alvo
+- Captura o texto do link como título
+- Captura atributo `title` e `aria-label` como descrição
+
+### Fontes de metadados
+
+| Fonte | Título | Descrição |
+| ------ | ----- | ----------- |
+| Sitemap | - | - |
+| Busca | Título do resultado | Snippet do resultado |
+| Links da página | Texto do link ou atributo title | Atributo aria-label |
+
+## Formato da resposta
+
+### Resposta de sucesso (HTTP 200)
+
+```json
+{
+    "success": true,
+    "data": [
+        {
+            "url": "https://example.com/page1",
+            "title": "Page Title",
+            "description": "Page description from search results"
+        },
+        {
+            "url": "https://example.com/page2",
+            "title": "Another Page"
+        },
+        {
+            "url": "https://example.com/page3"
+        }
+    ]
+}
+```
+
+### Respostas de erro
+
+#### 400 - Erro de validação
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid url",
+    "details": {
+        "issues": [
+            {
+                "field": "url",
+                "message": "Invalid url",
+                "code": "invalid_string"
+            }
+        ]
+    }
+}
+```
+
+#### 402 - Créditos insuficientes
+
+```json
+{
+    "success": false,
+    "error": "Insufficient credits",
+    "message": "Estimated credits required (1) exceeds available credits (0).",
+    "details": {
+        "estimated_total": 1,
+        "available_credits": 0
+    }
+}
+```
+
+#### 500 - Erro interno do servidor
+
+```json
+{
+    "success": false,
+    "error": "Internal server error",
+    "message": "Error message details"
+}
+```
+
+## Boas práticas
+
+### Casos de uso
+
+1. **Planejamento de crawl**: use Map para descobrir todos os URLs antes de um crawl completo
+2. **Indexação de conteúdo**: construa um índice completo das páginas do site
+3. **Auditoria de site**: encontre todas as páginas para SEO ou acessibilidade
+4. **Análise de links**: analise a estrutura de links internos
+
+### Dicas de desempenho
+
+- Use `ignore_sitemap: true` para respostas mais rápidas quando o sitemap não for necessário
+- Defina `limit` adequado para evitar processar URLs desnecessários
+- Use `include_subdomains: false` (padrão) salvo se precisar descobrir entre subdomínios
+
+### Combinando com Crawl
+
+Map é ideal para planejar operações de crawl:
+
+```javascript
+// Step 1: Discover URLs with Map
+const mapResponse = await fetch("/v1/map", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        limit: 100,
+    }),
+});
+const { data: urls } = await mapResponse.json();
+
+// Step 2: Use discovered URLs to plan crawl
+const crawlResponse = await fetch("/v1/crawl", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+        url: "https://docs.example.com",
+        include_paths: urls.map((u) => new URL(u.url).pathname),
+        limit: 100,
+    }),
+});
+```
+
+## Créditos
+
+| Operação | Créditos |
+| --------- | ------- |
+| Operação Map | 1 |
+
+**Total**: 1 crédito por requisição.
+
+## Perguntas frequentes
+
+### Qual a diferença entre Map e Crawl?
+
+**Map** descobre URLs sem buscar o conteúdo completo da página — é rápido e leve. **Crawl** busca e processa o conteúdo real de cada página. Use Map para descoberta e planejamento; Crawl para extração de conteúdo.
+
+### Por que alguns URLs não aparecem nos resultados?
+
+Possíveis motivos:
+- URLs estão em outro domínio/subdomínio (use `include_subdomains: true`)
+- O site não tem sitemap
+- URLs são geradas dinamicamente via JavaScript
+- URLs excedem o parâmetro `limit`
+
+### Como funciona a descoberta via mecanismo de busca?
+
+A API Map consulta automaticamente mecanismos de busca com `site:dominio.com` para descobrir páginas indexadas. Isso ajuda a encontrar URLs que podem não estar no sitemap nem linkadas na página principal.
+
+### O Map segue redirecionamentos?
+
+O Map extrai URLs como aparecem em sitemaps e links. Não segue redirecionamentos para descobrir URLs adicionais.
+
+### Existe limite de taxa?
+
+Não. A API **suporta alta concorrência nativamente**. Você pode fazer várias requisições simultâneas sem preocupação com rate limiting.

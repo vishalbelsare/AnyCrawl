@@ -1,0 +1,427 @@
+---
+title: Triển khai Docker
+description: Hướng dẫn từng bước tự host AnyCrawl bằng Docker với tùy chọn cấu hình và thực hành tốt
+icon: Hammer
+---
+
+## Docker với image có sẵn
+
+AnyCrawl cung cấp image Docker có sẵn qua GitHub Container Registry. Bạn có thể triển khai AnyCrawl nhanh mà không cần build từ mã nguồn.
+
+### Image có sẵn
+
+Các image sau có tại [GitHub Container Registry](https://github.com/any4ai/AnyCrawl/packages):
+
+- **anycrawl**: Image all-in-one cho AnyCrawl. Gồm mọi dịch vụ và phụ thuộc.
+- **anycrawl-api**: Dịch vụ API chính
+- **anycrawl-scrape-cheerio**: Engine scrape Cheerio
+- **anycrawl-scrape-playwright**: Engine scrape Playwright
+- **anycrawl-scrape-puppeteer**: Engine scrape Puppeteer
+
+## Bắt đầu nhanh
+
+AnyCrawl cung cấp image all-in-one; image có sẵn là `ghcr.io/any4ai/anycrawl:latest`, gồm mọi dịch vụ và phụ thuộc. Chạy bằng lệnh:
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+- Lưu ý: Image kiến trúc arm64 **không** gồm dịch vụ `scrape-puppeteer`. Nếu thực sự cần puppeteer, đặt `platform` thành `linux/amd64` trong lệnh docker run, ví dụ:
+
+```bash
+docker run -p 8080:8080 --platform linux/amd64 ghcr.io/any4ai/anycrawl:latest
+```
+
+> Lưu ý: cách này ảnh hưởng hiệu năng, chậm hơn image arm64 native.
+
+Chạy nền:
+
+```bash
+docker run -d -p 8080:8080 ghcr.io/any4ai/anycrawl:latest
+```
+
+Nếu chạy trên Arm64 (không hỗ trợ puppeteer), có thể dùng:
+
+```bash
+docker run -p 8080:8080 ghcr.io/any4ai/anycrawl:latest-arm64
+```
+
+### Kèm biến môi trường
+
+```bash
+# Chạy với cấu hình tùy chỉnh
+docker run -d \
+  -p 8080:8080 \
+  -e NODE_ENV=production \
+  -e ANYCRAWL_API_AUTH_ENABLED=false \
+  -e ANYCRAWL_HEADLESS=true \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+### Kèm file .env
+
+```bash
+# Chạy với file .env cục bộ
+docker run -d \
+  -p 8080:8080 \
+  -v $(pwd)/.env:/usr/src/app/.env:ro \
+  ghcr.io/any4ai/anycrawl:latest
+```
+
+## Build Docker
+
+Nếu muốn tự build image, làm theo các bước sau.
+
+### Yêu cầu
+
+Trước khi bắt đầu, đảm bảo máy đã cài:
+
+- **Docker**: Phiên bản 20.10 trở lên
+- **Docker Compose**: Phiên bản 2.0 trở lên
+
+### Cài Docker và Docker Compose
+
+#### macOS
+
+```bash
+# Cài bằng Homebrew
+brew install docker docker-compose
+
+# Hoặc tải Docker Desktop
+# https://www.docker.com/products/docker-desktop
+```
+
+#### Ubuntu/Debian
+
+```bash
+# Cài Docker
+# Thêm GPG key chính thức của Docker:
+sudo apt-get update
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Thêm repository vào Apt sources:
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+## Bắt đầu nhanh
+
+### 1. Clone repository
+
+```bash
+git clone https://github.com/any4ai/AnyCrawl.git
+cd AnyCrawl
+```
+
+### 2. Khởi động dịch vụ
+
+```bash
+# Build và khởi động mọi dịch vụ
+docker compose up --build
+
+# Hoặc chạy nền
+docker compose up --build -d
+```
+
+### 3. Xác minh triển khai
+
+```bash
+# Kiểm tra trạng thái dịch vụ
+docker compose ps
+
+# Kiểm tra API có chạy không
+curl http://localhost:8080/health
+```
+
+## Kiến trúc dịch vụ
+
+AnyCrawl dùng kiến trúc microservice với các dịch vụ sau:
+
+### Dịch vụ cốt lõi
+
+| Service Name        | Mô tả                              | Port | Dependencies |
+| ------------------- | ---------------------------------------- | ---- | ------------ |
+| `api`               | API gateway và giao diện dịch vụ chính   | 8080 | redis        |
+| `scrape-puppeteer`  | Engine scrape Puppeteer                | -    | redis        |
+| `scrape-playwright` | Engine scrape Playwright               | -    | redis        |
+| `scrape-cheerio`    | Engine scrape Cheerio (không hỗ trợ SPA) | -    | redis        |
+| `redis`             | Hàng đợi và cache                  | 6379 | -            |
+
+## Cấu hình biến môi trường
+
+### Cấu hình cơ bản
+
+| Variable Name       | Mô tả         | Default      | Ví dụ                     |
+| ------------------- | ------------------- | ------------ | --------------------------- |
+| `NODE_ENV`          | Môi trường chạy | `production` | `production`, `development` |
+| `ANYCRAWL_API_PORT` | Cổng dịch vụ API    | `8080`       | `8080`                      |
+
+### Cấu hình scrape
+
+| Variable Name                    | Mô tả                                          | Default  | Ví dụ                          |
+| -------------------------------- | ---------------------------------------------------- | -------- | -------------------------------- |
+| `ANYCRAWL_HEADLESS`              | Chế độ headless                                    | `true`   | `true`, `false`                  |
+| `ANYCRAWL_PROXY_URL`             | Địa chỉ proxy cơ bản                            | -        | `http://proxy:8080`              |
+| `ANYCRAWL_PROXY_STEALTH_URL`     | Địa chỉ proxy stealth                         | -        | `http://residential-proxy:8080`  |
+| `ANYCRAWL_PROXY_STEALTH_CREDITS` | Credits phụ khi dùng stealth proxy     | `5`      | `5`                              |
+| `ANYCRAWL_STEALTH_TIMEOUT_MS`    | Timeout mặc định cho chế độ stealth/auto proxy (ms)    | `120000` | `120000`                         |
+| `ANYCRAWL_IGNORE_SSL_ERROR`      | Bỏ qua lỗi SSL                                    | `true`   | `true`, `false`                  |
+
+### Cấu hình cơ sở dữ liệu
+
+| Variable Name                | Mô tả              | Default                       |
+| ---------------------------- | ------------------------ | ----------------------------- |
+| `ANYCRAWL_API_DB_TYPE`       | Loại database            | `sqlite`                      |
+| `ANYCRAWL_API_DB_CONNECTION` | Đường dẫn kết nối DB | `/usr/src/app/db/database.db` |
+
+### Cấu hình Redis
+
+| Variable Name        | Mô tả          | Default              |
+| -------------------- | -------------------- | -------------------- |
+| `ANYCRAWL_REDIS_URL` | URL kết nối Redis | `redis://redis:6379` |
+
+### Cấu hình xác thực
+
+| Variable Name               | Mô tả               | Default |
+| --------------------------- | ------------------------- | ------- |
+| `ANYCRAWL_API_AUTH_ENABLED` | Bật xác thực API | `false` |
+
+## Cấu hình tùy chỉnh
+
+### Tạo file cấu hình môi trường
+
+```bash
+# Tạo file .env
+cp .env.example .env
+```
+
+### Ví dụ file .env
+
+```bash
+# Cấu hình cơ bản
+NODE_ENV=production
+ANYCRAWL_API_PORT=8080
+
+# Cấu hình scrape
+ANYCRAWL_HEADLESS=true
+ANYCRAWL_PROXY_URL=
+ANYCRAWL_PROXY_STEALTH_URL=
+ANYCRAWL_PROXY_STEALTH_CREDITS=5
+ANYCRAWL_STEALTH_TIMEOUT_MS=120000
+ANYCRAWL_IGNORE_SSL_ERROR=true
+
+# Cấu hình database
+ANYCRAWL_API_DB_TYPE=sqlite
+ANYCRAWL_API_DB_CONNECTION=/usr/src/app/db/database.db
+
+# Cấu hình Redis
+ANYCRAWL_REDIS_URL=redis://redis:6379
+
+# Cấu hình xác thực
+ANYCRAWL_API_AUTH_ENABLED=false
+```
+
+## Lưu trữ dữ liệu bền
+
+### Volume lưu trữ
+
+AnyCrawl dùng các volume sau để lưu dữ liệu bền:
+
+```yaml
+volumes:
+    - ./storage:/usr/src/app/storage # Lưu dữ liệu scrape
+    - ./db:/usr/src/app/db # File database
+    - redis-data:/data # Dữ liệu Redis
+```
+
+### Sao lưu dữ liệu
+
+```bash
+# Sao lưu database
+docker compose exec api cp /usr/src/app/db/database.db /usr/src/app/storage/backup.db
+
+# Sao lưu Redis
+docker compose exec redis redis-cli SAVE
+docker compose cp redis:/data/dump.rdb ./backup/
+```
+
+## Lệnh thường dùng
+
+### Quản lý dịch vụ
+
+```bash
+# Khởi động dịch vụ
+docker compose up -d
+
+# Dừng dịch vụ
+docker compose down
+
+# Khởi động lại một dịch vụ
+docker compose restart api
+
+# Xem log
+docker compose logs -f api
+```
+
+### Scaling dịch vụ
+
+```bash
+# Tăng số instance dịch vụ scrape
+docker compose up -d --scale scrape-puppeteer=3
+docker compose up -d --scale scrape-playwright=2
+```
+
+## Lệnh giám sát
+
+```bash
+# Trạng thái dịch vụ
+docker compose ps
+
+# Sử dụng tài nguyên
+docker stats
+
+# Log dịch vụ cụ thể
+docker compose logs -f --tail=100 api
+```
+
+## Xử lý sự cố
+
+### Vấn đề thường gặp
+
+#### 1. Xung đột cổng
+
+```bash
+# Kiểm tra cổng đang dùng
+lsof -i :8080
+
+# Đổi ánh xạ cổng
+# Sửa cấu hình ports trong docker-compose.yml
+ports:
+  - "8081:8080"  # Đổi cổng local thành 8081
+```
+
+#### 2. Thiếu bộ nhớ
+
+```bash
+# Kiểm tra bộ nhớ container
+docker stats
+
+# Tăng bộ nhớ cho Docker (Docker Desktop)
+# Docker Desktop -> Settings -> Resources -> Memory
+```
+
+#### 3. Lỗi kết nối database
+
+```bash
+# Kiểm tra quyền file database
+ls -la ./db/
+
+# Tạo lại volume database
+docker compose down -v
+docker compose up --build
+```
+
+#### 4. Lỗi kết nối Redis
+
+```bash
+# Kiểm tra Redis
+docker compose exec redis redis-cli ping
+
+# Xem log Redis
+docker compose logs redis
+```
+
+### Chế độ debug
+
+Bật debug để gỡ lỗi:
+
+```bash
+# Đặt biến môi trường để bật debug
+export NODE_ENV=development
+export DEBUG=anycrawl:*
+
+# Khởi động dịch vụ
+docker compose up --build
+```
+
+## Triển khai production
+
+### Cấu hình bảo mật
+
+1. **Bật xác thực**:
+
+```bash
+ANYCRAWL_API_AUTH_ENABLED=true
+```
+
+Sau khi bật xác thực, cần thêm ApiKey và dùng trong header request.
+
+### Tạo API key
+
+Nếu đã bật xác thực (`ANYCRAWL_API_AUTH_ENABLED=true`), tạo API key từ thư mục gốc repository:
+
+```bash
+pnpm --filter api key:generate
+# tùy chọn đặt tên key
+pnpm --filter api key:generate -- default
+```
+
+Lệnh in ra `uuid`, `key` và `credits`. Dùng key trong header `Authorization: Bearer <KEY>`.
+
+#### Chạy trong container Docker
+
+Nếu chạy qua Docker, thực thi lệnh trong container:
+
+- Dùng Docker Compose:
+
+```bash
+docker compose exec api pnpm --filter api key:generate
+docker compose exec api pnpm --filter api key:generate -- default
+```
+
+- Một container đơn (thay `<container_name_or_id>`):
+
+```bash
+docker exec -it <container_name_or_id> pnpm --filter api key:generate
+docker exec -it <container_name_or_id> pnpm --filter api key:generate -- default
+```
+
+2. **Dùng HTTPS**:
+
+Tham khảo:
+
+```yaml
+services:
+    nginx:
+        image: nginx:alpine
+        ports:
+            - "443:443"
+        volumes:
+            - ./nginx.conf:/etc/nginx/nginx.conf
+            - ./ssl:/etc/ssl/certs
+```
+
+Dùng `nginx` làm reverse proxy.
+
+## Cập nhật và bảo trì
+
+### Cập nhật dịch vụ
+
+```bash
+# Kéo image mới nhất
+docker compose pull
+
+# Build lại và khởi động
+docker compose up --build -d
+
+# Dọn image cũ
+docker image prune -f
+```

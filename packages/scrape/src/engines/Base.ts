@@ -1,4 +1,4 @@
-import { BrowserCrawlingContext, CheerioCrawlingContext, Configuration, enqueueLinks, log, PlaywrightCrawlingContext, ProxyConfiguration, PuppeteerCrawlingContext, RequestQueue, sleep, Request } from "crawlee";
+import { BrowserCrawlingContext, CheerioCrawlingContext, Configuration, enqueueLinks, PlaywrightCrawlingContext, ProxyConfiguration, PuppeteerCrawlingContext, RequestQueue, sleep, Request } from "crawlee";
 import { Dictionary } from "crawlee";
 import { Utils } from "../Utils.js";
 import { ConfigValidator } from "../core/ConfigValidator.js";
@@ -13,11 +13,10 @@ import {
     ResponseStatus,
     CrawlerResponse
 } from "../types/crawler.js";
-import { insertJobResult, failedJob, completedJob, Billing } from "@anycrawl/db";
-import { JOB_RESULT_STATUS } from "../../../db/dist/map.js";
+import { insertJobResult, failedJob, completedJob, Billing, JOB_RESULT_STATUS, writeResultToDataset } from "@anycrawl/db";
 import { ProgressManager } from "../managers/Progress.js";
 import { CacheManager } from "../managers/Cache.js";
-import { JOB_TYPE_CRAWL, JOB_TYPE_SCRAPE, CreditCalculator } from "@anycrawl/libs";
+import { log, JOB_TYPE_CRAWL, JOB_TYPE_SCRAPE, CreditCalculator, resolveWaitUntil, appConfig, config } from "@anycrawl/libs";
 import type { RequestTrafficMetric } from "@anycrawl/libs";
 import { CrawlLimitReachedError } from "../errors/index.js";
 import type { CrawlingContext, EngineOptions } from "../types/engine.js";
@@ -26,8 +25,15 @@ import { BandwidthManager } from "../managers/Bandwidth.js";
 import { getResolvedProxyModeName } from "../managers/Proxy.js";
 import { ensureChallengeState, consumeProxyAction } from "../challenges/ChallengeContext.js";
 import { ProxyCacheManager } from "../managers/ProxyCacheManager.js";
+import { smartWaitForDOMStable } from "../utils/smartWait.js";
+import { CLOAKBROWSER_RUNTIME } from "../core/CloakBrowserLauncher.js";
 
 // Template system imports - directly use @anycrawl/template-client
+
+const getBrowserRuntimeForCache = (engine?: string): string | undefined =>
+    engine === ConfigurableEngineType.PLAYWRIGHT || engine === ConfigurableEngineType.PUPPETEER
+        ? CLOAKBROWSER_RUNTIME
+        : undefined;
 
 // Re-export core types for backward compatibility
 export type { MetadataEntry, BaseContent } from "../core/DataExtractor.js";
@@ -311,6 +317,26 @@ export abstract class BaseEngine {
                 await failedJob(jobId, error.message, false, { total: 1, completed: 0, failed: 1 });
                 await BandwidthManager.getInstance().flushJob(jobId);
             } catch { }
+
+            // Finalize the scheduled execution as failed at the real failure point
+            // (HTTP error page or retries exhausted). Mirrors the completed-path
+            // finalize in the request handler; see Worker.ts for why this cannot
+            // live in the BullMQ event handlers.
+            const scheduledExecutionId = context.request.userData.scheduled_execution_id;
+            if (scheduledExecutionId) {
+                try {
+                    const { finalizeExecution } = await import("../managers/ExecutionLifecycle.js");
+                    await finalizeExecution({
+                        executionUuid: scheduledExecutionId,
+                        status: "failed",
+                        errorMessage: error.message,
+                        errorCode: "SCRAPE_FAILED",
+                        source: "worker",
+                    });
+                } catch (finalizeError) {
+                    log.warning(`[${queueName}] [${jobId}] Failed to finalize scheduled execution ${scheduledExecutionId}: ${finalizeError}`);
+                }
+            }
         }
 
         log.error(`[${queueName}] [${jobId}] ${error.message} (${error.type})`);
@@ -346,6 +372,27 @@ export abstract class BaseEngine {
                 await failedJob(jobId, error.message, false, { total: 1, completed: 0, failed: 1 });
                 await BandwidthManager.getInstance().flushJob(jobId);
             } catch { }
+
+            // Extraction failure is a terminal outcome for the scrape — finalize
+            // the scheduled execution here too. Without this, the ExtractionError
+            // branch returns before both other finalize sites (persist branch and
+            // handleFailedRequest), leaving the execution 'running' until the
+            // janitor reaps it 30 minutes later as a generic timeout.
+            const scheduledExecutionId = context.request.userData.scheduled_execution_id;
+            if (scheduledExecutionId) {
+                try {
+                    const { finalizeExecution } = await import("../managers/ExecutionLifecycle.js");
+                    await finalizeExecution({
+                        executionUuid: scheduledExecutionId,
+                        status: "failed",
+                        errorMessage: error.message,
+                        errorCode: "EXTRACTION_FAILED",
+                        source: "worker",
+                    });
+                } catch (finalizeError) {
+                    log.warning(`[${queueName}] [${jobId}] Failed to finalize scheduled execution ${scheduledExecutionId}: ${finalizeError}`);
+                }
+            }
         }
 
         log.error(`[${queueName}] [${jobId}] ${error.message} (${error.type})`);
@@ -571,7 +618,7 @@ export abstract class BaseEngine {
         // Set default options
         this.options = {
             maxRequestRetries: 2,
-            requestHandlerTimeoutSecs: process.env.ANYCRAWL_REQUEST_HANDLER_TIMEOUT_SECS ? parseInt(process.env.ANYCRAWL_REQUEST_HANDLER_TIMEOUT_SECS) : 600,
+            requestHandlerTimeoutSecs: config.navigation.requestHandlerTimeoutSecs,
             ...options,
         };
 
@@ -648,18 +695,8 @@ export abstract class BaseEngine {
             const options = userData.options || {};
             const timeoutMs = Number(options.timeout) > 0
                 ? Number(options.timeout)
-                : (process.env.ANYCRAWL_NAV_TIMEOUT ? parseInt(process.env.ANYCRAWL_NAV_TIMEOUT) : 30_000);
-            const configuredWaitUntil = String(options.wait_until || process.env.ANYCRAWL_NAV_WAIT_UNTIL || "domcontentloaded");
-            const playwrightWaitUntil =
-                configuredWaitUntil === "networkidle" || configuredWaitUntil === "load" || configuredWaitUntil === "domcontentloaded"
-                    ? configuredWaitUntil
-                    : "domcontentloaded";
-            const puppeteerWaitUntil =
-                configuredWaitUntil === "networkidle"
-                    ? "networkidle0"
-                    : (configuredWaitUntil === "load" || configuredWaitUntil === "domcontentloaded"
-                        ? configuredWaitUntil
-                        : "domcontentloaded");
+                : config.navigation.timeoutMs;
+            const { playwright: playwrightWaitUntil, puppeteer: puppeteerWaitUntil } = resolveWaitUntil(options.wait_until as string);
 
             try {
                 log.info(
@@ -684,8 +721,11 @@ export abstract class BaseEngine {
                 }
                 delete userData._anycrawlFinalNavigationStatus;
 
-                // Let potential post-challenge redirects settle before evaluating status.
-                await sleep(1_000);
+                await smartWaitForDOMStable(page, context.request.url, {
+                    label: "postReload",
+                    useCache: false,
+                    maxWaitMs: 3000,
+                });
 
                 const refreshedRaw = context.response
                     ? this.extractResponseStatus(context.response as CrawlerResponse)
@@ -767,25 +807,10 @@ export abstract class BaseEngine {
             }
             userData._anycrawlPostChallengeSettled = true;
 
-            try {
-                if (typeof page.waitForLoadState === "function") {
-                    await page.waitForLoadState("domcontentloaded", { timeout: 5_000 });
-                } else if (typeof page.waitForNavigation === "function") {
-                    await page.waitForNavigation({
-                        waitUntil: "domcontentloaded",
-                        timeout: 5_000,
-                    });
-                } else {
-                    await sleep(500);
-                }
-
-                // Give redirects/scripts a short settle window before extraction.
-                await sleep(300);
-            } catch (error) {
-                log.debug(
-                    `[HTTP] Post-challenge settle skipped for ${context.request.url}: ${error instanceof Error ? error.message : String(error)}`
-                );
-            }
+            await smartWaitForDOMStable(page, context.request.url, {
+                label: "postChallenge",
+                useCache: false,
+            });
         };
 
         const requestHandler = async (context: CrawlingContext) => {
@@ -850,6 +875,25 @@ export abstract class BaseEngine {
 
                     const retryError = new Error("ANYCRAWL_PROXY_ACTION_ROTATE_PROXY");
                     retryError.name = "AnycrawlChallengeRetryError";
+                    throw retryError;
+                }
+
+                if (effectiveStatus?.statusCode === 403) {
+                    try {
+                        const session = (context as any).session;
+                        if (session && typeof session.retire === "function") {
+                            session.retire();
+                        }
+                    } catch {
+                        // ignore session retire failures
+                    }
+
+                    log.warning(
+                        `[HTTP-403-RETRY] [${queueName}] [${jobId}] unhandled 403 (challenge.detected=${challengeState.detected ?? false}), retrying with rotated proxy: ${context.request.url}`
+                    );
+
+                    const retryError = new Error("ANYCRAWL_PROXY_ACTION_ROTATE_PROXY");
+                    retryError.name = "AnycrawlHttp403RetryError";
                     throw retryError;
                 }
             }
@@ -1143,6 +1187,9 @@ export abstract class BaseEngine {
                                 ...templateResult.data.result
                             }
                         }
+                        if (templateResult.logs?.length) {
+                            data._templateLogs = templateResult.logs;
+                        }
 
                         log.info(`[${context.request.userData.queueName}] [${context.request.userData.jobId}] Concurrent execution completed successfully`);
                     } finally {
@@ -1193,6 +1240,90 @@ export abstract class BaseEngine {
                     const resultStatus = isHttpError ? JOB_RESULT_STATUS.FAILED : JOB_RESULT_STATUS.SUCCESS;
                     await insertJobResult(resultJobId, context.request.url, data, resultStatus);
 
+                    // Dataset output (additive): for crawl jobs carrying an output.dataset
+                    // binding, persist this successful page via the shared Dataset Writer.
+                    // Fully isolated — a write failure only warns; it never fails the page.
+                    if (
+                        !isHttpError &&
+                        context.request.userData.type === JOB_TYPE_CRAWL &&
+                        context.request.userData.crawl_options?.dataset
+                    ) {
+                        const dsConfig = context.request.userData.crawl_options.dataset as {
+                            datasetId: string;
+                            scopeType: "crawl";
+                            mapping: any;
+                            owner: any;
+                        };
+                        // Key the run by the crawl job (parentId), so every page of a
+                        // crawl maps to a SINGLE dataset_run — for both the in-crawler
+                        // link-following path (parentId === jobId) and the auto-crawl
+                        // coordinator path (each page is a child job with parentId set).
+                        const crawlJobId = (context.request.userData.parentId || context.request.userData.jobId) as string;
+                        try {
+                            await writeResultToDataset({
+                                producerType: "crawl",
+                                producerId: crawlJobId,
+                                jobId: crawlJobId,
+                                scope: { kind: "job", jobId: crawlJobId },
+                                scopeType: "crawl",
+                                // `data` has no guaranteed top-level url; the Writer keys the
+                                // item by result.url, so inject it (same shape as the cached
+                                // result at { url, ...data }). Without this every page maps to
+                                // missing_item_key and nothing is written.
+                                result: { url: context.request.url, ...data },
+                                mapping: dsConfig.mapping,
+                                owner: dsConfig.owner,
+                                dataset: { datasetId: dsConfig.datasetId },
+                                // Per-page write of a multi-page run: accumulate, don't finalize.
+                                finalizeRun: false,
+                            });
+                        } catch (datasetError) {
+                            log.warning(
+                                `[${context.request.userData.queueName}] [${crawlJobId}] Dataset write failed for ${context.request.url}: ${datasetError instanceof Error ? datasetError.message : String(datasetError)}`
+                            );
+                        }
+                    }
+
+                    // Dataset output (additive): batch scrape child jobs carry the
+                    // binding on options.dataset. Sync single-scrape writes in-controller
+                    // (never sets options.dataset), so this fires only for batch children
+                    // — no double write. Key the run by the batch job (parentId) so every
+                    // URL of a batch maps to a SINGLE dataset_run. Fully isolated.
+                    if (
+                        !isHttpError &&
+                        context.request.userData.type === JOB_TYPE_SCRAPE &&
+                        context.request.userData.options?.dataset
+                    ) {
+                        const dsConfig = context.request.userData.options.dataset as {
+                            datasetId: string;
+                            scopeType: "batch";
+                            mapping: any;
+                            owner: any;
+                        };
+                        const batchJobId = (context.request.userData.parentId || context.request.userData.jobId) as string;
+                        try {
+                            await writeResultToDataset({
+                                producerType: "batch",
+                                producerId: batchJobId,
+                                jobId: batchJobId,
+                                scope: { kind: "job", jobId: batchJobId },
+                                scopeType: "batch",
+                                // Inject the url (item key) — `data` has no guaranteed top-level
+                                // url; without this the page maps to missing_item_key.
+                                result: { url: context.request.url, ...data },
+                                mapping: dsConfig.mapping,
+                                owner: dsConfig.owner,
+                                dataset: { datasetId: dsConfig.datasetId },
+                                // Per-URL write of a multi-URL run: accumulate, don't finalize.
+                                finalizeRun: false,
+                            });
+                        } catch (datasetError) {
+                            log.warning(
+                                `[${context.request.userData.queueName}] [${batchJobId}] Dataset write failed for ${context.request.url}: ${datasetError instanceof Error ? datasetError.message : String(datasetError)}`
+                            );
+                        }
+                    }
+
                     // Save to cache only for successful responses
                     try {
                         const options = context.request.userData.options || {};
@@ -1219,25 +1350,28 @@ export abstract class BaseEngine {
                                 }
                             }
 
+                            const cacheKeyOptions = {
+                                url: context.request.url,
+                                formats: options.formats,
+                                json_options: options.json_options,
+                                include_tags: options.include_tags,
+                                exclude_tags: options.exclude_tags,
+                                proxy: originalProxy,
+                                only_main_content: options.only_main_content,
+                                extract_source: options.extract_source,
+                                ocr_options: options.ocr_options,
+                                wait_for: options.wait_for,
+                                wait_until: options.wait_until,
+                                wait_for_selector: options.wait_for_selector,
+                                template_id: options.template_id,
+                                store_in_cache: options.store_in_cache,
+                                engine: (context.request.userData as any).engine,
+                                browser_runtime: getBrowserRuntimeForCache((context.request.userData as any).engine),
+                            };
+
                             await CacheManager.getInstance().saveToCache(
                                 context.request.url,
-                                {
-                                    url: context.request.url,
-                                    formats: options.formats,
-                                    json_options: options.json_options,
-                                    include_tags: options.include_tags,
-                                    exclude_tags: options.exclude_tags,
-                                    proxy: originalProxy,
-                                    only_main_content: options.only_main_content,
-                                    extract_source: options.extract_source,
-                                    ocr_options: options.ocr_options,
-                                    wait_for: options.wait_for,
-                                    wait_until: options.wait_until,
-                                    wait_for_selector: options.wait_for_selector,
-                                    template_id: options.template_id,
-                                    store_in_cache: options.store_in_cache,
-                                    engine: (context.request.userData as any).engine,
-                                },
+                                cacheKeyOptions as any,
                                 { url: context.request.url, ...data },
                                 {
                                     statusCode: status.statusCode,
@@ -1252,23 +1386,25 @@ export abstract class BaseEngine {
                 }
 
                 // Record success to ProxyCacheManager for ALL proxy modes (auto/base/stealth)
-                // This caches the working proxy for future requests
-                try {
-                    const options = context.request.userData.options || {};
-                    const proxyMode = options.proxy;
-                    const proxyInfo = (context as any).proxyInfo;
-                    if (proxyMode && proxyInfo?.url) {
-                        const proxyCache = ProxyCacheManager.getInstance();
-                        const domain = proxyCache.extractDomain(context.request.url);
-                        if (domain) {
-                            log.debug(`[ProxyCache] Recording success: domain=${domain}, proxy=${proxyInfo.url}, mode=${proxyMode}`);
-                            proxyCache.recordDomainSuccess(domain, proxyInfo.url, proxyMode).catch(() => {
-                                // Ignore cache recording errors
-                            });
+                // Only record when the response was actually successful (skip HTTP errors like 403)
+                if (!isHttpError) {
+                    try {
+                        const options = context.request.userData.options || {};
+                        const proxyMode = options.proxy;
+                        const proxyInfo = (context as any).proxyInfo;
+                        if (proxyMode && proxyInfo?.url) {
+                            const proxyCache = ProxyCacheManager.getInstance();
+                            const domain = proxyCache.extractDomain(context.request.url);
+                            if (domain) {
+                                log.debug(`[ProxyCache] Recording success: domain=${domain}, proxy=${proxyInfo.url}, mode=${proxyMode}`);
+                                proxyCache.recordDomainSuccess(domain, proxyInfo.url, proxyMode).catch(() => {
+                                    // Ignore cache recording errors
+                                });
+                            }
                         }
+                    } catch (error) {
+                        // Ignore errors when recording success
                     }
-                } catch (error) {
-                    // Ignore errors when recording success
                 }
 
                 // Handle crawl logic if this is a crawl job (always run to discover links)
@@ -1334,7 +1470,7 @@ export abstract class BaseEngine {
                         // For scheduled task scrape jobs, calculate and update creditsUsed
                         // (API-triggered scrape jobs are handled by DeductCreditsMiddleware)
                         const isScheduledTask = !!context.request.userData.scheduled_task_id;
-                        if (isScheduledTask && process.env.ANYCRAWL_API_CREDITS_ENABLED === 'true') {
+                        if (isScheduledTask && appConfig.creditsEnabled) {
                             const scheduledUserData: any = context.request.userData || {};
                             const scrapeOptions = scheduledUserData.options || scheduledUserData || {};
                             const templateCredits = Number(scheduledUserData.scheduled_template_credits ?? 0);
@@ -1366,6 +1502,24 @@ export abstract class BaseEngine {
                         await completedJob(jobId, true, { total: 1, completed: 1, failed: 0 });
                         await BandwidthManager.getInstance().flushJob(jobId);
                     } catch { }
+
+                    // Finalize the scheduled execution HERE — at real scrape completion,
+                    // after the job result row exists — not when the queue job merely
+                    // handed the URL to the crawler (see Worker.ts). This is what allows
+                    // the monitor post-processor to see job_results and write snapshots.
+                    const scheduledExecutionId = context.request.userData.scheduled_execution_id;
+                    if (scheduledExecutionId) {
+                        try {
+                            const { finalizeExecution } = await import("../managers/ExecutionLifecycle.js");
+                            await finalizeExecution({
+                                executionUuid: scheduledExecutionId,
+                                status: "completed",
+                                source: "worker",
+                            });
+                        } catch (finalizeError) {
+                            log.warning(`[${queueName}] [${jobId}] Failed to finalize scheduled execution ${scheduledExecutionId}: ${finalizeError}`);
+                        }
+                    }
                 }
                 // For crawl jobs: mark page done and try finalize
                 if (context.request.userData.type === JOB_TYPE_CRAWL) {

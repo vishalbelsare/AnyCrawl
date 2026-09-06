@@ -1,8 +1,52 @@
 import { Job, Queue, Worker } from "bullmq";
-import { log } from "crawlee";
+import { log } from "@anycrawl/libs";
+import type { OwnerContext } from "@anycrawl/libs";
 import { randomUUID } from "node:crypto";
 import { Utils } from "../Utils.js";
 import type { EngineType } from "./EngineQueue.js";
+
+/**
+ * Dataset destination carried by an orchestrated template-run job. Exactly one of
+ * `datasetId` (existing dataset) or `create` (create-on-first-write spec) is set;
+ * `mapping`/`owner` are threaded straight into the Dataset Writer per page.
+ */
+export interface TemplateRunDatasetTarget {
+    datasetId?: string;
+    create?: Record<string, any>;
+    mapping: Record<string, any>;
+    owner: OwnerContext;
+}
+
+/**
+ * Payload for a queued orchestrated Template Run (L3 `template-run` queue). The
+ * job is keyed by `runId` (stable BullMQ jobId) so a retry re-runs the SAME run
+ * and resumes its request ledger instead of creating a duplicate.
+ */
+export interface TemplateRunJobPayload {
+    type: "template-run";
+    runId: string;
+    templateRevisionId: string;
+    templateUuid: string;
+    variables: Record<string, any>;
+    runOptions?: Record<string, any>;
+    dataset: TemplateRunDatasetTarget;
+    engine?: string;
+    ownerContext?: OwnerContext;
+    queueName?: QueueName;
+}
+
+/**
+ * Payload for a queued Dataset export job (`dataset-export` queue). The job is
+ * keyed by `exportId` (stable BullMQ jobId) so a retry re-enters the SAME
+ * export instead of creating a duplicate (same idempotency reasoning as
+ * `TemplateRunJobPayload`/`runId`).
+ */
+export interface DatasetExportJobPayload {
+    type: "dataset-export";
+    exportId: string;
+    datasetId: string;
+    format: "jsonl" | "csv";
+}
 
 export interface RequestTaskOptions {
     headless?: boolean;
@@ -127,6 +171,60 @@ export class QueueManager {
     }
 
     /**
+     * Enqueue an orchestrated Template Run onto the engine-independent
+     * `template-run` queue (L3). The BullMQ jobId is pinned to `payload.runId`,
+     * so a duplicate enqueue for the same run is a no-op and a BullMQ retry
+     * re-runs the same run (which resumes its persisted request ledger rather
+     * than starting over). Returns the runId used as the jobId.
+     */
+    public async addTemplateRunJob(payload: TemplateRunJobPayload): Promise<string> {
+        const queueName = "template-run";
+        const queue = this.getQueue(queueName);
+        const jobId = payload.runId;
+        log.info(`Adding template-run job to queue ${queueName} with runId ${jobId}`);
+        await queue.add(
+            queueName,
+            { ...payload, queueName },
+            {
+                jobId,
+                attempts: 3,
+                backoff: {
+                    type: "exponential",
+                    delay: 1000,
+                },
+            }
+        );
+        return jobId;
+    }
+
+    /**
+     * Enqueue a Dataset export onto the engine-independent `dataset-export`
+     * queue. The BullMQ jobId is pinned to `payload.exportId`, so a duplicate
+     * enqueue for the same export is a no-op and a BullMQ retry re-enters the
+     * same export rather than creating a duplicate. Returns the exportId used
+     * as the jobId.
+     */
+    public async addDatasetExportJob(payload: DatasetExportJobPayload): Promise<string> {
+        const queueName = "dataset-export";
+        const queue = this.getQueue(queueName);
+        const jobId = payload.exportId;
+        log.info(`Adding dataset-export job to queue ${queueName} with exportId ${jobId}`);
+        await queue.add(
+            queueName,
+            { ...payload, queueName },
+            {
+                jobId,
+                attempts: 3,
+                backoff: {
+                    type: "exponential",
+                    delay: 1000,
+                },
+            }
+        );
+        return jobId;
+    }
+
+    /**
      * Cancel a job in a specific queue
      * @param queueName Name of the queue
      * @param jobId ID of the job
@@ -227,25 +325,46 @@ export class QueueManager {
         timeout: number = 30000
     ): Promise<any> {
         return new Promise((resolve, reject) => {
+            // Track settlement + the pending poll timer so the polling loop is
+            // always torn down. Otherwise a timed-out or BullMQ-"failed" job leaves
+            // the recursive setTimeout(checkJob, 100) running forever, leaking one
+            // Redis-polling timer per such job until the process is restarted.
+            let settled = false;
+            let pollId: ReturnType<typeof setTimeout> | null = null;
+
+            const cleanup = () => {
+                settled = true;
+                if (pollId) {
+                    clearTimeout(pollId);
+                    pollId = null;
+                }
+                clearTimeout(timeoutId);
+            };
+
             const timeoutId = setTimeout(() => {
+                if (settled) return;
+                cleanup();
                 log.error(`[${queueName}] checkJob: ${jobId} timed out after ${timeout}ms`);
                 reject(new Error(`Job ${jobId} timed out after ${timeout}ms`));
             }, timeout);
 
             const checkJob = async () => {
+                if (settled) return;
                 try {
                     const isJobDone = await QueueManager.getInstance().isJobDone(queueName, jobId);
+                    if (settled) return;
                     if (isJobDone) {
-                        clearTimeout(timeoutId);
+                        cleanup();
                         const data = await QueueManager.getInstance().getJobData(queueName, jobId);
                         log.info(`[${queueName}] checkJob: ${jobId} done`);
                         resolve(data);
                     } else {
                         // Add delay between checks to reduce CPU usage
-                        setTimeout(checkJob, 100); // Check every 100ms
+                        pollId = setTimeout(checkJob, 100); // Check every 100ms
                     }
                 } catch (error) {
-                    clearTimeout(timeoutId);
+                    if (settled) return;
+                    cleanup();
                     log.error(`[${queueName}] checkJob: ${jobId} failed: ${error}`);
                     reject(error);
                 }

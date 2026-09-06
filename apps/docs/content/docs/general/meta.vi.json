@@ -1,0 +1,28 @@
+{
+    "title": "Tổng quan",
+    "description": "Tài liệu chung",
+    "root": true,
+    "icon": "Building2",
+    "pages": [
+        "---Bắt đầu---",
+        "index",
+        "mcp",
+        "---Tính năng---",
+        "scrape",
+        "crawl",
+        "cache",
+        "search",
+        "map",
+        "json-mode",
+        "template",
+        "---Tự động hóa---",
+        "scheduled-tasks",
+        "monitors",
+        "webhooks",
+        "---Hướng dẫn nhà phát triển---",
+        "mcp-setup-guides",
+        "---Tự lưu trữ---",
+        "docker",
+        "proxy-rule"
+    ]
+}

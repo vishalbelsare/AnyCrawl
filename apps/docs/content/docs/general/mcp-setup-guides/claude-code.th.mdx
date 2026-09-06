@@ -1,0 +1,110 @@
+---
+title: Claude Code
+description: เพิ่มการค้นหาและการดึงข้อมูลเว็บใน Claude Code ด้วย AnyCrawl MCP
+icon: Terminal
+---
+
+เพิ่มความสามารถด้านการค้นหาและการดึงข้อมูลเว็บใน Claude Code ด้วย AnyCrawl MCP
+
+## การตั้งค่าแบบเร็ว
+
+### 1. รับ API Key
+
+ลงทะเบียนที่ [anycrawl.dev](https://anycrawl.dev) แล้วคัดลอก API key จากแดชบอร์ด
+
+### 2. เพิ่มเซิร์ฟเวอร์ AnyCrawl MCP
+
+รันคำสั่งต่อไปนี้ในเทอร์มินัล:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+แทนที่ `your-api-key` ด้วย AnyCrawl API key จริงของคุณ
+
+เสร็จแล้ว คุณสามารถค้นหาและดึงข้อมูลเว็บจาก Claude Code ได้
+
+## สาธิตแบบเร็ว
+
+ลองคำสั่งเหล่านี้ใน Claude Code:
+
+**ค้นหาเว็บ:**
+
+```
+Search for the latest Next.js 15 features
+```
+
+**ดึงข้อมูลหน้าเว็บ:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**ดึงเอกสาร:**
+
+```
+Find and scrape the Stripe API docs for payment intents
+```
+
+**ครอลเว็บไซต์:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Claude จะใช้เครื่องมือ search, scrape และ crawl ของ AnyCrawl โดยอัตโนมัติ
+
+## เครื่องมือที่มี
+
+เมื่อตั้งค่าแล้ว Claude Code จะเข้าถึง:
+
+- **anycrawl_scrape** — ดึงข้อมูลจาก URL เดียว
+- **anycrawl_crawl** — ครอลหลายหน้าจากเว็บไซต์
+- **anycrawl_search** — ค้นหาเว็บและเลือกดึงผลลัพธ์ได้
+- **anycrawl_crawl_status** — ตรวจสถานะงานครอล
+- **anycrawl_crawl_results** — รับผลจากงานครอล
+- **anycrawl_cancel_crawl** — ยกเลิกงานครอลที่กำลังรัน
+
+## ตรวจสอบการติดตั้ง
+
+เพื่อยืนยันว่า MCP server ตั้งค่าถูกต้อง:
+
+```bash
+claude mcp list
+```
+
+คุณควรเห็น `anycrawl` ในรายการ MCP servers
+
+## แก้ปัญหา
+
+### เซิร์ฟเวอร์ไม่ตอบสนอง
+
+1. ตรวจสอบว่า API key ใช้ได้
+2. ติดตั้ง Node.js 18 ขึ้นไป
+3. ลองลบแล้วเพิ่มเซิร์ฟเวอร์ใหม่:
+
+```bash
+claude mcp remove anycrawl
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- npx -y anycrawl-mcp
+```
+
+### ข้อผิดพลาดสิทธิ์
+
+ให้แน่ใจว่า npx รันได้ อาจต้องติดตั้งแพ็กเกจแบบ global:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+จากนั้นตั้งค่าด้วยแพ็กเกจ global:
+
+```bash
+claude mcp add anycrawl -e ANYCRAWL_API_KEY=your-api-key -- anycrawl-mcp
+```
+
+## ขั้นตอนถัดไป
+
+- เรียนรู้ [ตัวเลือกการดึงข้อมูล](../scrape) เพิ่มเติม
+- สำรวจ [ความสามารถการครอล](../crawl)
+- ดู [ฟีเจอร์การค้นหา](../search)
+- อ่าน [เอกสารเซิร์ฟเวอร์ MCP ฉบับเต็ม](../mcp)

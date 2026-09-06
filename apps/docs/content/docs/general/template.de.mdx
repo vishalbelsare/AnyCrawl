@@ -1,0 +1,401 @@
+---
+title: Templates
+description: Wiederverwendbare Scraping-, Crawl- und Such-Rezepte mit Variablen und eigener Logik.
+icon: Puzzle
+---
+
+## Einführung
+
+Templates sind wiederverwendbare Konfigurationen für Scraping, Crawling oder Suche. Statt Optionen in jedem Aufruf zu wiederholen, definieren Sie sie einmal (oder nutzen ein Template aus dem Store) und referenzieren `template_id`.
+
+**Vorteile:**
+
+- **Einfachheit**: API mit `template_id` + wenigen Eingaben
+- **Konsistenz**: Einheitliches Verhalten im Team
+- **Sicherheit**: Domains einschränken, nur nötige Variablen
+- **Leistung**: optionale Custom-Handler
+
+**Typen:**
+
+- `scrape`: einzelne Seite über `/v1/scrape`
+- `crawl`: mehrere Seiten über `/v1/crawl`
+- `search`: Suche über `/v1/search`
+
+## Template-Marktplatz
+
+Vorgefertigte Templates: **[anycrawl.dev/template](https://anycrawl.dev/template)**.
+
+**Vorgehen:**
+
+1. Passendes Template finden
+2. `template_id` von der Detailseite kopieren
+3. API mit `template_id` und Eingaben aufrufen
+
+**Beispiel:**
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "content-extractor",
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "content-extractor",
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'template_id': 'content-extractor',
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## Templates in API-Aufrufen
+
+### Parameter
+
+Mit `template_id` sind nur minimale Felder erlaubt:
+
+| Endpoint     | Pflicht        | Optional            |
+| ------------ | -------------- | ------------------- |
+| `/v1/scrape` | `template_id`  | `url`, `variables`  |
+| `/v1/crawl`  | `template_id`  | `url`, `variables`  |
+| `/v1/search` | `template_id`  | `query`, `variables` |
+
+**Hinweise:**
+
+- `url`/`query` können im Template vordefiniert sein – Beschreibung lesen.
+- `variables`: dynamische Eingaben (siehe unten).
+- `engine`, `formats`, `timeout` usw. kommen aus dem Template und sind nicht überschreibbar.
+- Unzulässige Felder → **400**.
+
+### Scrape mit Template
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-scrape-template",
+    "url": "https://example.com",
+    "variables": { "category": "tech" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-scrape-template",
+        url: "https://example.com",
+        variables: { category: "tech" },
+    }),
+});
+const data = await res.json();
+```
+
+### Crawl mit Template
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-crawl-template",
+    "url": "https://docs.example.com",
+    "variables": { "maxPages": 50 }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-crawl-template",
+        url: "https://docs.example.com",
+        variables: { maxPages: 50 },
+    }),
+});
+const { job_id } = (await res.json()).data;
+// Poll for results...
+```
+
+### Search mit Template
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-search-template",
+    "query": "machine learning tutorials",
+    "variables": { "lang": "en" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-search-template",
+        query: "machine learning tutorials",
+        variables: { lang: "en" },
+    }),
+});
+const data = await res.json();
+console.log(data.data);
+```
+
+## Variablen
+
+Templates können **Variablen** für dynamische Eingaben deklarieren.
+
+- `type`: `string`, `number`, `boolean`, `url`
+- `required` oder optional mit `defaultValue`
+- Beschreibung des Templates prüfen
+
+**Beispiel:**
+
+```json
+{
+    "template_id": "blog-scraper",
+    "url": "https://example.com/blog/post-123",
+    "variables": {
+        "author": "john-doe",
+        "includeComments": true,
+        "maxComments": 50
+    }
+}
+```
+
+Fehlende Pflichtvariable oder falscher Typ → **400**.
+
+## Antwortformat
+
+Wie bei normalen API-Aufrufen:
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "markdown": "# Page Title\n\nContent...",
+        "metadata": { ... },
+        // Additional fields from custom handlers (if any)
+        "extractedData": { ... }
+    }
+}
+```
+
+Custom-Handler können Zusatzfelder liefern.
+
+## Fehler
+
+| Fehler                       | HTTP | Beschreibung                    |
+| ---------------------------- | ---- | ------------------------------- |
+| Template not found           | 404  | `template_id` unbekannt/kein Zugriff |
+| Validation error             | 400  | Variablen fehlen/falscher Typ   |
+| Domain restriction violation | 403  | URL gegen Domain-Policy         |
+| Invalid fields               | 400  | Unerlaubte Top-Level-Felder     |
+
+**Beispiel:**
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "When using template_id, only template_id, url, variables are allowed. Invalid fields: engine, formats",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Field 'engine' is not allowed when using template_id",
+                "code": "invalid_field"
+            }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+## Best Practices
+
+### Für Aufrufer
+
+- Beschreibung: Pflichtvariablen, Domains/Keywords
+- Marktplatz-Templates nutzen wenn möglich
+- 404: Template gelöscht/archiviert
+- Keine Overrides von engine/formats – schlägt fehl
+
+### Für Autoren
+
+- Ein klarer Anwendungsfall pro Template
+- Variablen dokumentieren
+- Domain-Beschränkungen
+- angemessene Preise
+- vor Veröffentlichung testen
+
+## Eigene Templates (fortgeschritten)
+
+### Domain-Beschränkungen
+
+```json
+{
+    "allowedDomains": {
+        "type": "glob",
+        "patterns": ["*.example.com", "docs.mysite.com"]
+    }
+}
+```
+
+- `type`: `"exact"` oder `"glob"`
+- `patterns`: erlaubte Domains/Muster
+
+### Keyword-Beschränkung (Search)
+
+```json
+{
+    "allowedKeywords": {
+        "type": "glob",
+        "patterns": ["*tutorial*", "*documentation*"]
+    }
+}
+```
+
+- Validierung vor Ausführung; vor `queryTransform`
+- `type`: `"exact"` oder `"glob"`
+- `patterns`: erlaubte Muster
+
+### Preis
+
+Credits pro Aufruf:
+
+```json
+{
+    "pricing": {
+        "perCall": 10,
+        "currency": "credits"
+    }
+}
+```
+
+### Benutzerdefinierte Handler
+
+JavaScript/TypeScript:
+
+- **`requestHandler`**: Ergebnis nachbearbeiten
+- **`failedRequestHandler`**: Fehler/Retry
+- **`queryTransform`** (nur Search): Query vor Suche
+- **`urlTransform`** (Scrape/Crawl): URL vor Verarbeitung
+
+Transforms:
+
+- Platzhalter `{{query}}`, `{{url}}`
+- `prefix`/`suffix`
+- `regexExtract`
+
+Beispiel Regex (TikTok):
+
+```json
+{
+    "customHandlers": {
+        "urlTransform": {
+            "enabled": true,
+            "mode": "append",
+            "prefix": "",
+            "suffix": "",
+            "regexExtract": {
+                "pattern": "^(https?:\\/\\/www\\.tiktok\\.com\\/@[^\\/?#]+)",
+                "flags": "i",
+                "group": 1
+            }
+        }
+    }
+}
+```
+
+Extrahiert z. B. die Profil-URL aus längeren URLs.
+
+Beispiel `requestHandler`:
+
+```javascript
+// Extract structured data from page context
+const title = context.data.title;
+const content = context.data.markdown;
+
+return {
+    extractedTitle: title,
+    wordCount: content.split(/\s+/).length,
+    customMetric: calculateMetric(content),
+};
+```
+
+### Sicherheit
+
+- **Nicht vertrauenswürdig**: gehärtete Sandbox
+- **Trusted**: async + kontrollierter Browser-Zugriff (nur nach Prüfung durch AnyCrawl)
+
+## FAQ
+
+### Engine/Formats überschreiben?
+
+Nein. Nur `url`/`query` und `variables`.
+
+### Marktplatz-Template?
+
+Öffentlich; Credits laut Autor.
+
+### Sehen Templates meinen API-Key?
+
+Nein – isolierte Sandbox.
+
+### Eigene Templates?
+
+Im AnyCrawl-Playground erstellen/testen, nach Veröffentlichung per API nutzbar.
+
+## Siehe auch
+
+- [Scrape](./scrape)
+- [Crawl](./crawl)
+- [Search](./search)
+- [Marktplatz](https://anycrawl.dev/template)

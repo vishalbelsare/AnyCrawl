@@ -1,0 +1,439 @@
+---
+title: 爬虫
+description: 爬取整个网站，并将其转化为 LLM 就绪的结构化数据。
+icon: Bug
+---
+
+## 简介
+
+AnyCrawl 爬虫 API 从种子 URL 发现和处理多个页面，对每个页面应用与 `/v1/scrape` 相同的提取流程。它是异步的：您会立即收到一个 `job_id`，然后轮询状态并分页获取结果。
+
+**核心特性**
+
+- **异步任务**：排队爬取任务，稍后获取结果
+- **多引擎支持**：`auto`（默认）、`cheerio`、`playwright`、`puppeteer`
+- **灵活的范围控制**：`strategy`、`max_depth`、`include_paths`、`exclude_paths`
+- **单页选项**：在 `scrape_options` 中复用 `/v1/scrape` 选项
+- **分页**：通过 `skip` 流式获取结果以控制响应大小
+
+### API 端点
+
+```
+POST    https://api.anycrawl.dev/v1/crawl
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}/status
+GET     https://api.anycrawl.dev/v1/crawl/{jobId}?skip=0
+DELETE  https://api.anycrawl.dev/v1/crawl/{jobId}
+```
+
+## 使用示例
+
+### 创建爬虫任务
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://anycrawl.dev",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 100,
+    "exclude_paths": ["/blog/*"],
+    "scrape_options": {
+      "formats": ["markdown"],
+      "timeout": 60000
+    }
+  }'
+```
+
+### 使用 scrape_paths 进行选择性抓取
+
+使用 `scrape_paths` 可以访问页面以发现链接，但不提取内容。这可以降低成本和存储开销：
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://shop.example.com",
+    "engine": "cheerio",
+    "strategy": "same-domain",
+    "max_depth": 5,
+    "limit": 200,
+    "include_paths": ["/*"],
+    "scrape_paths": ["/products/*/details", "/products/*/reviews"],
+    "scrape_options": {
+      "formats": ["markdown", "json"]
+    }
+  }'
+```
+
+在此示例中：
+
+- 所有匹配 `/*` 的页面将被**访问**以发现链接
+- 仅匹配 `/products/*/details` 或 `/products/*/reviews` 的页面才会**提取并保存内容**
+- 分类页面、导航页面等会被爬取但不会被抓取，从而节省积分和存储空间
+
+```javascript tab="JavaScript"
+const start = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://anycrawl.dev",
+        engine: "cheerio",
+        strategy: "same-domain",
+        max_depth: 5,
+        limit: 100,
+        exclude_paths: ["/blog/*"],
+        scrape_options: { formats: ["markdown"], timeout: 60000 },
+    }),
+});
+const startResult = await start.json();
+const jobId = startResult.data.job_id;
+```
+
+```python tab="Python"
+import requests
+resp = requests.post(
+    'https://api.anycrawl.dev/v1/crawl',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://anycrawl.dev',
+        'engine': 'cheerio',
+        'strategy': 'same-domain',
+        'max_depth': 5,
+        'limit': 100,
+        'exclude_paths': ['/blog/*'],
+    'scrape_options': { 'formats': ['markdown'], 'timeout': 60000 }
+    }
+)
+start = resp.json()
+job_id = start['data']['job_id']
+```
+
+### 轮询状态
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396/status"
+```
+
+```javascript tab="JavaScript"
+const statusRes = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}/status`, {
+    headers: { Authorization: "Bearer YOUR_API_KEY" },
+});
+const status = await statusRes.json();
+```
+
+### 获取结果（分页）
+
+```bash tab="cURL"
+curl -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=0"
+```
+
+```javascript tab="JavaScript"
+let skip = 0;
+while (true) {
+    const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`, {
+        headers: { Authorization: "Bearer YOUR_API_KEY" },
+    });
+    const page = await res.json();
+    // process page.data
+    if (!page.next) break;
+    const nextUrl = new URL(page.next);
+    skip = Number(nextUrl.searchParams.get("skip") || 0);
+}
+```
+
+### 取消任务
+
+```bash tab="cURL"
+curl -X DELETE -H "Authorization: Bearer <YOUR_API_KEY>" \
+  "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396"
+```
+
+## 请求参数
+
+| 参数                | 类型            | 必需 | 默认值        | 描述                                                                                                              |
+| ------------------- | --------------- | ---- | ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `url`               | string          | 是   | -             | 开始爬取的种子 URL                                                                                                |
+| `template_id`       | string          | 否   | -             | 用于此次爬取的模板 ID                                                                                             |
+| `variables`         | object          | 否   | -             | 模板变量（仅在提供 `template_id` 时使用）                                                                         |
+| `engine`            | enum            | 否   | `auto`        | 单页抓取引擎：`auto`、`cheerio`、`playwright`、`puppeteer`                                                        |
+| `exclude_paths`     | array of string | 否   | -             | 排除的路径规则（类 glob 模式），例如 `/blog/*`                                                                    |
+| `include_paths`     | array of string | 否   | -             | 包含的爬取路径规则（在排除之后应用）                                                                              |
+| `scrape_paths`      | array of string | 否   | -             | 内容提取的路径规则。仅匹配的 URL 会保存内容。如未设置，则抓取所有包含的 URL                                       |
+| `max_depth`         | number          | 否   | `10`          | 从种子 URL 起的最大深度                                                                                           |
+| `strategy`          | enum            | 否   | `same-domain` | 爬取范围：`all`、`same-domain`、`same-hostname`、`same-origin`                                                    |
+| `limit`             | number          | 否   | `100`         | 最大爬取页面数                                                                                                    |
+| `max_age`           | number          | 否   | -             | 缓存最大有效期（毫秒）。使用 `0` 跳过缓存读取；省略则使用服务器默认值                                            |
+| `store_in_cache`    | boolean         | 否   | `true`        | 是否为单页抓取写入页面缓存                                                                                        |
+| `retry`             | boolean         | 否   | `false`       | 是否在失败时重试                                                                                                  |
+| `proxy`             | string (URI)    | 否   | -             | 可选的代理 URL                                                                                                    |
+| `formats`           | array of enum   | 否   | `["markdown"]`| 单页抓取的输出格式                                                                                                |
+| `timeout`           | number          | 否   | `60000`       | 单次请求超时时间（毫秒）                                                                                          |
+| `wait_for`          | number          | 否   | -             | 提取前的延迟时间（毫秒）；仅限浏览器引擎                                                                          |
+| `wait_until`        | enum            | 否   | -             | 浏览器引擎的导航等待条件：`load`、`domcontentloaded`、`networkidle`、`commit`                                      |
+| `wait_for_selector` | string, object, or array | 否 | -          | 等待一个或多个选择器（仅限浏览器引擎）。优先级高于 `wait_for`。                                                   |
+| `include_tags`      | array of string | 否   | -             | 仅包含匹配 CSS 选择器的元素                                                                                       |
+| `exclude_tags`      | array of string | 否   | -             | 排除匹配 CSS 选择器的元素                                                                                         |
+| `only_main_content` | boolean         | 否   | `true`        | 仅提取主要内容，移除页头、页脚、导航栏等                                                                          |
+| `json_options`      | object          | 否   | -             | 结构化 JSON 提取选项（schema、user_prompt、schema_name、schema_description）                                       |
+| `extract_source`    | enum            | 否   | `markdown`    | JSON 提取的来源：`markdown`（默认）或 `html`                                                                      |
+| `ocr_options`       | boolean         | 否   | `false`       | 仅对 markdown 图片启用 OCR 增强。影响 markdown 生成，不影响 `html`/`rawHtml`。                                    |
+| `scrape_options`    | object          | 否   | -             | 单页抓取选项（与 `/v1/scrape` 字段相同，但不含顶层 `url`/`engine`）                                               |
+
+### `scrape_options` 字段
+
+| 字段                | 类型                     | 默认值         | 说明                                                                                                                                       |
+| ------------------- | ------------------------ | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `formats`           | array of enum            | `["markdown"]` | 输出格式：`markdown`、`html`、`text`、`screenshot`、`screenshot@fullPage`、`rawHtml`、`json`、`summary`、`links`                                      |
+| `timeout`           | number                   | `60000`        | 单次请求超时时间（毫秒）                                                                                                                    |
+| `wait_for`          | number                   | -              | 提取前的延迟时间（毫秒）；仅限浏览器引擎；优先级低于 `wait_for_selector`                                                                   |
+| `wait_for_selector` | string, object, or array | -              | 等待一个或多个选择器（仅限浏览器引擎）。接受 CSS 选择器字符串、对象 `{ selector: string, state?: "attached" | "visible" | "hidden" | "detached", timeout?: number }` 或字符串/对象的混合数组。每个条目按顺序等待。优先级高于 `wait_for`。 |
+| `include_tags`      | array of string          | -              | 仅包含匹配 CSS 选择器的元素                                                                                                                |
+| `exclude_tags`      | array of string          | -              | 排除匹配 CSS 选择器的元素                                                                                                                  |
+| `only_main_content` | boolean                  | `true`         | 仅提取主要内容，移除页头、页脚、导航栏等                                                                                                    |
+| `proxy`             | string (URI)             | -              | 可选的代理 URL                                                                                                                              |
+| `json_options`      | object                   | -              | 结构化 JSON 提取选项（schema、user_prompt、schema_name、schema_description）                                                                |
+| `extract_source`    | enum                     | `markdown`     | JSON 提取的来源：`markdown`（默认）或 `html`                                                                                                |
+| `ocr_options`       | boolean                  | `false`        | 仅对 markdown 图片启用 OCR 增强。影响 markdown 生成，不影响 `html`/`rawHtml`。                                                              |
+| `max_age`           | number                   | -              | 缓存最大有效期（毫秒）。使用 `0` 跳过缓存读取；省略则使用服务器默认值                                                                       |
+| `store_in_cache`    | boolean                  | `true`         | 是否为单页抓取写入页面缓存                                                                                                                  |
+
+### 缓存行为
+
+- 爬虫目前**不会**读取页面缓存，但可能仍会写入。
+- 如果传递了 `scrape_options`，请在其中设置缓存控制。
+
+## 响应格式
+
+### 1) 创建（HTTP 200）
+
+```json
+{
+    "success": true,
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "created",
+        "message": "Crawl job has been queued for processing"
+    }
+}
+```
+
+#### 可能的错误
+
+- 400 验证错误
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "Invalid enum value...",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            { "field": "engine", "message": "Invalid enum value", "code": "invalid_enum_value" }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+- 401 认证错误
+
+```json
+{ "success": false, "error": "Invalid API key" }
+```
+
+### 2) 状态（HTTP 200）
+
+```json
+{
+    "success": true,
+    "message": "Job status retrieved successfully",
+    "data": {
+        "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396",
+        "status": "completed",
+        "start_time": "2025-05-25T07:56:44.162Z",
+        "expires_at": "2025-05-26T07:56:44.162Z",
+        "credits_used": 0,
+        "total": 120,
+        "completed": 30,
+        "failed": 2
+    }
+}
+```
+
+### 3) 结果页（HTTP 200）
+
+```json
+{
+    "success": true,
+    "status": "pending",
+    "total": 120,
+    "completed": 30,
+    "credits_used": 12,
+    "next": "https://api.anycrawl.dev/v1/crawl/7a2e165d-8f81-4be6-9ef7-23222330a396?skip=100",
+    "data": [
+        {
+            "url": "https://anycrawl.dev/",
+            "title": "AnyCrawl",
+            "markdown": "# AnyCrawl...",
+            "timestamp": "2025-05-25T07:56:44.162Z"
+        }
+    ]
+}
+```
+
+#### 可能的错误
+
+- 400 无效的任务 ID / 未找到
+
+```json
+{ "success": false, "error": "Invalid job ID", "message": "Job ID must be a valid UUID" }
+```
+
+### 4) 取消（HTTP 200）
+
+```json
+{
+    "success": true,
+    "message": "Job cancelled successfully",
+    "data": { "job_id": "7a2e165d-8f81-4be6-9ef7-23222330a396", "status": "cancelled" }
+}
+```
+
+#### 可能的错误
+
+- 404 未找到
+- 409 任务已完成
+
+```json
+{
+    "success": false,
+    "error": "Job already finished",
+    "message": "Finished jobs cannot be cancelled"
+}
+```
+
+## 最佳实践
+
+- 使用 `/v1/scrape` 处理单个页面以降低成本；使用 `/v1/crawl` 进行全站数据采集。
+- 调整 `strategy`、`max_depth` 和路径规则来控制范围和成本。
+- 使用 `scrape_paths` 降低成本：爬取导航/分类页面以发现链接，但仅抓取内容页面。
+- 使用 `formats` 限制输出大小，仅包含实际需要的格式。
+- 通过 `skip` 分页获取结果以避免过大的响应。
+
+### 使用 scrape_paths 优化成本
+
+`scrape_paths` 参数允许您优化爬取成本：
+
+**不使用 `scrape_paths`（默认）**：
+
+- 所有包含的页面 → 访问 + 提取内容 + 保存
+
+**使用 `scrape_paths`**：
+
+- 在 `include_paths` 中但不在 `scrape_paths` 中的页面 → 仅访问（用于链接发现）
+- 同时在 `include_paths` 和 `scrape_paths` 中的页面 → 访问 + 提取内容 + 保存
+
+示例用例：
+
+- 电商：爬取所有分类页面，但仅抓取商品详情页
+- 文档：访问所有导航页面，但仅提取文章内容
+- 新闻网站：浏览所有版块，但仅保存完整文章页面
+
+## 错误处理示例
+
+```javascript
+async function fetchAllResults(jobId) {
+    let skip = 0;
+    while (true) {
+        const res = await fetch(`https://api.anycrawl.dev/v1/crawl/${jobId}?skip=${skip}`);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const page = await res.json();
+        // handle page.data here
+        if (!page.next) break;
+        const next = new URL(page.next);
+        skip = Number(next.searchParams.get("skip") || 0);
+    }
+}
+```
+
+## 高并发使用
+
+爬虫队列支持并发任务。提交多个爬虫任务并独立轮询：
+
+```javascript
+const seeds = ["https://site-a.com", "https://site-b.com", "https://site-c.com"];
+const jobs = await Promise.all(
+    seeds.map((url) =>
+        fetch("https://api.anycrawl.dev/v1/crawl", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, engine: "cheerio" }),
+        }).then((r) => r.json())
+    )
+);
+```
+
+## 常见问题
+
+### `/v1/crawl` 和 `/v1/scrape` 有什么区别？
+
+`/v1/scrape` 同步获取单个 URL 并立即返回内容。`/v1/crawl` 从种子 URL 发现多个页面并异步运行。
+
+### 如何限制爬取范围和成本？
+
+使用 `strategy`、`max_depth`、`limit` 和路径规则（`include_paths`、`exclude_paths`、`scrape_paths`）。
+
+### `include_paths` 和 `scrape_paths` 有什么区别？
+
+- `include_paths`：控制哪些 URL 被**访问**（用于链接发现）
+- `scrape_paths`：控制哪些 URL 的**内容被提取并保存**
+
+如果未设置 `scrape_paths`，所有包含的 URL 都会被抓取（向后兼容行为）。
+
+### 如何降低爬取成本？
+
+使用 `scrape_paths` 访问导航/分类页面以发现链接，但不保存其内容。仅提取并保存与 `scrape_paths` 模式匹配的页面内容。
+
+### 如何分页获取结果？
+
+使用 `skip` 查询参数。如果响应中包含 `next`，则跟随它获取下一页。
+
+### 为什么某些任务没有返回 `html`/`markdown`？
+
+确保所需格式已包含在 `scrape_options.formats` 中，并且所选引擎支持这些格式。
+
+## 状态值
+
+任务 `status` 遵循任务模型中定义的值：
+
+| 状态        | 含义                                          |
+| ----------- | --------------------------------------------- |
+| `pending`   | 任务已排队或正在进行中（尚未完成）            |
+| `completed` | 任务成功完成                                  |
+| `failed`    | 任务因错误而终止                              |
+| `cancelled` | 任务已取消；不会进行进一步处理                |
+
+## OpenAPI（自动生成）
+
+请参阅 API 参考文档以获取自动生成的文档：
+
+- `POST /v1/crawl`
+- `GET /v1/crawl/{jobId}/status`
+- `GET /v1/crawl/{jobId}`
+- `DELETE /v1/crawl/{jobId}`

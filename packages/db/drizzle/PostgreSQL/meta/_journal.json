@@ -120,6 +120,76 @@
       "when": 1770710400000,
       "tag": "0017_billing_charge_details",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783783421018,
+      "tag": "0017_sad_snowbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785941937944,
+      "tag": "0018_add_template_slug",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785945314605,
+      "tag": "0019_dataset_core_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785954175652,
+      "tag": "0020_template_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785958642308,
+      "tag": "0021_template_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786005155720,
+      "tag": "0022_template_run_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786011915664,
+      "tag": "0023_template_runtime_output_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786082562506,
+      "tag": "0024_dataset_jsonb_query",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786099820814,
+      "tag": "0025_sticky_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788676973637,
+      "tag": "0026_monitor_workflow",
+      "breakpoints": true
     }
   ]
 }

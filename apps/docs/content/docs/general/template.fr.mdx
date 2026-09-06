@@ -1,0 +1,415 @@
+---
+title: Modèles
+description: Recettes réutilisables de scraping, crawl et recherche avec variables et logique personnalisée.
+icon: Puzzle
+---
+
+## Introduction
+
+Les modèles sont des configurations réutilisables pour le scraping, le crawl ou la recherche. Au lieu de répéter les mêmes options à chaque appel API, vous les définissez une fois dans un modèle (ou en obtenez un depuis la boutique de modèles AnyCrawl) et vous y faites référence via `template_id`.
+
+**Avantages :**
+
+- **Simplicité** : appelez les API avec seulement `template_id` + entrées minimales
+- **Cohérence** : standardisez le comportement pour votre équipe ou vos projets
+- **Sécurité** : les modèles peuvent restreindre les domaines autorisés et n’exposer que les variables nécessaires
+- **Puissance** : gestionnaires personnalisés optionnels pour des transformations avancées
+
+**Types pris en charge :**
+
+- `scrape` : extraction d’une page via `/v1/scrape`
+- `crawl` : crawl multi-pages via `/v1/crawl`
+- `search` : résultats moteur de recherche via `/v1/search`
+
+## Place de marché des modèles
+
+Parcourez les modèles prêts à l’emploi sur **[anycrawl.dev/template](https://anycrawl.dev/template)**.
+
+**Utilisation :**
+
+1. Parcourez la place de marché et choisissez un modèle adapté
+2. Copiez le `template_id` depuis la page détail du modèle
+3. Appelez l’API avec ce `template_id` et les entrées requises
+
+**Exemple :**
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "content-extractor",
+    "url": "https://example.com"
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "content-extractor",
+        url: "https://example.com",
+    }),
+});
+const result = await response.json();
+console.log(result.data);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'template_id': 'content-extractor',
+        'url': 'https://example.com'
+    }
+)
+result = response.json()
+print(result['data'])
+```
+
+## Utiliser les modèles dans les appels API
+
+### Paramètres de requête
+
+Avec `template_id`, seuls des champs minimaux sont autorisés :
+
+| Endpoint     | Champ obligatoire | Champs optionnels      |
+| ------------ | ----------------- | ---------------------- |
+| `/v1/scrape` | `template_id`     | `url`, `variables`     |
+| `/v1/crawl`  | `template_id`     | `url`, `variables`     |
+| `/v1/search` | `template_id`     | `query`, `variables`   |
+
+**Remarques importantes :**
+
+- `url` ou `query` peuvent être optionnels si le modèle les prédéfinit. Vérifiez la description du modèle.
+- `variables` transmet les entrées dynamiques attendues par le modèle (voir section Variables).
+- Les autres champs (`engine`, `formats`, `timeout`, etc.) proviennent du modèle et ne peuvent pas être surchargés.
+- Fournir des champs non autorisés renvoie une **erreur de validation 400**.
+
+### Scrape avec un modèle
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-scrape-template",
+    "url": "https://example.com",
+    "variables": { "category": "tech" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-scrape-template",
+        url: "https://example.com",
+        variables: { category: "tech" },
+    }),
+});
+const data = await res.json();
+```
+
+### Crawl avec un modèle
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/crawl" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-crawl-template",
+    "url": "https://docs.example.com",
+    "variables": { "maxPages": 50 }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/crawl", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-crawl-template",
+        url: "https://docs.example.com",
+        variables: { maxPages: 50 },
+    }),
+});
+const { job_id } = (await res.json()).data;
+// Polling des résultats...
+```
+
+### Recherche avec un modèle
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/search" \
+  -H "Authorization: Bearer <YOUR_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "template_id": "my-search-template",
+    "query": "machine learning tutorials",
+    "variables": { "lang": "en" }
+  }'
+```
+
+```javascript tab="JavaScript"
+const res = await fetch("https://api.anycrawl.dev/v1/search", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        template_id: "my-search-template",
+        query: "machine learning tutorials",
+        variables: { lang: "en" },
+    }),
+});
+const data = await res.json();
+console.log(data.data);
+```
+
+## Variables
+
+Les modèles peuvent déclarer des **variables** pour accepter des entrées dynamiques à l’appel.
+
+- Chaque variable a un `type` : `string`, `number`, `boolean` ou `url`
+- Les variables peuvent être `required` ou optionnelles avec `defaultValue`
+- Consultez la description du modèle pour la liste des variables attendues
+
+**Exemple de requête avec variables :**
+
+```json
+{
+    "template_id": "blog-scraper",
+    "url": "https://example.com/blog/post-123",
+    "variables": {
+        "author": "john-doe",
+        "includeComments": true,
+        "maxComments": 50
+    }
+}
+```
+
+Si une variable obligatoire manque ou si le type est incorrect, vous obtenez une **erreur de validation 400**.
+
+## Format de réponse
+
+Les réponses de modèle suivent le même format que les appels API standards :
+
+```json
+{
+    "success": true,
+    "data": {
+        "url": "https://example.com",
+        "markdown": "# Page Title\n\nContent...",
+        "metadata": { ... },
+        // Champs supplémentaires des gestionnaires personnalisés (le cas échéant)
+        "extractedData": { ... }
+    }
+}
+```
+
+Les modèles avec gestionnaires personnalisés peuvent ajouter des champs supplémentaires à la réponse.
+
+## Gestion des erreurs
+
+Erreurs courantes avec les modèles :
+
+| Erreur                        | Statut HTTP | Description                                         |
+| ----------------------------- | ----------- | --------------------------------------------------- |
+| Modèle introuvable            | 404         | `template_id` inexistant ou accès refusé          |
+| Erreur de validation          | 400         | Variables obligatoires manquantes ou types incorrects |
+| Violation de restriction de domaine | 403   | URL non autorisée par la politique de domaine du modèle |
+| Champs invalides              | 400         | Champs de premier niveau non autorisés avec les modèles |
+
+**Exemple de réponse d’erreur :**
+
+```json
+{
+    "success": false,
+    "error": "Validation error",
+    "message": "When using template_id, only template_id, url, variables are allowed. Invalid fields: engine, formats",
+    "data": {
+        "type": "validation_error",
+        "issues": [
+            {
+                "field": "engine",
+                "message": "Field 'engine' is not allowed when using template_id",
+                "code": "invalid_field"
+            }
+        ],
+        "status": "failed"
+    }
+}
+```
+
+## Bonnes pratiques
+
+### Pour les appelants API
+
+- Vérifiez toujours la description du modèle pour les variables obligatoires et les domaines / mots-clés autorisés
+- Utilisez les modèles de la place de marché lorsque c’est possible
+- Gérez les erreurs 404 (modèle supprimé ou archivé)
+- N’essayez pas de surcharger les réglages du modèle (`engine`, `formats`, etc.) — cela échouera
+
+### Pour les auteurs de modèles
+
+- Un modèle = un cas d’usage ciblé
+- Documentez clairement toutes les variables
+- Utilisez des restrictions de domaine pour limiter les abus
+- Fixez un tarif cohérent avec la complexité
+- Testez avant publication
+
+## Créer des modèles (avancé)
+
+Si vous créez vos propres modèles, vous pouvez configurer :
+
+### Restrictions de domaine
+
+Limitez où le modèle peut être utilisé :
+
+```json
+{
+    "allowedDomains": {
+        "type": "glob",
+        "patterns": ["*.example.com", "docs.mysite.com"]
+    }
+}
+```
+
+- `type` : `"exact"` (correspondance exacte) ou `"glob"` (motifs)
+- `patterns` : tableau de domaines ou motifs autorisés
+
+### Restrictions par mots-clés (modèles de recherche)
+
+Limitez les requêtes utilisables avec un modèle de recherche :
+
+```json
+{
+    "allowedKeywords": {
+        "type": "glob",
+        "patterns": ["*tutorial*", "*documentation*"]
+    }
+}
+```
+
+- `allowedKeywords` est validé avant l’exécution de la requête.
+- `type` : `"exact"` ou `"glob"`
+- `patterns` : valeurs / motifs de mots-clés autorisés
+- La validation a lieu avant l’application de `queryTransform`.
+
+### Tarification
+
+Définissez le coût en crédits par appel :
+
+```json
+{
+    "pricing": {
+        "perCall": 10,
+        "currency": "credits"
+    }
+}
+```
+
+### Gestionnaires personnalisés
+
+Code JavaScript/TypeScript pour :
+
+- **`requestHandler`** : post-traiter les résultats de scrape et ajouter des champs
+- **`failedRequestHandler`** : gérer les échecs avec logique de nouvelle tentative
+- **`queryTransform`** (recherche uniquement) : transformer la requête avant recherche
+- **`urlTransform`** (scrape/crawl uniquement) : transformer l’URL avant traitement
+
+Les deux transformations prennent en charge :
+
+- Mode modèle avec espaces réservés (requête : `{{query}}`, url : `{{url}}`)
+- Mode append avec `prefix` et `suffix`
+- `regexExtract` optionnel pour extraire une sous-chaîne avant d’appliquer le mode
+
+Exemple d’extraction regex pour les profils TikTok :
+
+```json
+{
+    "customHandlers": {
+        "urlTransform": {
+            "enabled": true,
+            "mode": "append",
+            "prefix": "",
+            "suffix": "",
+            "regexExtract": {
+                "pattern": "^(https?:\\/\\/www\\.tiktok\\.com\\/@[^\\/?#]+)",
+                "flags": "i",
+                "group": 1
+            }
+        }
+    }
+}
+```
+
+Cela extrait `https://www.tiktok.com/@piperrockelle` à partir d’entrées comme :
+
+- `https://www.tiktok.com/@piperrockelle?abb=ccc`
+- `https://www.tiktok.com/@piperrockelle`
+
+Exemple `requestHandler` :
+
+```javascript
+// Extraire des données structurées depuis le contexte de page
+const title = context.data.title;
+const content = context.data.markdown;
+
+return {
+    extractedTitle: title,
+    wordCount: content.split(/\s+/).length,
+    customMetric: calculateMetric(content),
+};
+```
+
+### Modèle de sécurité
+
+- **Modèles non approuvés** : exécution dans un bac à sable VM durci avec limitations strictes
+- **Modèles approuvés** : peuvent utiliser des fonctions async avec accès contrôlé à la page navigateur
+
+Seuls les modèles examinés et approuvés par AnyCrawl peuvent être marqués comme approuvés.
+
+## FAQ
+
+### Puis-je surcharger les réglages du modèle comme `engine` ou `formats` ?
+
+Non. Les modèles sont des configurations figées. Vous ne pouvez fournir que `url`/`query` et `variables`.
+
+### Que se passe-t-il si j’utilise un modèle de la place de marché ?
+
+Les modèles publics sont disponibles pour tous. Vous payez les crédits définis par l’auteur.
+
+### Les modèles voient-ils ma clé API ?
+
+Non. Ils s’exécutent dans des environnements isolés sans accès à vos identifiants.
+
+### Comment créer mes propres modèles ?
+
+Utilisez le playground AnyCrawl pour créer et tester. Une fois publiés, ils sont utilisables via l’API.
+
+## Voir aussi
+
+- [Documentation API Scrape](./scrape)
+- [Documentation API Crawl](./crawl)
+- [Documentation API Search](./search)
+- [Place de marché des modèles](https://anycrawl.dev/template)

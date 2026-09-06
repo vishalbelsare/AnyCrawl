@@ -1,4 +1,4 @@
-import { AD_DOMAINS, log } from "@anycrawl/libs";
+import { AD_DOMAINS, log, config } from "@anycrawl/libs";
 import { minimatch } from "minimatch";
 import { Utils } from "../Utils.js";
 import { BrowserName } from "crawlee";
@@ -9,6 +9,25 @@ import { getOrCreateBandwidthTracker } from "./BandwidthTracker.js";
 import { CloudflareChallengeHandler } from "../challenges/cloudflare/CloudflareChallengeHandler.js";
 import { ChallengeOrchestrator } from "../challenges/ChallengeOrchestrator.js";
 import { ProxyCacheManager } from "../managers/ProxyCacheManager.js";
+import { smartWaitForDOMStable } from "../utils/smartWait.js";
+import { applyCloakBrowserHumanize, cloakBrowserHumanWarmup } from "./CloakBrowserLauncher.js";
+
+/**
+ * Decide whether the cloakbrowser human-behavior layer should be enabled for a
+ * request. Priority: operator kill switch > per-request "off" > per-request
+ * "on" > "auto" policy (stealth proxy or an escalation retry after a block).
+ */
+const shouldHumanizeRequest = (request: any): boolean => {
+    if (!config.engine.humanize) return false; // operator kill switch (ANYCRAWL_HUMANIZE=false)
+    const options = request?.userData?.options ?? {};
+    const mode = options.humanize ?? "auto";
+    if (mode === "off") return false;
+    if (mode === "on") return true;
+    // "auto": only when escalating — explicit stealth proxy, or any retry (403/
+    // challenge/proxy-upgrade all route through retryCount > 0).
+    const retryCount = typeof request?.retryCount === "number" ? request.retryCount : 0;
+    return options.proxy === "stealth" || retryCount > 0;
+};
 
 export enum ConfigurableEngineType {
     CHEERIO = 'cheerio',
@@ -177,37 +196,72 @@ export class EngineConfigurator {
             }
         };
 
-        // Ad blocking configuration
-        const adBlockingHook = async ({ page }: any) => {
-            const shouldBlock = (url: string) => AD_DOMAINS.some(domain => url.includes(domain));
+        const resourceBlockingHook = async ({ page, request }: any) => {
+            if (!page || (page as any).__anycrawlResourceBlockingApplied) return;
+            (page as any).__anycrawlResourceBlockingApplied = true;
 
-            if (engineType === ConfigurableEngineType.PLAYWRIGHT) {
-                await page.route('**/*', (route: any) => {
-                    const url = route.request().url();
-                    if (shouldBlock(url)) {
-                        log.info(`Aborting request to ${url}`);
-                        return route.abort();
-                    }
-                    return route.continue();
+            let cdp: any;
+            try {
+                if (engineType === ConfigurableEngineType.PLAYWRIGHT) {
+                    cdp = await page.context().newCDPSession(page);
+                } else if (engineType === ConfigurableEngineType.PUPPETEER) {
+                    cdp = await page.target().createCDPSession();
+                }
+            } catch { return; }
+            if (!cdp) return;
+            (page as any).__anycrawlCdpSession = cdp;
+
+            const formats: string[] = request?.userData?.options?.formats || [];
+            const needsScreenshot = formats.some(
+                (f: string) => f === "screenshot" || f === "screenshot@fullPage",
+            );
+
+            try {
+                await cdp.send("Network.enable");
+                await cdp.send("Network.setBlockedURLs", {
+                    urls: AD_DOMAINS.map((d: string) => `*${d}*`),
                 });
-            } else if (engineType === ConfigurableEngineType.PUPPETEER) {
-                await page.setRequestInterception(true);
-                page.on('request', (req: any) => {
-                    const url = req.url();
-                    if (shouldBlock(url)) {
-                        log.info(`Aborting request to ${url}`);
-                        req.abort();
-                    } else {
-                        req.continue();
+
+                if (needsScreenshot) {
+                    // Only block media (video/audio); let images and fonts load
+                    // normally so the screenshot captures a fully rendered page.
+                    await cdp.send("Fetch.enable", {
+                        patterns: [
+                            { resourceType: "Media", requestStage: "Request" },
+                        ],
+                    });
+                    log.debug(`[resourceBlockingHook] screenshot mode: only blocking media for ${engineType}`);
+                } else {
+                    await cdp.send("Fetch.enable", {
+                        patterns: [
+                            { resourceType: "Image", requestStage: "Request" },
+                            { resourceType: "Media", requestStage: "Request" },
+                            { resourceType: "Font", requestStage: "Request" },
+                        ],
+                    });
+                }
+
+                cdp.on("Fetch.requestPaused", async (e: any) => {
+                    try {
+                        log.debug(`[resourceBlocking] Blocked ${e.resourceType}: ${e.request?.url?.substring(0, 100)}`);
+                        await cdp.send("Fetch.failRequest", {
+                            requestId: e.requestId,
+                            errorReason: "BlockedByClient",
+                        });
+                    } catch {
+                        // CDP session closed
                     }
                 });
+                log.debug(`[resourceBlockingHook] CDP setup complete for ${engineType}`);
+            } catch (err) {
+                log.debug(`[resourceBlockingHook] CDP setup failed: ${err}`);
             }
         };
 
         // set request timeout and faster navigation for each request
         const requestTimeoutHook = async ({ request }: any, gotoOptions: any) => {
-            const timeoutMs = request.userData.options.timeout || (process.env.ANYCRAWL_NAV_TIMEOUT ? parseInt(process.env.ANYCRAWL_NAV_TIMEOUT) : 30_000);
-            const waitUntil = (request.userData.options.wait_until || process.env.ANYCRAWL_NAV_WAIT_UNTIL || 'domcontentloaded') as any;
+            const timeoutMs = request.userData.options.timeout || config.navigation.timeoutMs;
+            const waitUntil = (request.userData.options.wait_until || config.navigation.waitUntil) as any;
             log.debug(`Setting navigation for ${request.url} to timeout=${timeoutMs}ms waitUntil=${waitUntil}`);
             gotoOptions.timeout = timeoutMs;
             gotoOptions.waitUntil = waitUntil;
@@ -366,7 +420,7 @@ export class EngineConfigurator {
                     try {
                         const url = typeof response.url === 'function' ? response.url() : (response.url || '');
                         if (!url) return;
-                        const verbose = process.env.ANYCRAWL_PRENAV_VERBOSE === '1' || process.env.ANYCRAWL_PRENAV_VERBOSE === 'true';
+                        const verbose = process.env.ANYCRAWL_PRENAV_VERBOSE === '1' || process.env.ANYCRAWL_PRENAV_VERBOSE === 'true'; // niche debug flag, stays local
 
                         // Only continue (and optionally log) if the URL matches at least one pending rule
                         // or verbose mode is explicitly enabled
@@ -489,14 +543,32 @@ export class EngineConfigurator {
             await challengeOrchestrator.onPostNavigation(args);
         };
 
+        // Apply the cloakbrowser human-behavior layer for this request when the
+        // policy calls for it (Playwright only). Runs before the challenge/preNav
+        // hooks so any subsequent interaction is already humanized.
+        const humanizeHook = async ({ page, request }: any) => {
+            if (engineType !== ConfigurableEngineType.PLAYWRIGHT) return;
+            if (!page || !shouldHumanizeRequest(request)) return;
+            try {
+                const active = await applyCloakBrowserHumanize(page);
+                if (active) {
+                    request.__anycrawlHumanizeActive = true;
+                    log.info(`[Humanize] enabled for ${request?.url || "unknown"} (proxy=${request?.userData?.options?.proxy ?? "?"}, retry=${request?.retryCount ?? 0}, mode=${request?.userData?.options?.humanize ?? "auto"})`);
+                }
+            } catch (err) {
+                log.warning(`[Humanize] failed to apply: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        };
+
         // Add browser-specific hooks to preNavigationHooks
         const existingHooks = options.preNavigationHooks || [];
         options.preNavigationHooks = [
             viewportHook,
             bandwidthHook,
-            adBlockingHook,
+            resourceBlockingHook,
             requestTimeoutHook,
             authenticationHook,
+            humanizeHook,
             challengePreHook,
             preNavHook,
             ...existingHooks
@@ -504,13 +576,26 @@ export class EngineConfigurator {
 
         log.info(`[EngineConfigurator] Browser hooks configured for ${engineType}: total=${options.preNavigationHooks.length}`);
 
+        const smartWaitPostHook = async ({ page, request }: any) => {
+            if (!page) return;
+            await smartWaitForDOMStable(page, request.url, { label: "postNav" });
+        };
+
+        // Human "warm-up" once content is settled: emit real cursor-movement
+        // entropy on requests where humanize was actually applied. Best-effort.
+        const humanizeWarmupPostHook = async ({ page, request }: any) => {
+            if (engineType !== ConfigurableEngineType.PLAYWRIGHT) return;
+            if (!page || !request?.__anycrawlHumanizeActive) return;
+            await cloakBrowserHumanWarmup(page);
+        };
+
         const existingPostHooks = options.postNavigationHooks || [];
-        options.postNavigationHooks = [challengePostHook, ...existingPostHooks];
+        options.postNavigationHooks = [challengePostHook, smartWaitPostHook, humanizeWarmupPostHook, ...existingPostHooks];
         log.info(`[EngineConfigurator] Post-navigation hooks configured for ${engineType}: total=${options.postNavigationHooks.length}`);
 
         // Apply headless configuration from environment
         if (options.headless === undefined) {
-            options.headless = process.env.ANYCRAWL_HEADLESS !== "false";
+            options.headless = config.engine.headless;
         }
 
         // Let 403 pages reach requestHandler; do not fail early in Crawlee blocked-page detection.
@@ -632,10 +717,18 @@ export class EngineConfigurator {
 
             if (errorMessage.includes("Received blocked status code: 403")) {
                 if (context?.request) {
-                    context.request.noRetry = true;
+                    context.request.noRetry = false;
                 }
-                log.info(`403 blocked-status session error detected, disabling retry for ${context?.request?.url || "unknown url"}`);
-                return false;
+                try {
+                    const session = (context as any).session;
+                    if (session && typeof session.retire === "function") {
+                        session.retire();
+                    }
+                } catch {
+                    // ignore session retire failures
+                }
+                log.info(`403 blocked-status detected, allowing retry with session rotation for ${context?.request?.url || "unknown url"}`);
+                return true;
             }
 
             // Timeout-like errors should fail fast and never retry.
@@ -661,9 +754,15 @@ export class EngineConfigurator {
 
     private static configurePuppeteer(options: any): void {
         options.browserPoolOptions = {
+            ...options.browserPoolOptions,
+            maxOpenPagesPerBrowser: options.browserPoolOptions?.maxOpenPagesPerBrowser ?? config.engine.browserMaxOpenPagesPerBrowser,
+            retireBrowserAfterPageCount: options.browserPoolOptions?.retireBrowserAfterPageCount ?? config.engine.browserMaxPagesPerBrowser,
+            retireInactiveBrowserAfterSecs: options.browserPoolOptions?.retireInactiveBrowserAfterSecs ?? config.engine.browserIdleRetireSecs,
             useFingerprints: true,
             fingerprintOptions: {
+                ...options.browserPoolOptions?.fingerprintOptions,
                 fingerprintGeneratorOptions: {
+                    ...(options.browserPoolOptions?.fingerprintOptions as any)?.fingerprintGeneratorOptions,
                     browsers: [{ name: BrowserName.chrome, minVersion: 120 }],
                 },
             },
@@ -672,9 +771,15 @@ export class EngineConfigurator {
 
     private static configurePlaywright(options: any): void {
         options.browserPoolOptions = {
+            ...options.browserPoolOptions,
+            maxOpenPagesPerBrowser: options.browserPoolOptions?.maxOpenPagesPerBrowser ?? config.engine.browserMaxOpenPagesPerBrowser,
+            retireBrowserAfterPageCount: options.browserPoolOptions?.retireBrowserAfterPageCount ?? config.engine.browserMaxPagesPerBrowser,
+            retireInactiveBrowserAfterSecs: options.browserPoolOptions?.retireInactiveBrowserAfterSecs ?? config.engine.browserIdleRetireSecs,
             useFingerprints: true,
             fingerprintOptions: {
+                ...options.browserPoolOptions?.fingerprintOptions,
                 fingerprintGeneratorOptions: {
+                    ...(options.browserPoolOptions?.fingerprintOptions as any)?.fingerprintGeneratorOptions,
                     browsers: [{ name: BrowserName.chrome, minVersion: 120 }],
                 },
             },

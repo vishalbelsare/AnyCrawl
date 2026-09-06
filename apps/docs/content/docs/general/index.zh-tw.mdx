@@ -1,0 +1,84 @@
+---
+title: 快速開始
+description: 了解如何使用 AnyCrawl 的網頁抓取和爬蟲 API 從任何網站提取 LLM 就緒資料
+icon: Album
+---
+
+## 簡介
+
+為 LLM 而生。一個多執行緒、高效能的爬蟲和抓取工具，開箱即用。透過開發者友好的 OpenAPI，提供乾淨、結構化的資料，完美適配 LLM。
+
+AnyCrawl 具有以下特性：
+
+<Cards>
+
+<Card icon={<CpuIcon className="text-purple-300" />} title="高效能">
+    高效能，多執行緒。
+</Card>
+
+<Card icon={<GithubIcon className="text-blue-300" />} title="完全開源">
+    開源專案，託管在 Github。
+</Card>
+
+<Card icon={<OpenAIIcon />} title='LLM 友好'>
+為 LLM 提供乾淨、結構化的資料。
+</Card>
+<Card icon={<OpenAPIIcon />} title='OpenAPI'>
+OpenAPI 友好。
+
+</Card>
+
+</Cards>
+
+## API 約定
+
+### 參數命名
+
+AnyCrawl API 遵循一致的命名約定：
+
+- **請求參數**：主要使用 `snake_case`
+  - 常見範例：`webhook_url`、`event_types`、`cron_expression`、`max_retries`
+  - 注意：少數端點特定欄位使用現有的 camelCase 名稱（例如 Search 中的 `timeRange`）。
+
+- **回應欄位**：使用 `snake_case` 格式
+  - 範例：`task_id`、`webhook_id`、`next_execution_at`、`task_type`、`cron_expression`、`is_active`
+
+對於請求主體，以各端點的參數表/OpenAPI 為準。
+
+### 回應格式
+
+所有 API 回應遵循標準結構：
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Optional message"
+}
+```
+
+- `success`：布林值，表示請求是否成功
+- `data`：回應資料（物件或陣列）
+- `message`：可選的人類可讀訊息
+
+### 錯誤回應
+
+錯誤回應包含詳細資訊：
+
+```json
+{
+  "success": false,
+  "error": "Error type",
+  "message": "Human-readable error message",
+  "details": { ... }
+}
+```
+
+常見 HTTP 狀態碼：
+- `200` - 成功
+- `400` - 請求錯誤（驗證錯誤）
+- `401` - 未授權（無效的 API 金鑰）
+- `402` - 需要付費（積分不足）
+- `404` - 未找到
+- `429` - 請求過多（超出速率限制）
+- `500` - 內部伺服器錯誤

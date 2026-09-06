@@ -1,0 +1,107 @@
+---
+title: Windsurf
+description: AnyCrawl MCP で Windsurf に Web スクレイピングと検索を追加する
+icon: Wind
+---
+
+# Windsurf で MCP による Web 検索とスクレイピング
+
+AnyCrawl MCP を使って、Windsurf に Web スクレイピングと検索機能を追加します。
+
+## クイックセットアップ
+
+### 1. API キーを取得する
+
+[anycrawl.dev](https://anycrawl.dev) にサインアップし、ダッシュボードから API キーをコピーします。
+
+### 2. Windsurf に追加する
+
+次を `~/.codeium/windsurf/mcp_config.json` に追加します。
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+`your-api-key` を実際の AnyCrawl API キーに置き換えてください。
+
+### 3. Windsurf を再起動する
+
+以上です。Windsurf から Web の検索とスクレイピングができるようになります。
+
+## すぐ試せるデモ
+
+Windsurf で次を試してください。
+
+**Web 検索：**
+
+```
+Search for the latest Tailwind CSS features
+```
+
+**ページをスクレイプ：**
+
+```
+Scrape anycrawl.dev and explain what it does
+```
+
+**ドキュメントを取得：**
+
+```
+Find and scrape the Supabase authentication documentation
+```
+
+**サイトをクロール：**
+
+```
+Crawl the docs section of nextjs.org and summarize the key concepts
+```
+
+Windsurf の AI エージェントが AnyCrawl のツールを自動で使います。
+
+## トラブルシューティング
+
+### サーバーが応答しない
+
+1. API キーが有効か確認する
+2. Node.js 18 以上が入っているか確認する
+3. 設定を変更したあと Windsurf を再起動する
+
+### 権限エラー
+
+`npx` が実行できるか確認してください。パッケージをグローバルに入れる必要がある場合があります。
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+グローバルパッケージを使う設定例：
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## 次のステップ
+
+- [スクレイプのオプション](../scrape)の詳細
+- [クロールの機能](../crawl)を試す
+- [検索の機能](../search)を確認する
+- 完全な [MCP サーバーのドキュメント](../mcp)を読む

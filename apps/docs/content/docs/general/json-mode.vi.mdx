@@ -1,0 +1,328 @@
+---
+title: Chế độ JSON
+description: Trích xuất dữ liệu có cấu trúc từ trang web bằng LLM với xác thực JSON schema.
+icon: Database
+---
+
+## Giới thiệu
+
+Chế độ JSON cho phép trích xuất dữ liệu có cấu trúc từ bất kỳ trang web nào bằng Large Language Models (LLM).
+
+AnyCrawl cho phép bạn định nghĩa JSON schema và prompt để điều hướng quá trình trích xuất, đảm bảo đầu ra khớp định dạng mong muốn.
+
+## Ví dụ sử dụng
+
+Chế độ JSON hỗ trợ ba kiểu trích xuất có cấu trúc:
+
+1. **Chỉ prompt**: Dùng prompt ngôn ngữ tự nhiên để mô tả cần trích gì. LLM tự quyết định cấu trúc đầu ra.
+2. **Chỉ schema**: Định nghĩa JSON schema để ràng buộc chặt cấu trúc đầu ra. LLM điền nội dung.
+3. **Prompt + schema**: Kết hợp schema và prompt để kiểm soát cả cấu trúc và nội dung.
+
+Gợi ý: Đặt `extract_source` để điều khiển việc trích có cấu trúc đọc từ `markdown` đã tạo hay `html` gốc. Mặc định là `markdown`; dùng `html` khi markdown làm mất cấu trúc quan trọng.
+
+Quan trọng: phải có `"json"` trong `formats` khi dùng `json_options`, nếu không response sẽ không chứa dữ liệu JSON đã trích.
+
+---
+
+### 1. Chỉ prompt (cấu trúc linh hoạt)
+
+**Các bước:**
+
+1. Đặt URL trang đích
+2. Viết prompt mô tả thông tin cần trích
+3. Gửi request
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "user_prompt": "Extract the company mission, open source status, and employee count."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            user_prompt: "Extract the company mission, open source status, and employee count.",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'user_prompt': 'Extract the company mission, open source status, and employee count.'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 2. Chỉ schema (cấu trúc chặt)
+
+**Các bước:**
+
+1. Đặt URL trang đích
+2. Định nghĩa JSON schema cho các trường và kiểu mong muốn
+3. Gửi request
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      }
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 3. Prompt + schema (cấu trúc và nội dung có hướng dẫn)
+
+**Các bước:**
+
+1. Đặt URL trang đích
+2. Định nghĩa JSON schema cho cấu trúc đầu ra
+3. Viết prompt để hướng dẫn trích xuất
+4. Gửi request
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      },
+      "user_prompt": "Extract the company mission (string), open source status (boolean), and employee count (number)."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+            user_prompt:
+                "Extract the company mission (string), open source status (boolean), and employee count (number).",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema,
+            'user_prompt': 'Extract the company mission (string), open source status (boolean), and employee count (number).'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+## Đối tượng json_options
+
+Tham số `json_options` là object nhận các trường sau:
+
+- `schema`: Schema dùng cho trích xuất.
+- `user_prompt`: Prompt người dùng cho trích xuất.
+- `schema_name`: Tên tùy chọn của đầu ra cần tạo.
+- `schema_description`: Mô tả tùy chọn của đầu ra cần tạo.
+
+### JSON Schema
+
+Schema dùng cho trích xuất. Các trường thường gặp:
+
+- `type`: Kiểu giá trị, các kiểu hỗ trợ xem bên dưới.
+- `properties`: (với `object`) Object mô tả từng trường và schema của chúng.
+- `required`: (với `object`) Mảng tên trường bắt buộc.
+
+#### Các kiểu được hỗ trợ
+
+| Type      | Mô tả                | Ví dụ                                      |
+| --------- | -------------------- | ------------------------------------------ |
+| `string`  | Văn bản              | Tên công ty, mô tả, tiêu đề                |
+| `number`  | Số                   | Giá, số lượng, đánh giá                    |
+| `boolean` | Đúng/sai             | Cờ khả dụng, chỉ báo tính năng             |
+| `object`  | Cấu trúc lồng        | Địa chỉ, thông số sản phẩm                 |
+| `array`   | Danh sách giá trị hoặc object | Thẻ, danh mục, danh sách tính năng |
+
+### Ví dụ schema
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "company_name": {
+            "type": "string"
+        },
+        "is_open_source": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "employee_count": {
+            "type": "number"
+        }
+    },
+    "required": ["company_name"]
+}
+```
+
+
+## Tài liệu liên quan
+
+- [API Scrape](./scrape) — Scrape cơ bản kèm trích JSON
+- [API Crawl](./crawl) — Crawl với tùy chọn trích JSON
+- [Hệ thống Template](./template) — Template trích dữ liệu nâng cao

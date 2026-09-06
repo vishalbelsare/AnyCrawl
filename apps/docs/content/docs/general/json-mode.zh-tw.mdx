@@ -1,0 +1,328 @@
+---
+title: JSON 模式
+description: 使用 LLM 從網頁中擷取結構化資料，支援 JSON Schema 驗證。
+icon: Database
+---
+
+## 簡介
+
+JSON 模式使你能夠使用大型語言模型（LLM）從任意網頁中擷取結構化資料。
+
+AnyCrawl 允許你定義 JSON Schema 和提示詞來引導擷取過程，確保輸出符合你期望的格式。
+
+## 使用範例
+
+JSON 模式支援三種結構化擷取方式：
+
+1. **僅提示詞**：使用自然語言提示詞描述你想擷取的內容。LLM 自行決定輸出結構。
+2. **僅 Schema**：定義 JSON Schema 來嚴格約束輸出結構。LLM 填充內容。
+3. **提示詞 + Schema**：結合 Schema 和提示詞，實現精確的結構和內容引導。
+
+提示：設定 `extract_source` 來控制結構化擷取是讀取產生的 `markdown` 還是原始 `html`。預設為 `markdown`；當 Markdown 遺失重要結構時，請使用 `html`。
+
+重要：使用 `json_options` 時，`formats` 中必須包含 `"json"`，否則回應中不會包含擷取的 JSON 資料。
+
+---
+
+### 1. 僅提示詞（彈性結構）
+
+**步驟：**
+
+1. 設定目標網頁 URL
+2. 編寫描述要擷取資訊的提示詞
+3. 傳送請求
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "user_prompt": "Extract the company mission, open source status, and employee count."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            user_prompt: "Extract the company mission, open source status, and employee count.",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'user_prompt': 'Extract the company mission, open source status, and employee count.'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 2. 僅 Schema（嚴格結構）
+
+**步驟：**
+
+1. 設定目標網頁 URL
+2. 為所需欄位和型別定義 JSON Schema
+3. 傳送請求
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      }
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 3. 提示詞 + Schema（引導式結構與內容）
+
+**步驟：**
+
+1. 設定目標網頁 URL
+2. 為輸出結構定義 JSON Schema
+3. 編寫提示詞引導擷取
+4. 傳送請求
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      },
+      "user_prompt": "Extract the company mission (string), open source status (boolean), and employee count (number)."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+            user_prompt:
+                "Extract the company mission (string), open source status (boolean), and employee count (number).",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema,
+            'user_prompt': 'Extract the company mission (string), open source status (boolean), and employee count (number).'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+## JSON options 物件
+
+`json_options` 參數是一個接受以下參數的物件：
+
+- `schema`：用於擷取的 Schema。
+- `user_prompt`：用於擷取的使用者提示詞。
+- `schema_name`：可選，產生輸出的名稱。
+- `schema_description`：可選，產生輸出的描述。
+
+### JSON Schema
+
+用於擷取的 Schema。常見欄位包括：
+
+- `type`：值的型別，支援的型別如下所示。
+- `properties`：（用於 `object`）指定欄位及其 Schema 的物件。
+- `required`：（用於 `object`）必填欄位名稱的陣列。
+
+#### 支援的型別
+
+| Type      | 描述                 | 範例                           |
+| --------- | -------------------- | ------------------------------ |
+| `string`  | 文字資料             | 公司名稱、描述、標題           |
+| `number`  | 數值                 | 價格、數量、評分               |
+| `boolean` | 布林值（真/假）      | 可用性旗標、功能指示器         |
+| `object`  | 巢狀結構             | 地址詳情、產品規格             |
+| `array`   | 值或物件的列表       | 標籤、分類、功能列表           |
+
+### Schema 範例
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "company_name": {
+            "type": "string"
+        },
+        "is_open_source": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "employee_count": {
+            "type": "number"
+        }
+    },
+    "required": ["company_name"]
+}
+```
+
+
+## 相關文件
+
+- [抓取 API](./scrape) - 基礎抓取與 JSON 擷取
+- [爬取 API](./crawl) - 帶 JSON 擷取選項的爬取
+- [範本系統](./template) - 進階資料擷取範本

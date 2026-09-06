@@ -1,0 +1,107 @@
+---
+title: Cursor
+description: เพิ่มการค้นหาและการดึงข้อมูลเว็บใน Cursor ด้วย AnyCrawl MCP
+icon: MousePointer
+---
+
+# การค้นหาเว็บและการดึงข้อมูลด้วย MCP ใน Cursor
+
+เพิ่มความสามารถด้านการค้นหาและการดึงข้อมูลเว็บใน Cursor ด้วย AnyCrawl MCP
+
+## การตั้งค่าแบบเร็ว
+
+### 1. รับ API Key
+
+ลงทะเบียนที่ [anycrawl.dev](https://anycrawl.dev) แล้วคัดลอก API key จากแดชบอร์ด
+
+### 2. เพิ่มใน Cursor
+
+เปิด Settings (`Cmd+,` บน Mac, `Ctrl+,` บน Windows) ค้นหา "MCP" แล้วเพิ่ม:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "npx",
+            "args": ["-y", "anycrawl-mcp"],
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+แทนที่ `your-api-key` ด้วย AnyCrawl API key จริงของคุณ
+
+### 3. รีสตาร์ท Cursor
+
+เสร็จแล้ว คุณสามารถค้นหาและดึงข้อมูลเว็บจาก Cursor ได้
+
+## สาธิตแบบเร็ว
+
+ลองคำสั่งเหล่านี้ใน Cursor Chat (`Cmd+K`):
+
+**ค้นหาเว็บ:**
+
+```
+Search for TypeScript best practices 2025
+```
+
+**ดึงข้อมูลหน้าเว็บ:**
+
+```
+Scrape anycrawl.dev and tell me what it does
+```
+
+**ดึงเอกสาร:**
+
+```
+Scrape the React hooks documentation and explain useEffect
+```
+
+**ครอลเว็บไซต์:**
+
+```
+Crawl the blog section of example.com and summarize the articles
+```
+
+Cursor จะใช้เครื่องมือ search, scrape และ crawl ของ AnyCrawl โดยอัตโนมัติ
+
+## แก้ปัญหา
+
+### เซิร์ฟเวอร์ไม่ตอบสนอง
+
+1. ตรวจสอบว่า API key ใช้ได้
+2. ติดตั้ง Node.js 18 ขึ้นไป
+3. รีสตาร์ท Cursor หลังแก้การตั้งค่า
+
+### ข้อผิดพลาดสิทธิ์
+
+ให้แน่ใจว่า npx รันได้ อาจต้องติดตั้งแพ็กเกจแบบ global:
+
+```bash
+npm install -g anycrawl-mcp
+```
+
+จากนั้นอัปเดตการตั้งค่าให้ใช้แพ็กเกจ global:
+
+```json
+{
+    "mcpServers": {
+        "anycrawl": {
+            "command": "anycrawl-mcp",
+            "env": {
+                "ANYCRAWL_API_KEY": "your-api-key"
+            }
+        }
+    }
+}
+```
+
+## ขั้นตอนถัดไป
+
+- เรียนรู้ [ตัวเลือกการดึงข้อมูล](../scrape) เพิ่มเติม
+- สำรวจ [ความสามารถการครอล](../crawl)
+- ดู [ฟีเจอร์การค้นหา](../search)
+- อ่าน [เอกสารเซิร์ฟเวอร์ MCP ฉบับเต็ม](../mcp)

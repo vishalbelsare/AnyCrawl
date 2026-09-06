@@ -9,6 +9,8 @@ USER root
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 ENV NODE_ENV=production
+ENV CLOAKBROWSER_CACHE_DIR=/home/myuser/.cache/cloakbrowser
+ENV CLOAKBROWSER_AUTO_UPDATE=false
 RUN corepack enable pnpm
 
 # Build toolchain for native modules (e.g., better-sqlite3)
@@ -28,7 +30,8 @@ COPY --chown=myuser:myuser packages/ai/package.json ./packages/ai/package.json
 COPY --chown=myuser:myuser packages/template-client/package.json ./packages/template-client/package.json
 COPY --chown=myuser:myuser packages/typescript-config/package.json ./packages/typescript-config/package.json
 USER myuser
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile --prod=false
+RUN --mount=type=cache,id=pnpm-glibc,target=/pnpm/store \
+    npm_config_build_from_source=true pnpm install --frozen-lockfile --prod=false
 COPY --chown=myuser:myuser . .
 RUN pnpm build --filter=@anycrawl/libs --filter=@anycrawl/db --filter=@anycrawl/template-client --filter=@anycrawl/ai --filter=@anycrawl/scrape
 RUN rm -rf node_modules
@@ -39,6 +42,7 @@ WORKDIR /usr/src/app/packages/scrape
 RUN chown -R myuser:myuser /usr/src/app
 
 # 1. copy packages and root
+COPY --chown=myuser:myuser --from=build /usr/src/app/package.json /usr/src/app/package.json
 COPY --chown=myuser:myuser --from=build /usr/src/app/pnpm-lock.yaml /usr/src/app/pnpm-lock.yaml
 COPY --chown=myuser:myuser --from=build /usr/src/app/pnpm-workspace.yaml /usr/src/app/pnpm-workspace.yaml
 COPY --chown=myuser:myuser --from=build /usr/src/app/packages/eslint-config/package.json /usr/src/app/packages/eslint-config/package.json
@@ -59,17 +63,17 @@ COPY --chown=myuser:myuser --from=build /usr/src/app/packages/ai/package.json /u
 COPY --chown=myuser:myuser --from=build /usr/src/app/packages/template-client/package.json /usr/src/app/packages/template-client/package.json
 
 USER myuser
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
-# Ensure native modules rebuilt for current platform
+RUN --mount=type=cache,id=pnpm-glibc,target=/pnpm/store \
+    npm_config_build_from_source=true pnpm install --prod --frozen-lockfile
+RUN npx cloakbrowser install
+# Ensure better-sqlite3 is compiled inside this glibc image (avoid musl prebuild artifacts)
 RUN pnpm rebuild better-sqlite3
 
-# Ensure puppeteer browsers are properly installed
-RUN npx puppeteer browsers install chrome
-
-# Set puppeteer environment variables
 ENV PUPPETEER_CACHE_DIR=/home/myuser/.cache/puppeteer
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=false
+RUN mkdir -p /home/myuser/.cache/puppeteer
+RUN npx puppeteer browsers install chrome
+
 ENV ANYCRAWL_AVAILABLE_ENGINES=puppeteer
 
 CMD [ "node", "dist/Worker.js" ]
-

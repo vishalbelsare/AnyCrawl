@@ -1,0 +1,328 @@
+---
+title: JSON モード
+description: LLM と JSON Schema 検証を使って Web ページから構造化データを抽出する
+icon: Database
+---
+
+## はじめに
+
+JSON モードでは、大規模言語モデル（LLM）を使って任意の Web ページから構造化データを抽出できます。
+
+AnyCrawl では JSON Schema とプロンプトを定義し、抽出処理をガイドできます。出力を希望の形式に合わせられます。
+
+## 使用例
+
+JSON モードには次の 3 つの構造化抽出パターンがあります。
+
+1. **プロンプトのみ**：自然言語のプロンプトで抽出したい内容を記述します。出力の構造は LLM が決めます。
+2. **スキーマのみ**：JSON Schema で出力構造を厳密に制約します。LLM が値を埋めます。
+3. **プロンプト + スキーマ**：構造と内容の両方を、スキーマとプロンプトで細かく指定します。
+
+ヒント：`extract_source` で、構造化抽出の入力に生成済みの `markdown` を使うか、元の `html` を使うかを制御できます。既定は `markdown` です。Markdown で重要な構造が失われる場合は `html` を使います。
+
+重要：`json_options` を使うときは `formats` に `"json"` を含めてください。含めないとレスポンスに抽出済み JSON が含まれません。
+
+---
+
+### 1. プロンプトのみ（柔軟な構造）
+
+**手順：**
+
+1. 対象ページの URL を指定する
+2. 抽出したい情報をプロンプトで書く
+3. リクエストを送る
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "user_prompt": "Extract the company mission, open source status, and employee count."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            user_prompt: "Extract the company mission, open source status, and employee count.",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'user_prompt': 'Extract the company mission, open source status, and employee count.'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 2. スキーマのみ（厳密な構造）
+
+**手順：**
+
+1. 対象ページの URL を指定する
+2. 必要なフィールドと型の JSON Schema を定義する
+3. リクエストを送る
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      }
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 3. プロンプト + スキーマ（構造と内容ガイド）
+
+**手順：**
+
+1. 対象ページの URL を指定する
+2. 出力の JSON Schema を定義する
+3. 抽出をガイドするプロンプトを書く
+4. リクエストを送る
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      },
+      "user_prompt": "Extract the company mission (string), open source status (boolean), and employee count (number)."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+            user_prompt:
+                "Extract the company mission (string), open source status (boolean), and employee count (number).",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema,
+            'user_prompt': 'Extract the company mission (string), open source status (boolean), and employee count (number).'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+## `json_options` オブジェクト
+
+`json_options` パラメータは次のフィールドを受け取るオブジェクトです。
+
+- `schema`：抽出に使うスキーマ。
+- `user_prompt`：抽出に使うユーザープロンプト。
+- `schema_name`：生成する出力の名前（任意）。
+- `schema_description`：生成する出力の説明（任意）。
+
+### JSON Schema
+
+抽出に使うスキーマです。よく使うフィールドは次のとおりです。
+
+- `type`：値の型。サポートされる型は下表のとおりです。
+- `properties`：（`object` の場合）フィールドとそのスキーマを指定するオブジェクト。
+- `required`：（`object` の場合）必須フィールド名の配列。
+
+#### サポートされる型
+
+| 型      | 説明           | 例                                       |
+| --------- | ---------------- | ------------------------------------------ |
+| `string`  | テキスト         | 会社名、説明、見出し                       |
+| `number`  | 数値             | 価格、数量、評価                           |
+| `boolean` | 真偽             | 在庫フラグ、機能の有無                     |
+| `object`  | 入れ子構造       | 住所、製品仕様                           |
+| `array`   | 値またはオブジェクトのリスト | タグ、カテゴリ、機能リスト |
+
+### スキーマの例
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "company_name": {
+            "type": "string"
+        },
+        "is_open_source": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "employee_count": {
+            "type": "number"
+        }
+    },
+    "required": ["company_name"]
+}
+```
+
+
+## 関連ドキュメント
+
+- [Scrape API](./scrape) - JSON 抽出と基本スクレイプ
+- [Crawl API](./crawl) - JSON 抽出オプション付きクロール
+- [テンプレート](./template) - 高度なデータ抽出テンプレート

@@ -1,0 +1,328 @@
+---
+title: Режим JSON
+description: Извлечение структурированных данных с веб-страниц с помощью LLM и проверки по JSON Schema.
+icon: Database
+---
+
+## Введение
+
+Режим JSON позволяет извлекать структурированные данные с любой веб-страницы с помощью больших языковых моделей (LLM).
+
+AnyCrawl позволяет задать JSON Schema и подсказки, направляющие извлечение, чтобы выход соответствовал нужному формату.
+
+## Примеры использования
+
+Режим JSON поддерживает три режима структурированного извлечения:
+
+1. **Только подсказка**: естественноязыковое описание того, что нужно извлечь. Структуру вывода определяет LLM.
+2. **Только схема**: JSON Schema жёстко задаёт структуру вывода. LLM заполняет содержимое.
+3. **Подсказка + схема**: сочетание схемы и подсказки для точной структуры и содержания.
+
+Совет: задайте `extract_source`, чтобы управлять тем, из сгенерированного `markdown` или из исходного `html` читается структурированное извлечение. По умолчанию — `markdown`; используйте `html`, если markdown теряет важную структуру.
+
+Важно: при использовании `json_options` включите `"json"` в `formats`, иначе в ответе не будет извлечённых JSON-данных.
+
+---
+
+### 1. Только подсказка (гибкая структура)
+
+**Шаги:**
+
+1. Укажите URL целевой страницы
+2. Напишите подсказку с описанием информации для извлечения
+3. Отправьте запрос
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "user_prompt": "Extract the company mission, open source status, and employee count."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            user_prompt: "Extract the company mission, open source status, and employee count.",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'user_prompt': 'Extract the company mission, open source status, and employee count.'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 2. Только схема (строгая структура)
+
+**Шаги:**
+
+1. Укажите URL целевой страницы
+2. Определите JSON Schema для нужных полей и типов
+3. Отправьте запрос
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      }
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+---
+
+### 3. Подсказка + схема (структура и содержание под контролем)
+
+**Шаги:**
+
+1. Укажите URL целевой страницы
+2. Определите JSON Schema для структуры вывода
+3. Напишите подсказку для направления извлечения
+4. Отправьте запрос
+
+```bash tab="cURL"
+curl -X POST "https://api.anycrawl.dev/v1/scrape" \
+  -H "Authorization: Bearer <your-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://example.com",
+    "formats": ["json"],
+    "json_options": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "company_mission": { "type": "string" },
+          "is_open_source": { "type": "boolean" },
+          "employee_count": { "type": "number" }
+        },
+        "required": ["company_mission"]
+      },
+      "user_prompt": "Extract the company mission (string), open source status (boolean), and employee count (number)."
+    }
+  }'
+```
+
+```javascript tab="JavaScript"
+const response = await fetch("https://api.anycrawl.dev/v1/scrape", {
+    method: "POST",
+    headers: {
+        Authorization: "Bearer YOUR_API_KEY",
+        "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+        url: "https://example.com",
+        formats: ["json"],
+        json_options: {
+            schema: {
+                type: "object",
+                properties: {
+                    company_mission: { type: "string" },
+                    is_open_source: { type: "boolean" },
+                    employee_count: { type: "number" },
+                },
+                required: ["company_mission"],
+            },
+            user_prompt:
+                "Extract the company mission (string), open source status (boolean), and employee count (number).",
+        },
+    }),
+});
+const result = await response.json();
+console.log(result.data.json);
+```
+
+```python tab="Python"
+schema = {
+    "type": "object",
+    "properties": {
+        "company_mission": {"type": "string"},
+        "is_open_source": {"type": "boolean"},
+        "employee_count": {"type": "number"}
+    },
+    "required": ["company_mission"]
+}
+
+import requests
+
+response = requests.post(
+    'https://api.anycrawl.dev/v1/scrape',
+    headers={
+        'Authorization': 'Bearer YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'url': 'https://example.com',
+        'formats': ['json'],
+        'json_options': {
+            'schema': schema,
+            'user_prompt': 'Extract the company mission (string), open source status (boolean), and employee count (number).'
+        }
+    }
+)
+print(response.json()['data']['json'])
+```
+
+## Объект `json_options`
+
+Параметр `json_options` — объект со следующими полями:
+
+- `schema`: схема для извлечения.
+- `user_prompt`: пользовательская подсказка для извлечения.
+- `schema_name`: необязательное имя выходных данных.
+- `schema_description`: необязательное описание выходных данных.
+
+### JSON Schema
+
+Схема для извлечения. Типичные поля:
+
+- `type`: тип значения; поддерживаемые типы ниже.
+- `properties`: (для `object`) объект с полями и их схемами.
+- `required`: (для `object`) массив обязательных имён полей.
+
+#### Поддерживаемые типы
+
+| Type      | Описание                         | Пример                                      |
+| --------- | -------------------------------- | ------------------------------------------- |
+| `string`  | Текстовые данные                 | Название компании, описания, заголовки      |
+| `number`  | Числовые значения                | Цены, количества, рейтинги                  |
+| `boolean` | Логические значения              | Флаги доступности, признаки функций         |
+| `object`  | Вложенные структуры              | Адрес, спецификации продукта                |
+| `array`   | Списки значений или объектов     | Теги, категории, списки возможностей         |
+
+### Пример схемы
+
+```json
+{
+    "type": "object",
+    "properties": {
+        "company_name": {
+            "type": "string"
+        },
+        "is_open_source": {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "employee_count": {
+            "type": "number"
+        }
+    },
+    "required": ["company_name"]
+}
+```
+
+
+## Связанная документация
+
+- [Scrape API](./scrape) — базовый скрейпинг с извлечением JSON
+- [Crawl API](./crawl) — обход с опциями JSON
+- [Система шаблонов](./template) — расширенные шаблоны извлечения данных

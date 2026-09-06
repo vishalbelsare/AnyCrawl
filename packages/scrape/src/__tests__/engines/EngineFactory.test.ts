@@ -83,6 +83,71 @@ describe('EngineFactory Tests', () => {
             expect(factoryModule.PuppeteerEngineFactory).toBeDefined();
             expect(factoryModule.EngineFactoryRegistry).toBeDefined();
         });
+
+        test('should inject CloakBrowser launcher into playwright and puppeteer factories', async () => {
+            jest.resetModules();
+
+            const playwrightLauncher = jest.fn();
+            const puppeteerLauncher = jest.fn();
+            jest.unstable_mockModule('cloakbrowser', () => ({
+                ensureBinary: jest.fn(async () => undefined),
+                launch: playwrightLauncher,
+                launchPersistentContext: jest.fn(async () => undefined),
+            }));
+            jest.unstable_mockModule('cloakbrowser/puppeteer', () => ({
+                ensureBinary: jest.fn(async () => undefined),
+                launch: puppeteerLauncher,
+            }));
+
+            const factoryModule = await import('../../engines/EngineFactory.js');
+            const playwrightOptions = await (new factoryModule.PlaywrightEngineFactory() as any).getEngineSpecificOptions();
+            const puppeteerOptions = await (new factoryModule.PuppeteerEngineFactory() as any).getEngineSpecificOptions();
+
+            expect(playwrightOptions.launchContext.launcher.launch).toBe(playwrightLauncher);
+            expect(playwrightOptions.launchContext.launcher.name()).toBe('chromium');
+            expect(typeof playwrightOptions.launchContext.launcher.launchPersistentContext).toBe('function');
+            expect(playwrightOptions.launchContext.launcher.__anycrawlBrowserRuntime).toBe('cloakbrowser');
+            expect(playwrightOptions.launchContext.useIncognitoPages).toBe(true);
+            expect(puppeteerOptions.launchContext.launcher.launch).toBe(puppeteerLauncher);
+            expect(puppeteerOptions.launchContext.launcher.__anycrawlBrowserRuntime).toBe('cloakbrowser');
+            expect(puppeteerOptions.launchContext.useIncognitoPages).toBe(true);
+        });
+
+        test('should preserve the CloakBrowser launcher when custom launchContext is supplied', async () => {
+            jest.resetModules();
+
+            const playwrightLauncher = jest.fn();
+            const customLauncher = { launch: jest.fn() };
+            jest.unstable_mockModule('cloakbrowser', () => ({
+                ensureBinary: jest.fn(async () => undefined),
+                launch: playwrightLauncher,
+                launchPersistentContext: jest.fn(async () => undefined),
+            }));
+
+            const factoryModule = await import('../../engines/EngineFactory.js');
+            const playwrightOptions = await (new factoryModule.PlaywrightEngineFactory() as any).getEngineSpecificOptions();
+            const mergedLaunchContext = factoryModule.mergeLaunchContexts(
+                playwrightOptions.launchContext,
+                {
+                    launcher: customLauncher,
+                    launchOptions: {
+                        defaultViewport: {
+                            width: 800,
+                            height: 600,
+                        },
+                        args: ['--custom-arg'],
+                    },
+                },
+            ) as any;
+
+            expect(mergedLaunchContext.launcher.launch).toBe(playwrightLauncher);
+            expect(mergedLaunchContext.launcher).not.toBe(customLauncher);
+            expect(mergedLaunchContext.launchOptions.defaultViewport).toEqual({
+                width: 800,
+                height: 600,
+            });
+            expect(mergedLaunchContext.launchOptions.args).toContain('--custom-arg');
+        });
     });
 
     describe('Engine Type Management', () => {

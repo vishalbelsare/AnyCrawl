@@ -1,7 +1,7 @@
-import { getDB, schemas, eq, sql, completedJob, failedJob, Billing } from "@anycrawl/db";
+import { getDB, schemas, eq, sql, completedJob, failedJob, Billing, withDatabaseTransaction, type DatabaseSteps, createMonitorCheckSteps, MonitorBusyError, gte, lte, lt } from "@anycrawl/db";
 import { QueueManager } from "./Queue.js";
 import { randomUUID } from "crypto";
-import { Job, Queue } from "bullmq";
+import { Job, Queue, DelayedError } from "bullmq";
 import type IORedis from "ioredis";
 import {
     WebhookEventType,
@@ -306,17 +306,11 @@ export class SchedulerManager {
                         triggeredBy: "manual",
                     },
                     {
-                        // Time-bucketed jobId: bursts of /check calls within the same
-                        // 10s window map to one BullMQ jobId and are silently deduped
-                        // into a single run. The /check dedup guard only sees
-                        // task_executions rows, which the scheduler worker creates
-                        // seconds later — without this, N parallel calls (there is no
-                        // API-level rate limit) become N scrapes and N charges. It also
-                        // neutralizes the enqueue-timeout race: a retry after a timed-out
-                        // add that actually landed dedupes instead of double-firing.
-                        jobId: `manual:${task.uuid}:${Math.floor(Date.now() / 10_000)}`,
-                        removeOnComplete: 100,
-                        removeOnFail: 100,
+                        // Keep one queued manual request per task until dispatch.
+                        // Afterwards the execution/check rows provide single-flight.
+                        jobId: `manual-${task.uuid}`,
+                        removeOnComplete: true,
+                        removeOnFail: true,
                     }
                 ),
                 new Promise<never>((_, reject) => {
@@ -585,8 +579,8 @@ export class SchedulerManager {
                 }
             }
 
-            // Check concurrency mode (manual on-demand checks bypass the skip guard)
-            if (task.concurrencyMode === "skip" && !isManual) {
+            // Manual and cron checks share the same concurrency boundary.
+            if (task.concurrencyMode === "skip") {
                 const runningExecution = await db
                     .select()
                     .from(schemas.taskExecutions)
@@ -601,11 +595,11 @@ export class SchedulerManager {
                         `[SCHEDULER] Task ${task.name} is already running, skipping (concurrency: skip)`
                     );
                     // Still update nextExecutionAt even when skipping
-                    await this.updateNextExecutionTime(task);
+                    if (!isManual) await this.updateNextExecutionTime(task);
                     return;
                 }
             }
-            // For "queue" mode, we don't skip - let it queue up
+            // Monitor queue mode is serialized by the active-check unique index.
 
             // Check daily execution limit
             if (task.maxExecutionsPerDay && task.maxExecutionsPerDay > 0) {
@@ -617,7 +611,7 @@ export class SchedulerManager {
                     .from(schemas.taskExecutions)
                     .where(
                         sql`${schemas.taskExecutions.scheduledTaskUuid} = ${task.uuid}
-                            AND ${schemas.taskExecutions.createdAt} >= ${today}`
+                            AND ${gte(schemas.taskExecutions.createdAt, today)}`
                     );
 
                 const count = todayExecutions[0]?.count || 0;
@@ -639,9 +633,12 @@ export class SchedulerManager {
             // with the cron-slot key; scheduled runs use the deterministic slot key for dedup.
             const scheduledFor = isManual
                 ? executionCreatedAt
-                : resolveScheduledFor(task.nextExecutionAt, executionCreatedAt);
+                : resolveScheduledFor(job.data.scheduledFor ?? task.nextExecutionAt, executionCreatedAt);
+            if (!isManual && !job.data.scheduledFor && typeof job.updateData === "function") {
+                await job.updateData({ ...job.data, scheduledFor: scheduledFor.toISOString() });
+            }
             idempotencyKey = isManual
-                ? `${task.uuid}-manual-${job.id ?? executionCreatedAt.toISOString()}`
+                ? `${task.uuid}-manual-${job.id ?? "manual"}-${job.timestamp ?? executionCreatedAt.getTime()}`
                 : buildScheduledExecutionIdempotencyKey(task.uuid, scheduledFor);
             const existingExecution = await db
                 .select({ uuid: schemas.taskExecutions.uuid })
@@ -662,39 +659,44 @@ export class SchedulerManager {
 
             // Persist execution attempt first (no external side effects in this transaction)
             // This guarantees every attempt has a durable execution record.
-            await db.transaction(async (tx: any) => {
-                // Increment totalExecutions for every attempt and use it as execution number
-                const updatedTask = await tx
-                    .update(schemas.scheduledTasks)
-                    .set({
-                        totalExecutions: sql`${schemas.scheduledTasks.totalExecutions} + 1`,
-                        lastExecutionAt: executionCreatedAt,
-                        updatedAt: executionCreatedAt,
-                    })
-                    .where(eq(schemas.scheduledTasks.uuid, task.uuid))
-                    .returning({ totalExecutions: schemas.scheduledTasks.totalExecutions });
-
-                if (updatedTask.length === 0) {
-                    throw new Error(
-                        `Scheduled task ${task.uuid} not found while creating execution`
-                    );
+            const admitted = await withDatabaseTransaction(db, function* (tx: any): DatabaseSteps<boolean> {
+                // Lock before reading monitor state, matching configuration/commit
+                // lock order. Legacy orphan tasks must not keep billing invisibly.
+                const [lockedTask] = yield tx.update(schemas.scheduledTasks)
+                    .set({ updatedAt: sql`${schemas.scheduledTasks.updatedAt}` })
+                    .where(sql`${schemas.scheduledTasks.uuid} = ${task.uuid} AND ${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`)
+                    .returning();
+                if (!lockedTask) return false;
+                task = lockedTask;
+                const [monitor] = yield tx.select().from(schemas.monitors)
+                    .where(eq(schemas.monitors.scheduledTaskUuid, task.uuid)).limit(1);
+                if ((task.metadata?.monitorManaged === true && !monitor) || (monitor && !monitor.isActive)) {
+                    task = { ...task, isPaused: true, pauseReason: monitor ? "Paused with inactive monitor" : "Auto-paused: monitor record is missing" };
+                    yield tx.update(schemas.scheduledTasks).set({ isPaused: true, pauseReason: task.pauseReason, updatedAt: executionCreatedAt })
+                        .where(eq(schemas.scheduledTasks.uuid, task.uuid));
+                    return false;
                 }
-
-                executionNumber = updatedTask[0].totalExecutions;
-
-                // Create execution record
+                const [updatedTask] = yield tx.update(schemas.scheduledTasks).set({
+                    totalExecutions: sql`${schemas.scheduledTasks.totalExecutions} + 1`,
+                    lastExecutionAt: executionCreatedAt, updatedAt: executionCreatedAt,
+                }).where(eq(schemas.scheduledTasks.uuid, task.uuid)).returning();
+                task = updatedTask;
+                executionNumber = task.totalExecutions;
                 executionUuid = randomUUID();
-                await tx.insert(schemas.taskExecutions).values({
-                    uuid: executionUuid,
-                    scheduledTaskUuid: task.uuid,
-                    executionNumber: executionNumber!,
-                    idempotencyKey: idempotencyKey!,
-                    status: "pending",
-                    scheduledFor,
-                    triggeredBy: isManual ? "manual" : "scheduler",
-                    createdAt: executionCreatedAt,
+                yield tx.insert(schemas.taskExecutions).values({
+                    uuid: executionUuid, scheduledTaskUuid: task.uuid, executionNumber: executionNumber!,
+                    idempotencyKey: idempotencyKey!, status: "pending", scheduledFor,
+                    triggeredBy: isManual ? "manual" : "scheduler", createdAt: executionCreatedAt,
                 });
+                if (monitor) yield* createMonitorCheckSteps(tx, { monitor, executionUuid: executionUuid!, sequenceNumber: executionNumber!, now: executionCreatedAt });
+                return true;
             });
+            if (!admitted) {
+                // Periodic sync reconciles the latest database state, so a stale
+                // admission attempt cannot remove a just-resumed cron entry.
+                log.warning(`[SCHEDULER] Task ${task.uuid} was paused, removed, or has no active monitor; dispatch skipped`);
+                return;
+            }
 
             if (!executionUuid) {
                 throw new Error(`Failed to create execution record for task ${task.uuid}`);
@@ -775,13 +777,22 @@ export class SchedulerManager {
                         },
                         "task",
                         task.uuid,
-                        task.userId ?? undefined
+                        { userId: task.userId ?? undefined, apiKeyId: task.apiKey ?? undefined }
                     );
                 }
             } catch (e) {
                 log.warning(`[SCHEDULER] Failed to trigger webhook for task execution: ${e}`);
             }
         } catch (error) {
+            if (error instanceof MonitorBusyError) {
+                if (task?.concurrencyMode === "queue" && typeof job.moveToDelayed === "function") {
+                    await job.moveToDelayed(Date.now() + 1000, job.token);
+                    throw new DelayedError();
+                }
+                if (!isManual && task?.concurrencyMode !== "queue") await this.updateNextExecutionTime(task);
+                return;
+            }
+            if (error instanceof DelayedError) throw error;
             const dispatchState = resolveDispatchStateFromError(
                 executionDispatched,
                 jobUuid,
@@ -851,7 +862,7 @@ export class SchedulerManager {
                                 },
                                 "task",
                                 taskUuid,
-                                failedTask[0].userId ?? undefined
+                                { userId: failedTask[0].userId ?? undefined, apiKeyId: failedTask[0].apiKey ?? undefined }
                             );
                         }
                     }
@@ -1172,6 +1183,13 @@ export class SchedulerManager {
             if (!persistedJobUuid) {
                 throw new Error(`Failed to persist scheduled job record for task ${task.uuid}`);
             }
+
+            await withDatabaseTransaction(db, function* (tx): DatabaseSteps<void> {
+                yield tx.update(schemas.taskExecutions).set({ jobUuid: persistedJobUuid })
+                    .where(eq(schemas.taskExecutions.uuid, executionUuid));
+                yield tx.update(schemas.monitorChecks).set({ jobUuid: persistedJobUuid })
+                    .where(eq(schemas.monitorChecks.uuid, executionUuid));
+            });
 
             await queueManager.getQueue(queueName).add(
                 queueName, // Use queueName as job name
@@ -1604,7 +1622,7 @@ export class SchedulerManager {
                 .from(schemas.scheduledTasks)
                 .where(
                     sql`${schemas.scheduledTasks.isActive} = true
-                        AND ${schemas.scheduledTasks.updatedAt} >= ${this.lastSyncTime}`
+                        AND ${gte(schemas.scheduledTasks.updatedAt, this.lastSyncTime)}`
                 );
 
             if (updatedTasks.length > 0) {
@@ -1668,7 +1686,7 @@ export class SchedulerManager {
                 sql`${schemas.scheduledTasks.isActive} = true
                     AND ${schemas.scheduledTasks.isPaused} = false
                     AND ${schemas.scheduledTasks.nextExecutionAt} IS NOT NULL
-                    AND ${schemas.scheduledTasks.nextExecutionAt} <= ${now}`
+                    AND ${lte(schemas.scheduledTasks.nextExecutionAt, now)}`
             );
 
         if (overdueTasks.length === 0) {
@@ -1718,7 +1736,7 @@ export class SchedulerManager {
                 .where(
                     sql`${schemas.taskExecutions.status} = 'pending'
                         AND ${schemas.taskExecutions.startedAt} IS NULL
-                        AND ${schemas.taskExecutions.createdAt} < ${staleThreshold}`
+                        AND ${lt(schemas.taskExecutions.createdAt, staleThreshold)}`
                 );
 
             let cleanedNeverStarted = 0;
@@ -1758,7 +1776,7 @@ export class SchedulerManager {
                 .where(
                     sql`${schemas.taskExecutions.status} = 'pending'
                         AND ${schemas.taskExecutions.startedAt} IS NOT NULL
-                        AND ${schemas.taskExecutions.startedAt} < ${staleThreshold}`
+                        AND ${lt(schemas.taskExecutions.startedAt, staleThreshold)}`
                 );
 
             let cleanedStartedButPending = 0;
@@ -1828,7 +1846,7 @@ export class SchedulerManager {
                 .where(
                     sql`${schemas.taskExecutions.status} = 'running'
                         AND ${schemas.taskExecutions.startedAt} IS NULL
-                        AND ${schemas.taskExecutions.createdAt} < ${runningNoStartThreshold}`
+                        AND ${lt(schemas.taskExecutions.createdAt, runningNoStartThreshold)}`
                 );
 
             let cleanedNeverStarted = 0;
@@ -1999,69 +2017,31 @@ export class SchedulerManager {
      */
     private async enforceSubscriptionLimits(db: Awaited<ReturnType<typeof getDB>>): Promise<void> {
         if (!isScheduledTasksLimitEnabled()) return;
-
-        try {
-            // Single JOIN query: get user task counts with subscription tier
-            const userStats = await db
-                .select({
-                    userId: schemas.scheduledTasks.userId,
-                    apiKey: schemas.scheduledTasks.apiKey,
-                    subscriptionTier: schemas.apiKey.subscriptionTier,
-                    taskCount: sql<number>`count(*)`,
-                })
-                .from(schemas.scheduledTasks)
-                .leftJoin(schemas.apiKey, eq(schemas.scheduledTasks.apiKey, schemas.apiKey.uuid))
-                .where(
-                    sql`${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`
-                )
-                .groupBy(
-                    schemas.scheduledTasks.userId,
-                    schemas.scheduledTasks.apiKey,
-                    schemas.apiKey.subscriptionTier
-                );
-
-            for (const userStat of userStats) {
-                const tier = userStat.subscriptionTier || "free";
-                const limit = getScheduledTasksLimit(tier);
-                const count = Number(userStat.taskCount);
-
-                if (count > limit) {
-                    // Get tasks to pause (keep oldest, pause newest)
-                    const tasksToCheck = await db
-                        .select({
-                            uuid: schemas.scheduledTasks.uuid,
-                            name: schemas.scheduledTasks.name,
-                        })
-                        .from(schemas.scheduledTasks)
-                        .where(
-                            sql`${schemas.scheduledTasks.userId} = ${userStat.userId}
-                                AND ${schemas.scheduledTasks.isActive} = true
-                                AND ${schemas.scheduledTasks.isPaused} = false`
-                        )
-                        .orderBy(sql`${schemas.scheduledTasks.createdAt} ASC`);
-
-                    // Pause tasks beyond the limit
-                    const tasksToPause = tasksToCheck.slice(limit);
-
-                    for (const task of tasksToPause) {
-                        await db
-                            .update(schemas.scheduledTasks)
-                            .set({
-                                isPaused: true,
-                                pauseReason: buildAutoPauseReason(limit),
-                                updatedAt: new Date(),
-                            })
-                            .where(eq(schemas.scheduledTasks.uuid, task.uuid));
-
-                        await this.removeScheduledTask(task.uuid);
-                        log.warning(
-                            `[SCHEDULER] Auto-paused task ${task.name} due to subscription limit`
-                        );
-                    }
-                }
+        const tasks = await db.select({
+            uuid: schemas.scheduledTasks.uuid, userId: schemas.scheduledTasks.userId,
+            apiKey: schemas.scheduledTasks.apiKey, metadata: schemas.scheduledTasks.metadata,
+            createdAt: schemas.scheduledTasks.createdAt, tier: schemas.apiKey.subscriptionTier,
+        }).from(schemas.scheduledTasks)
+            .leftJoin(schemas.apiKey, eq(schemas.scheduledTasks.apiKey, schemas.apiKey.uuid))
+            .where(sql`${schemas.scheduledTasks.isActive} = true AND ${schemas.scheduledTasks.isPaused} = false`);
+        const owners = new Map<string, { tasks: any[]; limit: number }>();
+        for (const task of tasks) {
+            if (task.metadata?.monitorManaged === true) continue;
+            const key = task.userId ? `user:${task.userId}` : `key:${task.apiKey ?? "single-tenant"}`;
+            const limit = getScheduledTasksLimit(task.tier || "free");
+            const owner = owners.get(key) ?? { tasks: [], limit };
+            owner.tasks.push(task);
+            owner.limit = Math.max(owner.limit, limit);
+            owners.set(key, owner);
+        }
+        for (const owner of owners.values()) {
+            owner.tasks.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || a.uuid.localeCompare(b.uuid));
+            for (const task of owner.tasks.slice(owner.limit)) {
+                await db.update(schemas.scheduledTasks).set({
+                    isPaused: true, pauseReason: buildAutoPauseReason(owner.limit), updatedAt: new Date(),
+                }).where(eq(schemas.scheduledTasks.uuid, task.uuid));
+                await this.removeScheduledTask(task.uuid);
             }
-        } catch (error) {
-            log.error(`[SCHEDULER] Error enforcing subscription limits: ${error}`);
         }
     }
 

@@ -86,7 +86,7 @@
         "axios": "^1.12.2",
         "bullmq": "^5.45.1",
         "cheerio": "^1.0.0",
-        "cloakbrowser": "0.3.30",
+        "cloakbrowser": "0.5.7",
         "crawlee": "^3.13.0",
         "cron-parser": "^5.5.0",
         "html-to-text": "^9.0.5",

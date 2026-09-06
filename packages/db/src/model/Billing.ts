@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { log } from "@anycrawl/libs/log";
 import type { BillingChargeDetailsV1, BillingChargeItem, BillingMode } from "@anycrawl/libs";
 import { getDB, schemas } from "../db/index.js";
+import { withDatabaseTransaction, runDatabaseWork, type DatabaseSteps, type DatabaseWork } from "../transaction.js";
 
 type DBExecutor = any;
 
@@ -173,8 +174,8 @@ export class Billing {
         });
     }
 
-    private static async reserveLedgerEntry(tx: DBExecutor, reservation: BillingLedgerReservation): Promise<boolean> {
-        const [inserted] = await tx
+    private static *reserveLedgerEntry(tx: DBExecutor, reservation: BillingLedgerReservation): DatabaseSteps<boolean> {
+        const [inserted] = yield tx
             .insert(schemas.billingLedger)
             .values({
                 jobId: reservation.jobId,
@@ -198,17 +199,17 @@ export class Billing {
         return !!inserted;
     }
 
-    private static async fillLedgerCreditsSnapshot(
+    private static *fillLedgerCreditsSnapshot(
         tx: DBExecutor,
         idempotencyKey: string,
         charged: number,
         remainingCredits: number | undefined,
-    ): Promise<void> {
+    ): DatabaseSteps<void> {
         if (typeof remainingCredits !== "number") {
             return;
         }
 
-        await tx
+        yield tx
             .update(schemas.billingLedger)
             .set({
                 beforeCredits: remainingCredits + charged,
@@ -217,17 +218,17 @@ export class Billing {
             .where(eq(schemas.billingLedger.idempotencyKey, idempotencyKey));
     }
 
-    private static async runInTransaction<T>(dbOrTx: DBExecutor | undefined, work: (tx: DBExecutor) => Promise<T>): Promise<T> {
+    private static async runInTransaction<T>(dbOrTx: DBExecutor | undefined, work: DatabaseWork<T>): Promise<T> {
         if (dbOrTx) {
-            return work(dbOrTx);
+            return runDatabaseWork(dbOrTx, tx => work.call(this, tx));
         }
 
         const db = await getDB();
-        return db.transaction(async (tx: DBExecutor) => work(tx));
+        return withDatabaseTransaction(db, tx => work.call(this, tx));
     }
 
-    private static async getJobBillingContext(tx: DBExecutor, jobId: string): Promise<JobBillingContext> {
-        const [jobRow] = await tx
+    private static *getJobBillingContext(tx: DBExecutor, jobId: string): DatabaseSteps<JobBillingContext> {
+        const [jobRow] = yield tx
             .select({
                 apiKey: schemas.jobs.apiKey,
                 creditsUsed: schemas.jobs.creditsUsed,
@@ -262,8 +263,8 @@ export class Billing {
             throw new Error("jobId is required for chargeDeltaByJobId");
         }
 
-        return this.runInTransaction(dbOrTx, async (tx) => {
-            const context = await this.getJobBillingContext(tx, jobId);
+        return this.runInTransaction(dbOrTx, function* (this: typeof Billing, tx: DBExecutor): DatabaseSteps<BillingChargeResult> {
+            const context = yield* this.getJobBillingContext(tx, jobId);
             if (normalizedDelta <= 0) {
                 return {
                     jobId,
@@ -284,7 +285,7 @@ export class Billing {
             });
             const normalizedChargeDetails = this.normalizeChargeDetails(chargeDetails, normalizedDelta, reason);
             const now = new Date();
-            const reserved = await this.reserveLedgerEntry(tx, {
+            const reserved = yield* this.reserveLedgerEntry(tx, {
                 jobId,
                 apiKey: context.apiKey,
                 mode: "delta",
@@ -306,7 +307,7 @@ export class Billing {
                 };
             }
 
-            await tx
+            yield tx
                 .update(schemas.jobs)
                 .set({
                     creditsUsed: sql`${schemas.jobs.creditsUsed} + ${normalizedDelta}`,
@@ -315,7 +316,7 @@ export class Billing {
                 })
                 .where(eq(schemas.jobs.jobId, jobId));
 
-            const [updatedApiKey] = await tx
+            const [updatedApiKey] = yield tx
                 .update(schemas.apiKey)
                 .set({
                     credits: sql`${schemas.apiKey.credits} - ${normalizedDelta}`,
@@ -328,7 +329,7 @@ export class Billing {
 
             const remainingCredits = typeof updatedApiKey?.credits === "number" ? updatedApiKey.credits : undefined;
             const currentUsed = afterUsed;
-            await this.fillLedgerCreditsSnapshot(tx, effectiveIdempotencyKey, normalizedDelta, remainingCredits);
+            yield* this.fillLedgerCreditsSnapshot(tx, effectiveIdempotencyKey, normalizedDelta, remainingCredits);
             log.info(`[BILLING] chargeDelta jobId=${jobId} reason=${reason} charged=${normalizedDelta} used=${currentUsed}`);
 
             return {
@@ -355,9 +356,9 @@ export class Billing {
         const normalizedTargetUsed = this.normalizeNonNegativeNumber(targetUsed);
         const MAX_RETRIES = 5;
 
-        return this.runInTransaction(dbOrTx, async (tx) => {
+        return this.runInTransaction(dbOrTx, function* (this: typeof Billing, tx: DBExecutor): DatabaseSteps<BillingChargeResult> {
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-                const context = await this.getJobBillingContext(tx, jobId);
+                const context = yield* this.getJobBillingContext(tx, jobId);
                 const delta = normalizedTargetUsed - context.currentUsed;
 
                 if (delta <= 0) {
@@ -369,7 +370,7 @@ export class Billing {
                 }
 
                 const now = new Date();
-                const [updatedJob] = await tx
+                const [updatedJob] = yield tx
                     .update(schemas.jobs)
                     .set({
                         creditsUsed: normalizedTargetUsed,
@@ -400,7 +401,7 @@ export class Billing {
                     idempotencyKey,
                 });
                 const normalizedChargeDetails = this.normalizeChargeDetails(chargeDetails, delta, reason);
-                const reserved = await this.reserveLedgerEntry(tx, {
+                const reserved = yield* this.reserveLedgerEntry(tx, {
                     jobId,
                     apiKey: context.apiKey,
                     mode: "target",
@@ -417,7 +418,7 @@ export class Billing {
                     throw new Error(`Duplicate billing idempotency key for chargeToUsedByJobId: ${effectiveIdempotencyKey}`);
                 }
 
-                const [updatedApiKey] = await tx
+                const [updatedApiKey] = yield tx
                     .update(schemas.apiKey)
                     .set({
                         credits: sql`${schemas.apiKey.credits} - ${delta}`,
@@ -429,7 +430,7 @@ export class Billing {
                     });
 
                 const remainingCredits = typeof updatedApiKey?.credits === "number" ? updatedApiKey.credits : undefined;
-                await this.fillLedgerCreditsSnapshot(tx, effectiveIdempotencyKey, delta, remainingCredits);
+                yield* this.fillLedgerCreditsSnapshot(tx, effectiveIdempotencyKey, delta, remainingCredits);
                 log.info(`[BILLING] chargeToUsed jobId=${jobId} reason=${reason} target=${normalizedTargetUsed} charged=${delta}`);
 
                 return {

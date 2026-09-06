@@ -44,7 +44,7 @@ export class JobManager {
                     },
                     "scrape",
                     jobId,
-                    dbJob.userId ?? undefined
+                    { userId: dbJob.userId ?? undefined, apiKeyId: dbJob.apiKey ?? undefined }
                 );
             }
         } catch (e) {
@@ -86,7 +86,7 @@ export class JobManager {
                     },
                     "scrape",
                     jobId,
-                    dbJob.userId ?? undefined
+                    { userId: dbJob.userId ?? undefined, apiKeyId: dbJob.apiKey ?? undefined }
                 );
             }
         } catch (e) {

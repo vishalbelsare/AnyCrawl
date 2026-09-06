@@ -87,12 +87,17 @@ router.get("/webhook-events", controllerWrapper(webhooksController.getEvents));
 // Monitor routes
 router.post("/monitors", controllerWrapper(monitorController.create));
 router.get("/monitors", controllerWrapper(monitorController.list));
+// Cross-monitor change feed — MUST precede "/monitors/:id" so "changes" is not
+// captured as an :id param.
+router.get("/monitors/changes", controllerWrapper(monitorController.changesFeed));
 router.get("/monitors/:id", controllerWrapper(monitorController.get));
 router.patch("/monitors/:id", controllerWrapper(monitorController.update));
 router.delete("/monitors/:id", controllerWrapper(monitorController.delete));
 router.post("/monitors/:id/pause", controllerWrapper(monitorController.pause));
 router.post("/monitors/:id/resume", controllerWrapper(monitorController.resume));
 router.post("/monitors/:id/check", controllerWrapper(monitorController.check));
+router.get("/monitors/:id/checks", controllerWrapper(monitorController.checks));
+router.get("/monitors/:id/notifications", controllerWrapper(monitorController.notifications));
 router.get("/monitors/:id/snapshots", controllerWrapper(monitorController.snapshots));
 router.get("/monitors/:id/snapshots/:snapshotId", controllerWrapper(monitorController.snapshotDetail));
 router.get("/monitors/:id/changes", controllerWrapper(monitorController.changes));

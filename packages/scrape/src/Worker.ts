@@ -9,6 +9,7 @@ import { ensureAIConfigLoaded } from "@anycrawl/ai/utils/config.js";
 import { refreshAIConfig, getDefaultLLModelId, getEnabledProviderModels } from "@anycrawl/ai/utils/helper.js";
 import { getDB, schemas, eq } from "@anycrawl/db";
 import { finalizeExecution } from "./managers/ExecutionLifecycle.js";
+import { MonitorManager } from "./monitor/MonitorManager.js";
 
 // Helper function to update execution status
 // Note: Metrics (credits_used, items_processed, etc.) are stored in jobs table
@@ -98,7 +99,7 @@ function parseQueueArgs(): { queues: string[], schedulerOnly: boolean } {
 
 // Engine-independent queues (no browser engine required). These can be started
 // on their own via --queues=<name> without initializing any scrape/crawl engine.
-const ENGINE_INDEPENDENT_QUEUES = new Set<string>(["scheduler", "template-run", "dataset-export"]);
+const ENGINE_INDEPENDENT_QUEUES = new Set<string>(["scheduler", "monitor", "template-run", "dataset-export"]);
 
 const { queues: requestedQueues, schedulerOnly } = parseQueueArgs();
 
@@ -198,6 +199,9 @@ if (config.webhooks.enabled) {
     await WebhookManager.getInstance().initialize();
     log.info("✅ Webhook Manager initialized");
 }
+
+const shouldProcessMonitors = requestedQueues.length === 0 || requestedQueues.includes("monitor") || shouldStartScheduler;
+if (shouldProcessMonitors) MonitorManager.getInstance().start();
 
 async function runJob(job: Job) {
     // Resolve "auto" to the actual engine from _autoResolvedEngine or queue name
@@ -492,7 +496,7 @@ async function runJob(job: Job) {
         setInterval(async () => {
             try {
                 log.debug("[CLEANUP] Starting periodic cleanup check for expired jobs...");
-                const { getDB, schemas, eq, sql } = await import("@anycrawl/db");
+                const { getDB, schemas, eq, sql, and, lt } = await import("@anycrawl/db");
                 const progressManager = ProgressManager.getInstance();
                 const db = await getDB();
 
@@ -508,7 +512,7 @@ async function runJob(job: Job) {
                     .from(schemas.jobs)
                     .limit(1000)
                     .where(
-                        sql`${schemas.jobs.status} = 'pending' AND ${schemas.jobs.jobExpireAt} < NOW()`
+                        and(eq(schemas.jobs.status, "pending"), lt(schemas.jobs.jobExpireAt, new Date()))
                     );
 
                 if (expiredJobs.length > 0) {
@@ -583,11 +587,16 @@ async function runJob(job: Job) {
         }, 60000); // Check every 60 seconds
 
         // Handle graceful shutdown
-        process.on("SIGINT", async () => {
-            log.warning("Received SIGINT signal, stopping all services...");
+        let shuttingDown = false;
+        const shutdown = async () => {
+            if (shuttingDown) return;
+            shuttingDown = true;
+            log.warning("Received shutdown signal, stopping all services...");
             // Temporarily disable console.warn to prevent the pause message
             const originalWarn = console.warn;
             console.warn = () => { };
+
+            if (shouldProcessMonitors) await MonitorManager.getInstance().stop();
 
             // Stop Scheduler Manager (if enabled)
             if (config.scheduler.enabled) {
@@ -620,7 +629,9 @@ async function runJob(job: Job) {
             console.warn = originalWarn;
 
             process.exit(0);
-        });
+        };
+        process.on("SIGINT", shutdown);
+        process.on("SIGTERM", shutdown);
 
         // Keep the process running
         process.stdin.resume();

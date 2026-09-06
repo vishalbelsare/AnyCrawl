@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CronExpressionParser } from "cron-parser";
 import { ALLOWED_ENGINES } from "../constants.js";
-import { jsonSchemaType } from "./BaseSchema.js";
+import { jsonSchemaType, baseSchema } from "./BaseSchema.js";
 
 // Fastest allowed monitor cadence. Matches the dashboard's fastest preset; a
 // floor also caps per-check billing/scrape load from direct API callers.
@@ -132,6 +132,12 @@ export const monitorTargetSchema = z.object({
         .string()
         .url()
         .superRefine((val, ctx) => {
+            try {
+                if (!["http:", "https:"].includes(new URL(val).protocol)) {
+                    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Monitor URLs must use HTTP or HTTPS" });
+                    return;
+                }
+            } catch { return; }
             // SSRF guard for hosted deployments: monitor targets are scheduled,
             // repeated fetches whose bodies are readable via the snapshots API,
             // so private-network URLs are an exfiltration channel. Env-gated and
@@ -154,8 +160,14 @@ export const monitorTargetSchema = z.object({
             }
         }),
     engine: z.enum(ALLOWED_ENGINES).default("auto"),
-    options: z.object({}).passthrough().optional(),
-    location: z.object({ country: z.string() }).optional(),
+    options: baseSchema.omit({ url: true, engine: true }).partial().passthrough().superRefine((options, ctx) => {
+        if (options.template_id !== undefined || options.variables !== undefined) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Monitor targets do not support templates or template variables" });
+        }
+    }).optional(),
+    location: z.object({ country: z.string() }).optional().superRefine((location, ctx) => {
+        if (location?.country) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Location locking is not supported by monitor targets" });
+    }),
 });
 
 // Upper bounds guard against resource abuse (email fan-out, per-run selector work).
@@ -193,7 +205,11 @@ export const createMonitorSchema = z
                 only_meaningful: z.boolean().default(true),
                 thresholds: z
                     .object({
-                        price_change_pct: z.number().optional(),
+                        // Minimum absolute % move to alert on. Must be ≥ 0 — a negative
+                        // threshold makes classifyPriceChange treat every move as
+                        // significant (pct >= negative is always true), defeating the
+                        // filter the user configured.
+                        price_change_pct: z.number().min(0).optional(),
                     })
                     .optional(),
             })
@@ -202,13 +218,13 @@ export const createMonitorSchema = z
         max_executions_per_day: z.number().int().positive().nullable().optional(),
         tags: z.array(z.string()).max(MAX_TAGS).optional(),
         metadata: z.record(z.any()).optional(),
-    })
+    }).strict()
     .superRefine((data, ctx) => {
-        if (data.monitor_type === "price" && !data.extract_schema) {
+        if ((data.monitor_type === "price" || data.track_mode === "json" || data.track_mode === "mixed") && !data.extract_schema) {
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ["extract_schema"],
-                message: "extract_schema is required when monitor_type is 'price'",
+                message: "extract_schema is required for price, json, or mixed monitoring",
             });
         }
         if (
@@ -232,7 +248,7 @@ export const updateMonitorSchema = z
         targets: z.array(monitorTargetSchema).min(1).max(MAX_TARGETS).optional(),
         goal: z.string().nullable().optional(),
         track_mode: z.enum(["text", "json", "mixed"]).optional(),
-        extract_schema: jsonSchemaType.optional(),
+        extract_schema: jsonSchemaType.nullable().optional(),
         diff_options: z
             .object({
                 ignore_selectors: z.array(z.string()).max(MAX_IGNORE_SELECTORS).optional(),
@@ -247,7 +263,11 @@ export const updateMonitorSchema = z
                 only_meaningful: z.boolean().optional(),
                 thresholds: z
                     .object({
-                        price_change_pct: z.number().optional(),
+                        // Minimum absolute % move to alert on. Must be ≥ 0 — a negative
+                        // threshold makes classifyPriceChange treat every move as
+                        // significant (pct >= negative is always true), defeating the
+                        // filter the user configured.
+                        price_change_pct: z.number().min(0).optional(),
                     })
                     .optional(),
             })
@@ -255,23 +275,20 @@ export const updateMonitorSchema = z
         concurrency_mode: z.enum(["skip", "queue"]).optional(),
         max_executions_per_day: z.number().int().positive().nullable().optional(),
         is_active: z.boolean().optional(),
-        tags: z.array(z.string()).max(MAX_TAGS).optional(),
-        metadata: z.record(z.any()).optional(),
-    })
+        tags: z.array(z.string()).max(MAX_TAGS).nullable().optional(),
+        metadata: z.record(z.any()).nullable().optional(),
+    }).strict();
+
+/** Validate the effective configuration, after PATCH has been merged with
+ * the owned stored record. Partial PATCH parsing must not require siblings. */
+export const effectiveMonitorSchema = updateMonitorSchema.pick({ track_mode: true, extract_schema: true, notify_options: true })
+    .extend({ monitor_type: z.enum(["webpage", "price"]) })
     .superRefine((data, ctx) => {
-        // NOTE: switching track_mode to json/mixed without a usable extract_schema is
-        // rejected by the controller's merge-time check (MonitorController.update),
-        // which can see the schema already stored on the row — this schema cannot.
-        // If email is being enabled in this update, recipients must be provided in the same update.
-        if (
-            data.notify_options?.channels?.includes("email") &&
-            (!data.notify_options.email_recipients || data.notify_options.email_recipients.length === 0)
-        ) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                path: ["notify_options", "email_recipients"],
-                message: "email_recipients is required when 'email' is in notify channels",
-            });
+        if ((data.monitor_type === "price" || data.track_mode === "json" || data.track_mode === "mixed") && !data.extract_schema) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["extract_schema"], message: "extract_schema is required for price, json, or mixed monitoring" });
+        }
+        if (data.notify_options?.channels?.includes("email") && !data.notify_options.email_recipients?.length) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["notify_options", "email_recipients"], message: "email_recipients is required when email alerts are enabled" });
         }
     });
 

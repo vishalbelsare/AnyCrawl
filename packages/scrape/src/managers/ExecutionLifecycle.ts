@@ -1,5 +1,4 @@
-import { log } from "@anycrawl/libs";
-import { getDB, schemas, eq, sql } from "@anycrawl/db";
+import { getDB, schemas, eq, sql, withDatabaseTransaction, type DatabaseSteps } from "@anycrawl/db";
 
 type FinalExecutionStatus = "completed" | "failed" | "cancelled";
 
@@ -45,146 +44,54 @@ export type FinalizeExecutionResult = {
 export async function finalizeExecution(input: FinalizeExecutionInput): Promise<FinalizeExecutionResult> {
     const db = input.db || await getDB();
     const completedAt = input.completedAt || new Date();
-    const now = new Date();
-
-    const updateData: any = {
-        status: input.status,
-        completedAt,
-    };
-
-    if (input.startedAt) {
-        updateData.startedAt = input.startedAt;
+    const updateData: any = { status: input.status, completedAt };
+    for (const key of ["jobUuid", "startedAt", "errorMessage", "errorCode", "errorDetails"] as const) {
+        if (input[key] !== undefined) updateData[key] = input[key];
     }
-
-    if (input.jobUuid) {
-        updateData.jobUuid = input.jobUuid;
-    }
-
-    if (input.errorMessage !== undefined) {
-        updateData.errorMessage = input.errorMessage;
-    }
-
-    if (input.errorCode !== undefined) {
-        updateData.errorCode = input.errorCode;
-    }
-
-    if (input.errorDetails !== undefined) {
-        updateData.errorDetails = input.errorDetails;
-    }
-
-    const updatedRows = await db
-        .update(schemas.taskExecutions)
-        .set(updateData)
-        .where(
-            sql`${schemas.taskExecutions.uuid} = ${input.executionUuid}
-                AND ${schemas.taskExecutions.status} IN ('pending', 'running')`
-        )
-        .returning({
-            uuid: schemas.taskExecutions.uuid,
-            scheduledTaskUuid: schemas.taskExecutions.scheduledTaskUuid,
-        });
-
-    let transitioned = updatedRows.length > 0;
-    let created = false;
-    let scheduledTaskUuid = updatedRows[0]?.scheduledTaskUuid as string | undefined;
-
-    if (
-        !transitioned
-        && input.allowCreateIfMissing
-        && input.status === "failed"
-        && input.createIfMissing
-    ) {
-        try {
-            await db.insert(schemas.taskExecutions).values({
-                uuid: input.executionUuid,
-                scheduledTaskUuid: input.createIfMissing.scheduledTaskUuid,
-                executionNumber: input.createIfMissing.executionNumber,
-                idempotencyKey: input.createIfMissing.idempotencyKey,
-                status: "failed",
-                scheduledFor: input.createIfMissing.scheduledFor || now,
-                triggeredBy: input.createIfMissing.triggeredBy || "scheduler",
-                createdAt: input.createIfMissing.createdAt || now,
-                startedAt: input.startedAt,
-                completedAt: completedAt,
-                jobUuid: input.createIfMissing.jobUuid,
-                errorMessage: input.errorMessage,
-                errorCode: input.errorCode,
-                errorDetails: {
-                    ...(input.errorDetails || {}),
-                    recoveredFromRollback: true,
-                },
-            });
-            transitioned = true;
-            created = true;
-            scheduledTaskUuid = input.createIfMissing.scheduledTaskUuid;
-        } catch (error) {
-            // Best effort: another process may have finalized first.
-            log.warning(
-                `[EXECUTION] Failed to recreate missing execution ${input.executionUuid} from ${input.source || "system"}: ${error}`
-            );
+    return withDatabaseTransaction(db, function* (tx): DatabaseSteps<FinalizeExecutionResult> {
+        let rows = yield tx.update(schemas.taskExecutions).set(updateData).where(
+            sql`${schemas.taskExecutions.uuid} = ${input.executionUuid} AND ${schemas.taskExecutions.status} IN ('pending', 'running')`
+        ).returning({ uuid: schemas.taskExecutions.uuid, scheduledTaskUuid: schemas.taskExecutions.scheduledTaskUuid });
+        let created = false;
+        if (!rows.length && input.allowCreateIfMissing && input.status === "failed" && input.createIfMissing) {
+            const payload = input.createIfMissing;
+            rows = yield tx.insert(schemas.taskExecutions).values({
+                uuid: input.executionUuid, scheduledTaskUuid: payload.scheduledTaskUuid,
+                executionNumber: payload.executionNumber, idempotencyKey: payload.idempotencyKey,
+                scheduledFor: payload.scheduledFor || completedAt, triggeredBy: payload.triggeredBy || "scheduler",
+                createdAt: payload.createdAt || completedAt, jobUuid: payload.jobUuid,
+                ...updateData,
+            }).onConflictDoNothing().returning({ uuid: schemas.taskExecutions.uuid, scheduledTaskUuid: schemas.taskExecutions.scheduledTaskUuid });
+            created = rows.length > 0;
         }
-    }
-
-    let taskStatsUpdated = false;
-    const shouldUpdateTaskStats = input.updateTaskStats !== false;
-
-    if (shouldUpdateTaskStats && transitioned && scheduledTaskUuid) {
-        if (input.status === "completed") {
-            await db
-                .update(schemas.scheduledTasks)
-                .set({
-                    successfulExecutions: sql`${schemas.scheduledTasks.successfulExecutions} + 1`,
-                    consecutiveFailures: 0,
-                    updatedAt: now,
-                })
-                .where(eq(schemas.scheduledTasks.uuid, scheduledTaskUuid));
-            taskStatsUpdated = true;
-        } else if (input.status === "failed") {
-            await db
-                .update(schemas.scheduledTasks)
-                .set({
-                    failedExecutions: sql`${schemas.scheduledTasks.failedExecutions} + 1`,
-                    consecutiveFailures: sql`${schemas.scheduledTasks.consecutiveFailures} + 1`,
-                    updatedAt: now,
-                })
+        const scheduledTaskUuid = rows[0]?.scheduledTaskUuid as string | undefined;
+        if (!scheduledTaskUuid) return { transitioned: false, created: false, taskStatsUpdated: false };
+        let taskStatsUpdated = false;
+        if (input.updateTaskStats !== false && (input.status === "completed" || input.status === "failed")) {
+            const stats = input.status === "completed" ? {
+                successfulExecutions: sql`${schemas.scheduledTasks.successfulExecutions} + 1`, consecutiveFailures: 0,
+            } : {
+                failedExecutions: sql`${schemas.scheduledTasks.failedExecutions} + 1`,
+                consecutiveFailures: sql`${schemas.scheduledTasks.consecutiveFailures} + 1`,
+            };
+            yield tx.update(schemas.scheduledTasks).set({ ...stats, updatedAt: completedAt })
                 .where(eq(schemas.scheduledTasks.uuid, scheduledTaskUuid));
             taskStatsUpdated = true;
         }
-    }
-
-    // Monitor post-processing: diff content and fire notifications on successful
-    // transitions; record an error snapshot + monitor.error event on failures so a
-    // failed check is visible in the monitor detail instead of silently missing.
-    // Dynamic import keeps this module free of circular-dependency and is zero-cost for
-    // the majority of executions that do not belong to a monitor.
-    if (transitioned && scheduledTaskUuid) {
-        try {
-            const { MonitorPostProcessor } = await import("../monitor/MonitorPostProcessor.js");
-            if (input.status === "completed") {
-                await MonitorPostProcessor.process({
-                    db,
-                    scheduledTaskUuid,
-                    executionUuid: input.executionUuid,
-                    jobUuid: input.jobUuid,
-                });
-            } else if (input.status === "failed") {
-                await MonitorPostProcessor.processFailure({
-                    db,
-                    scheduledTaskUuid,
-                    executionUuid: input.executionUuid,
-                    errorMessage: input.errorMessage,
-                    errorCode: input.errorCode,
-                });
-            }
-        } catch (e) {
-            log.warning(`[MONITOR] post-process dispatch failed for execution ${input.executionUuid}: ${e}`);
-        }
-    }
-
-    return {
-        transitioned,
-        created,
-        taskStatsUpdated,
-        scheduledTaskUuid,
-    };
+        // The durable post-process intent commits with the execution terminal
+        // state and statistics. The monitor worker can pick it up after a crash;
+        // replay never requires moving an execution out of its terminal state.
+        yield tx.update(schemas.monitorChecks).set({
+            state: input.status === "cancelled" ? "failed" : "ready",
+            resultStatus: input.status,
+            sourceError: input.status === "completed" ? null : {
+                message: input.errorMessage || (input.status === "cancelled" ? "Check cancelled" : "Check failed"),
+                code: input.errorCode,
+            },
+            nextAttemptAt: completedAt,
+            ...(input.jobUuid ? { jobUuid: input.jobUuid } : {}),
+            ...(input.status === "cancelled" ? { processedAt: completedAt, lastError: "Check cancelled" } : {}),
+        }).where(sql`${schemas.monitorChecks.uuid} = ${input.executionUuid} AND ${schemas.monitorChecks.state} = 'pending'`);
+        return { transitioned: true, created, taskStatsUpdated, scheduledTaskUuid };
+    });
 }

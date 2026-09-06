@@ -16,6 +16,7 @@ const pickedOptions = baseSchema.pick({
     variables: true,
     engine: true,
     proxy: true,
+    humanize: true,
     formats: true,
     timeout: true,
     retry: true,
@@ -55,6 +56,7 @@ export const batchScrapeSchema = batchInputSchema.transform((data) => ({
     options: {
         template_id: data.template_id,
         proxy: data.proxy,
+        humanize: data.humanize,
         formats: data.formats,
         timeout: data.timeout,
         retry: data.retry,

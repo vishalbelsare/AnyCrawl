@@ -10,6 +10,24 @@ import { CloudflareChallengeHandler } from "../challenges/cloudflare/CloudflareC
 import { ChallengeOrchestrator } from "../challenges/ChallengeOrchestrator.js";
 import { ProxyCacheManager } from "../managers/ProxyCacheManager.js";
 import { smartWaitForDOMStable } from "../utils/smartWait.js";
+import { applyCloakBrowserHumanize, cloakBrowserHumanWarmup } from "./CloakBrowserLauncher.js";
+
+/**
+ * Decide whether the cloakbrowser human-behavior layer should be enabled for a
+ * request. Priority: operator kill switch > per-request "off" > per-request
+ * "on" > "auto" policy (stealth proxy or an escalation retry after a block).
+ */
+const shouldHumanizeRequest = (request: any): boolean => {
+    if (!config.engine.humanize) return false; // operator kill switch (ANYCRAWL_HUMANIZE=false)
+    const options = request?.userData?.options ?? {};
+    const mode = options.humanize ?? "auto";
+    if (mode === "off") return false;
+    if (mode === "on") return true;
+    // "auto": only when escalating — explicit stealth proxy, or any retry (403/
+    // challenge/proxy-upgrade all route through retryCount > 0).
+    const retryCount = typeof request?.retryCount === "number" ? request.retryCount : 0;
+    return options.proxy === "stealth" || retryCount > 0;
+};
 
 export enum ConfigurableEngineType {
     CHEERIO = 'cheerio',
@@ -525,6 +543,23 @@ export class EngineConfigurator {
             await challengeOrchestrator.onPostNavigation(args);
         };
 
+        // Apply the cloakbrowser human-behavior layer for this request when the
+        // policy calls for it (Playwright only). Runs before the challenge/preNav
+        // hooks so any subsequent interaction is already humanized.
+        const humanizeHook = async ({ page, request }: any) => {
+            if (engineType !== ConfigurableEngineType.PLAYWRIGHT) return;
+            if (!page || !shouldHumanizeRequest(request)) return;
+            try {
+                const active = await applyCloakBrowserHumanize(page);
+                if (active) {
+                    request.__anycrawlHumanizeActive = true;
+                    log.info(`[Humanize] enabled for ${request?.url || "unknown"} (proxy=${request?.userData?.options?.proxy ?? "?"}, retry=${request?.retryCount ?? 0}, mode=${request?.userData?.options?.humanize ?? "auto"})`);
+                }
+            } catch (err) {
+                log.warning(`[Humanize] failed to apply: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        };
+
         // Add browser-specific hooks to preNavigationHooks
         const existingHooks = options.preNavigationHooks || [];
         options.preNavigationHooks = [
@@ -533,6 +568,7 @@ export class EngineConfigurator {
             resourceBlockingHook,
             requestTimeoutHook,
             authenticationHook,
+            humanizeHook,
             challengePreHook,
             preNavHook,
             ...existingHooks
@@ -545,8 +581,16 @@ export class EngineConfigurator {
             await smartWaitForDOMStable(page, request.url, { label: "postNav" });
         };
 
+        // Human "warm-up" once content is settled: emit real cursor-movement
+        // entropy on requests where humanize was actually applied. Best-effort.
+        const humanizeWarmupPostHook = async ({ page, request }: any) => {
+            if (engineType !== ConfigurableEngineType.PLAYWRIGHT) return;
+            if (!page || !request?.__anycrawlHumanizeActive) return;
+            await cloakBrowserHumanWarmup(page);
+        };
+
         const existingPostHooks = options.postNavigationHooks || [];
-        options.postNavigationHooks = [challengePostHook, smartWaitPostHook, ...existingPostHooks];
+        options.postNavigationHooks = [challengePostHook, smartWaitPostHook, humanizeWarmupPostHook, ...existingPostHooks];
         log.info(`[EngineConfigurator] Post-navigation hooks configured for ${engineType}: total=${options.postNavigationHooks.length}`);
 
         // Apply headless configuration from environment

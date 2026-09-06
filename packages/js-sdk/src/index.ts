@@ -34,6 +34,7 @@ import {
     Monitor,
     MonitorCreateResponse,
     MonitorSnapshot,
+    MonitorSnapshotDetail, MonitorSnapshotSummary, MonitorPage, MonitorPageParams, MonitorChangeFeedItem, MonitorCheck, MonitorNotification,
     MonitorChange,
     TemplateExecuteRequest,
     TemplateExecuteResult,
@@ -421,16 +422,35 @@ export class AnyCrawlClient {
 
     async getMonitorSnapshots(
         monitorId: string,
-        params?: { limit?: number; offset?: number }
+        params?: MonitorPageParams
     ): Promise<MonitorSnapshot[]> {
         return await monitorsMethods.getMonitorSnapshots(this.client, monitorId, params);
     }
 
     async getMonitorChanges(
         monitorId: string,
-        params?: { limit?: number; offset?: number }
+        params?: MonitorPageParams
     ): Promise<MonitorChange[]> {
         return await monitorsMethods.getMonitorChanges(this.client, monitorId, params);
+    }
+
+    async getMonitorSnapshot(monitorId: string, snapshotId: string): Promise<MonitorSnapshotDetail> {
+        return monitorsMethods.getMonitorSnapshot(this.client, monitorId, snapshotId);
+    }
+    async getMonitorSnapshotsPage(monitorId: string, params?: MonitorPageParams): Promise<MonitorPage<MonitorSnapshotSummary>> {
+        return monitorsMethods.getMonitorSnapshotsPage(this.client, monitorId, params);
+    }
+    async getMonitorChangesPage(monitorId: string, params?: MonitorPageParams & { include_diff_text?: boolean }): Promise<MonitorPage<MonitorChange>> {
+        return monitorsMethods.getMonitorChangesPage(this.client, monitorId, params);
+    }
+    async listMonitorChanges(params?: MonitorPageParams & { change_type?: MonitorChange['change_type'] }): Promise<MonitorPage<MonitorChangeFeedItem>> {
+        return monitorsMethods.listMonitorChanges(this.client, params);
+    }
+    async getMonitorChecks(monitorId: string, params?: { limit?: number }): Promise<MonitorCheck[]> {
+        return monitorsMethods.getMonitorChecks(this.client, monitorId, params);
+    }
+    async getMonitorNotifications(monitorId: string, params?: { limit?: number }): Promise<MonitorNotification[]> {
+        return monitorsMethods.getMonitorNotifications(this.client, monitorId, params);
     }
 
     async getMonitorChange(monitorId: string, changeId: string): Promise<MonitorChange> {

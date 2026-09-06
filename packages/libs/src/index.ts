@@ -5,6 +5,7 @@ export * from "./s3.js";
 export * from "./credits.js";
 export * from "./proxy.js";
 export * from "./scheduled-tasks.js";
+export * from "./monitor-configuration.js";
 export * from "./pagination.js";
 export * from "./utils.js";
 export * from "./config.js";

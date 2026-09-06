@@ -2,7 +2,7 @@
  * Email notifications for monitor change events.
  *
  * Requires ANYCRAWL_SMTP_HOST to be configured. When SMTP is not configured
- * the class is a no-op and logs a warning at first call.
+ * delivery rejects and the durable notification worker records and retries it.
  */
 import { config, log } from "@anycrawl/libs";
 
@@ -11,7 +11,7 @@ interface Change {
     changeType: string;
     diffText?: string;
     diffJson?: any[];
-    judgment?: { meaningful: boolean; confidence: string; reason: string };
+    judgment?: { meaningful: boolean | null; confidence: string; reason: string; status?: string };
 }
 
 export class EmailNotifier {
@@ -20,8 +20,7 @@ export class EmailNotifier {
      *
      * Delivery contract (callers rely on this — resolving means "delivered to
      * at least one recipient"):
-     * - SMTP is not configured → no-op (logged), resolves; callers gate on
-     *   config.email.enabled before counting delivery.
+     * - SMTP is not configured → throws, so the durable worker records failure.
      * - nodemailer missing while SMTP IS configured → throws.
      * - Transport-level send failure → the error propagates (rejects).
      * - SMTP server rejects ALL recipients → throws a clear Error.
@@ -30,11 +29,11 @@ export class EmailNotifier {
     public static async sendChangeEmail(
         recipients: string[],
         monitor: any,
-        changes: Change[]
+        changes: Change[],
+        notificationId?: string
     ): Promise<void> {
         if (!config.email.enabled) {
-            log.warning("[MONITOR EMAIL] SMTP not configured — skipping email notification");
-            return;
+            throw new Error("SMTP is not configured for monitor email delivery");
         }
         if (recipients.length === 0) return;
 
@@ -54,12 +53,16 @@ export class EmailNotifier {
             host: config.email.host,
             port: config.email.port,
             secure: config.email.secure,
+            connectionTimeout: 15_000,
+            greetingTimeout: 15_000,
+            socketTimeout: 30_000,
             auth: config.email.user
                 ? { user: config.email.user, pass: config.email.pass }
                 : undefined,
         });
 
-        const subject = `[AnyCrawl Monitor] ${monitor.name} — ${changes.length} change${changes.length === 1 ? "" : "s"} detected`;
+        const checkFailed = changes.every(change => change.changeType === "error");
+        const subject = `[AnyCrawl Monitor] ${monitor.name} — ${checkFailed ? "check failed" : `${changes.length} change${changes.length === 1 ? "" : "s"} detected`}`;
         const html = buildEmailHtml(monitor, changes);
         const text = buildEmailText(monitor, changes);
 
@@ -90,6 +93,7 @@ export class EmailNotifier {
             subject,
             html,
             text,
+            ...(notificationId ? { messageId: `<${notificationId}@monitors.anycrawl.dev>` } : {}),
             ...(Object.keys(headers).length > 0 ? { headers } : {}),
         });
 
@@ -98,7 +102,7 @@ export class EmailNotifier {
         const accepted: string[] = (info?.accepted ?? []).map(toAddress);
         const rejected: string[] = (info?.rejected ?? []).map(toAddress);
 
-        if (rejected.length > 0 && accepted.length === 0) {
+        if (accepted.length === 0) {
             // Nothing was delivered — surface as an error so callers can record
             // the failure / retry instead of treating the notification as sent.
             throw new Error(
@@ -113,19 +117,28 @@ export class EmailNotifier {
 
         log.info(`[MONITOR EMAIL] Sent change notification to ${accepted.length || recipients.length}/${recipients.length} recipient(s) for monitor ${monitor.uuid}`);
     }
+
+    public static async sendEventEmail(recipient: string, payload: any, notificationId: string): Promise<void> {
+        await this.sendChangeEmail([recipient], {
+            uuid: payload.monitor_id, name: payload.monitor_name, monitorType: payload.monitor_type,
+        }, [{
+            url: payload.url, changeType: payload.error ? "error" : payload.change_type,
+            diffText: payload.error?.message ?? payload.diff_text, diffJson: payload.diff_json, judgment: payload.judgment,
+        }], notificationId);
+    }
 }
 
 function buildEmailText(monitor: any, changes: Change[]): string {
     const lines: string[] = [
         `Monitor: ${monitor.name} (${monitor.monitorType})`,
-        `Changes detected: ${changes.length}`,
+        changes.every(change => change.changeType === "error") ? "Check failed" : `Changes detected: ${changes.length}`,
         "",
     ];
     for (const c of changes) {
         lines.push(`URL: ${c.url}`);
         lines.push(`Change type: ${c.changeType}`);
         if (c.judgment) {
-            lines.push(`AI assessment: ${c.judgment.meaningful ? "meaningful" : "not meaningful"} (${c.judgment.confidence} confidence) — ${c.judgment.reason}`);
+            lines.push(`AI assessment: ${judgmentLabel(c.judgment)} — ${c.judgment.reason}`);
         }
         if (c.diffJson && c.diffJson.length > 0) {
             lines.push("Field changes:");
@@ -158,7 +171,7 @@ function buildEmailHtml(monitor: any, changes: Change[]): string {
             : "";
 
         const judgmentBlock = c.judgment
-            ? `<p><strong>AI assessment:</strong> ${c.judgment.meaningful ? "✅ Meaningful" : "⚠️ Not meaningful"} (${escHtml(c.judgment.confidence)} confidence) — ${escHtml(c.judgment.reason)}</p>`
+            ? `<p><strong>AI assessment:</strong> ${escHtml(judgmentLabel(c.judgment))} — ${escHtml(c.judgment.reason)}</p>`
             : "";
 
         return `<div style="border:1px solid #ddd;border-radius:4px;padding:12px;margin-bottom:16px">
@@ -172,10 +185,17 @@ function buildEmailHtml(monitor: any, changes: Change[]): string {
 
     return `<!DOCTYPE html><html><body style="font-family:sans-serif;max-width:800px;margin:auto;padding:24px">
         <h2>🔔 AnyCrawl Monitor — ${escHtml(monitor.name)}</h2>
-        <p><strong>Type:</strong> ${escHtml(monitor.monitorType)} &nbsp; <strong>Changes:</strong> ${changes.length}</p>
+        <p><strong>Type:</strong> ${escHtml(monitor.monitorType)} &nbsp; ${changes.every(change => change.changeType === "error") ? "<strong>Check failed</strong>" : `<strong>Changes:</strong> ${changes.length}`}</p>
         ${rows}
         <hr><p style="color:#888;font-size:12px">AnyCrawl Monitor — manage at your dashboard</p>
     </body></html>`;
+}
+
+function judgmentLabel(judgment: NonNullable<Change["judgment"]>): string {
+    if (judgment.meaningful === null || (judgment.status && judgment.status !== "complete")) {
+        return judgment.status === "incomplete" ? "Incomplete — review the full change" : "Unavailable — review the detected change";
+    }
+    return `${judgment.meaningful ? "Meaningful" : "Not meaningful"} (${judgment.confidence} confidence)`;
 }
 
 function escHtml(s: string): string {

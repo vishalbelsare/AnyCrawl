@@ -1,0 +1,98 @@
+{
+  "uuid": "f9f4a3b0-3f8b-4b79-9f41-3c0b8c7d7e22",
+  "logo": "https://ac-public.anycrawl.dev/instagram-scraper.png",
+  "templateId": "instagram-scraper",
+  "name": "Instagram Scraper",
+  "description": "Scrape and download Instagram posts, profiles, hashtags, reels, photos, and comments. Get data from Instagram using one or more Instagram URLs. Export scraped data, run the scraper via API, schedule and monitor runs or integrate with other tools.",
+  "tags": [
+    "instagram scraper",
+    "scrape instagram​",
+    "scrape instagram photos​",
+    "instagram web scraper​",
+    "instagram profile scraper​"
+  ],
+  "version": "1.0.0",
+  "templateType": "scrape",
+  "pricing": { "perCall": 1, "currency": "credits" },
+  "reqOptions": {
+    "engine": "playwright",
+    "formats": ["markdown"],
+    "timeout": 60000,
+    "retry": true,
+    "wait_until": "domcontentloaded",
+    "wait_for": 500,
+    "wait_for_selector": [
+      {
+        "selector": "[role=\"tablist\"]",
+        "state": "visible",
+        "timeout": 8000
+      }
+    ]
+  },
+  "handlers": {
+    "requestHandler": {
+      "language": "javascript",
+      "sourcePath": "requestHandler.js"
+    },
+    "failedRequestHandler": {
+      "language": "javascript",
+      "source": "function handleFailedRequest(context, error) {\n    const { request } = context;\n    return {\n        success: false,\n        url: request?.url,\n        error: error?.message || 'Unknown error',\n        timestamp: new Date().toISOString()\n    };\n}\n\nreturn handleFailedRequest(context, error);"
+    },
+    "preNav": [
+      {
+        "key": "instagramProfileInfo",
+        "rules": [
+          {
+            "type": "glob",
+            "pattern": "https://www.instagram.com/api/v1/users/web_profile_info/**"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "allowedDomains": {
+      "type": "glob",
+      "patterns": ["https://www.instagram.com/**", "https://www.instagram.com/*/**"]
+    },
+    "source": "custom",
+    "resultTabs": [{ "name": "jsonResult", "label": "JSON Result" }],
+    "reviewRecords": [
+      {
+        "reviewDate": "2025-10-12T00:00:00.000Z",
+        "reviewStatus": "approved",
+        "reviewNotes": "Initial version"
+      }
+    ]
+  },
+  "variables": {
+    "waitFor": {
+      "type": "number",
+      "label": "Wait For (ms)",
+      "description": "Delay before extraction in milliseconds",
+      "required": false,
+      "defaultValue": 500,
+      "mapping": { "target": "wait_for" }
+    },
+    "timeoutMs": {
+      "type": "number",
+      "label": "Timeout (ms)",
+      "description": "Override request timeout for the scraper",
+      "required": false,
+      "defaultValue": 60000,
+      "mapping": { "target": "timeout" }
+    }
+  },
+  "createdBy": "system-admin",
+  "publishedBy": "system-admin",
+  "reviewedBy": "system-admin",
+  "status": "published",
+  "reviewStatus": "approved",
+  "reviewNotes": "Initial version",
+  "trusted": true,
+  "createdAt": "2025-10-22T00:00:00.000Z",
+  "updatedAt": "2025-10-22T00:00:00.000Z",
+  "publishedAt": "2025-10-22T00:00:00.000Z",
+  "reviewedAt": "2025-10-22T00:00:00.000Z",
+  "output": { "sqlPath": "instagram-scraper.sql" }
+}

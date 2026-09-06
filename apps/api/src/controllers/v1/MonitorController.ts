@@ -6,6 +6,9 @@ import {
     type OwnerContext,
     createMonitorSchema,
     updateMonitorSchema,
+    prepareMonitorUpdate,
+    buildMonitorTaskPayload,
+    config,
     resolveTrackMode,
     estimateTaskCredits,
     normalizePagination,
@@ -13,6 +16,14 @@ import {
 } from "@anycrawl/libs";
 import {
     getDB,
+    updateOwnedMonitor,
+    deleteOwnedMonitor,
+    encodeMonitorCursor,
+    MonitorCursorError,
+    listMonitorCheckHistory,
+    listMonitorNotificationHistory,
+    withDatabaseTransaction,
+    type DatabaseSteps,
     schemas,
     eq,
     sql,
@@ -21,50 +32,10 @@ import {
     listSnapshotsByMonitor,
     getSnapshotForMonitor,
     listChangesByMonitor,
+    listChangesByOwner,
 } from "@anycrawl/db";
 import { randomUUID } from "crypto";
 import { serializeRecord, serializeRecords } from "../../utils/serializer.js";
-
-/**
- * Build the underlying scrape task_payload from a monitor's first target.
- * Price/json monitors add json_options + the json format so the scrape worker
- * runs LLM extraction as part of the same job.
- */
-function buildTaskPayload(
-    target: any,
-    monitorType: string,
-    trackMode: string,
-    extractSchema: any,
-    goal: string | undefined,
-    diffOptions: any
-): any {
-    const requiredFormats = trackMode === "text" ? ["markdown"] : ["markdown", "json"];
-    const userOptions: any = target.options ?? {};
-    const options: any = {
-        only_main_content: diffOptions?.only_main_content ?? true,
-        ...userOptions,
-        // Required formats must survive user-supplied target.options — losing
-        // "markdown" (or "json" in price mode) would make every check normalize
-        // to empty content and the monitor would report "same" forever.
-        formats: Array.from(
-            new Set([
-                ...(Array.isArray(userOptions.formats) ? userOptions.formats : []),
-                ...requiredFormats,
-            ])
-        ),
-    };
-    if ((trackMode === "json" || trackMode === "mixed") && extractSchema) {
-        options.json_options = {
-            schema: extractSchema,
-            ...(goal ? { user_prompt: goal } : {}),
-        };
-    }
-    return {
-        url: target.url,
-        engine: target.engine ?? "auto",
-        options,
-    };
-}
 
 export class MonitorController {
     /**
@@ -79,9 +50,8 @@ export class MonitorController {
             // MVP: single target. Additional targets are accepted but only the first is scheduled.
             const target = validated.targets[0];
             const trackMode = resolveTrackMode(validated.monitor_type, validated.track_mode);
-            const taskPayload = buildTaskPayload(
+            const taskPayload = buildMonitorTaskPayload(
                 target,
-                validated.monitor_type,
                 trackMode,
                 validated.extract_schema,
                 validated.goal,
@@ -110,9 +80,9 @@ export class MonitorController {
             // Task + monitor rows must land together: a task without its monitor row
             // would keep firing and billing while being invisible in both UIs (the
             // scheduled-tasks list hides monitor-managed rows).
-            await db.transaction(async (tx: any) => {
+            await withDatabaseTransaction(db, function* (tx: any): DatabaseSteps<void> {
                 // 1. Backing scheduled task
-                await tx.insert(schemas.scheduledTasks).values({
+                yield tx.insert(schemas.scheduledTasks).values({
                     uuid: scheduledTaskUuid,
                     apiKey: apiKeyId,
                     userId: userId || null,
@@ -135,7 +105,7 @@ export class MonitorController {
                 });
 
                 // 2. Monitor row
-                await tx.insert(schemas.monitors).values({
+                yield tx.insert(schemas.monitors).values({
                     uuid: monitorUuid,
                     apiKey: apiKeyId,
                     userId: userId || null,
@@ -219,11 +189,37 @@ export class MonitorController {
     };
 
     /**
+     * Cross-monitor change feed for the authenticated owner. Powers the dashboard
+     * "Changes" inbox: every detected change across all of the owner's monitors,
+     * newest first. Optional ?change_type= filters by change type.
+     *
+     * Route registration note: this must be wired BEFORE GET /monitors/:id or
+     * Express captures "changes" as an :id.
+     */
+    public changesFeed = async (req: RequestWithAuth, res: Response): Promise<void> => {
+        try {
+            const owner = this.getOwnerContext(req);
+            const db = await getDB();
+            const { limit, offset } = normalizePagination(
+                req.query.limit as string | undefined,
+                req.query.offset as string | undefined,
+                { defaultLimit: 50, maxLimit: 200 }
+            );
+            const changeType = z.enum(["content", "text", "price_up", "price_down", "stock", "new", "removed"]).optional().parse(req.query.change_type);
+            const cursor = z.string().optional().parse(req.query.cursor);
+            const rows = await listChangesByOwner(db, owner, offset, limit + 1, { changeType, cursor });
+            this.sendPage(res, rows, limit);
+        } catch (error) {
+            this.handleError(error, res);
+        }
+    };
+
+    /**
      * Get one monitor
      */
     public get = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id } = req.params;
+            const id = z.string().uuid().parse(req.params.id);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
             const monitor = await getOwnedMonitor(db, id!, owner);
@@ -242,114 +238,17 @@ export class MonitorController {
      */
     public update = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id } = req.params;
+            const id = z.string().uuid().parse(req.params.id);
             const owner = this.getOwnerContext(req);
             const validated = updateMonitorSchema.parse(req.body);
             const db = await getDB();
 
-            const monitor = await getOwnedMonitor(db, id!, owner);
-            if (!monitor) {
+            const task = await updateOwnedMonitor(db, id!, owner, (monitor, backingTask) => prepareMonitorUpdate(monitor, backingTask, validated));
+            if (!task) {
                 res.status(404).json({ success: false, error: "Monitor not found" });
                 return;
             }
-
-            const monitorUpdate: any = { updatedAt: new Date() };
-            if (validated.name !== undefined) monitorUpdate.name = validated.name;
-            if (validated.description !== undefined) monitorUpdate.description = validated.description;
-            if (validated.goal !== undefined) monitorUpdate.goal = validated.goal;
-            if (validated.targets !== undefined) monitorUpdate.targets = validated.targets;
-            if (validated.extract_schema !== undefined) monitorUpdate.extractSchema = validated.extract_schema;
-            if (validated.diff_options !== undefined) monitorUpdate.diffOptions = validated.diff_options;
-            if (validated.notify_options !== undefined) monitorUpdate.notifyOptions = validated.notify_options;
-            if (validated.is_active !== undefined) monitorUpdate.isActive = validated.is_active;
-            const newTrackMode = validated.track_mode ?? monitor.trackMode;
-            if (validated.track_mode !== undefined) monitorUpdate.trackMode = validated.track_mode;
-
-            // Merge-time guard (the zod schema cannot see the stored row): json/mixed
-            // tracking without any extract schema would scrape a "json" format with
-            // nothing to extract and the diff step could never detect anything.
-            const effectiveExtractSchema = validated.extract_schema ?? monitor.extractSchema;
-            if ((newTrackMode === "json" || newTrackMode === "mixed") && !effectiveExtractSchema) {
-                res.status(400).json({
-                    success: false,
-                    error: "extract_schema is required when track_mode is 'json' or 'mixed'",
-                    details: [
-                        {
-                            field: "extract_schema",
-                            message: "extract_schema is required when track_mode is 'json' or 'mixed'",
-                        },
-                    ],
-                });
-                return;
-            }
-
-            await db.update(schemas.monitors).set(monitorUpdate).where(eq(schemas.monitors.uuid, id));
-
-            // Propagate to backing scheduled task when scheduling/payload inputs changed
-            const taskUpdate: any = { updatedAt: new Date() };
-            let taskChanged = false;
-            if (validated.cron_expression) {
-                taskUpdate.cronExpression = validated.cron_expression;
-                taskUpdate.nextExecutionAt = this.calculateNextExecution(
-                    validated.cron_expression,
-                    validated.timezone || monitor.timezone || "UTC"
-                );
-                taskChanged = true;
-            }
-            if (validated.timezone) {
-                taskUpdate.timezone = validated.timezone;
-                // A timezone change shifts when the same cron next fires — recompute
-                // even when cron_expression itself is untouched (the block above only
-                // recomputes when cron changes).
-                if (!validated.cron_expression && monitor.cronExpression) {
-                    taskUpdate.nextExecutionAt = this.calculateNextExecution(
-                        monitor.cronExpression,
-                        validated.timezone
-                    );
-                }
-                taskChanged = true;
-            }
-            if (validated.is_active !== undefined) {
-                // Keep the backing task in lockstep with monitor active state, exactly
-                // like the dedicated /pause and /resume endpoints — otherwise the task
-                // keeps firing (and billing) while the monitor reads as inactive.
-                taskUpdate.isPaused = !validated.is_active;
-                taskUpdate.pauseReason = validated.is_active ? null : "Paused by user (monitor)";
-                if (validated.is_active) taskUpdate.consecutiveFailures = 0;
-                taskChanged = true;
-            }
-            if (validated.concurrency_mode) { taskUpdate.concurrencyMode = validated.concurrency_mode; taskChanged = true; }
-            if (validated.max_executions_per_day !== undefined) { taskUpdate.maxExecutionsPerDay = validated.max_executions_per_day; taskChanged = true; }
-            if (validated.targets || validated.extract_schema !== undefined || validated.goal !== undefined || validated.track_mode !== undefined || validated.diff_options !== undefined) {
-                const target = (validated.targets ?? monitor.targets)[0];
-                taskUpdate.taskPayload = buildTaskPayload(
-                    target,
-                    monitor.monitorType,
-                    newTrackMode,
-                    validated.extract_schema ?? monitor.extractSchema,
-                    validated.goal ?? monitor.goal,
-                    validated.diff_options ?? monitor.diffOptions
-                );
-                taskChanged = true;
-            }
-
-            if (monitor.scheduledTaskUuid && taskChanged) {
-                await db.update(schemas.scheduledTasks).set(taskUpdate).where(eq(schemas.scheduledTasks.uuid, monitor.scheduledTaskUuid));
-                try {
-                    const { SchedulerManager } = await import("@anycrawl/scrape");
-                    const scheduler = SchedulerManager.getInstance();
-                    if (scheduler.isSchedulerRunning()) {
-                        const updatedTask = await db
-                            .select()
-                            .from(schemas.scheduledTasks)
-                            .where(eq(schemas.scheduledTasks.uuid, monitor.scheduledTaskUuid))
-                            .limit(1);
-                        if (updatedTask.length > 0) await scheduler.addScheduledTask(updatedTask[0]);
-                    }
-                } catch (error) {
-                    log.warning(`Failed to update monitor task in scheduler: ${error}`);
-                }
-            }
+            await this.syncTask(task);
 
             const updated = await getOwnedMonitor(db, id!, owner);
             res.json({ success: true, data: serializeRecord(updated) });
@@ -363,7 +262,7 @@ export class MonitorController {
      */
     public delete = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id } = req.params;
+            const id = z.string().uuid().parse(req.params.id);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
 
@@ -373,15 +272,7 @@ export class MonitorController {
                 return;
             }
 
-            // Monitor + backing task must go together — a surviving task would keep
-            // firing and billing while hidden from the scheduled-tasks list.
-            await db.transaction(async (tx: any) => {
-                // Deleting the monitor first (FK cascade removes snapshots + changes)
-                await tx.delete(schemas.monitors).where(eq(schemas.monitors.uuid, id));
-                if (monitor.scheduledTaskUuid) {
-                    await tx.delete(schemas.scheduledTasks).where(eq(schemas.scheduledTasks.uuid, monitor.scheduledTaskUuid));
-                }
-            });
+            await deleteOwnedMonitor(db, id, owner);
 
             if (monitor.scheduledTaskUuid) {
                 try {
@@ -402,82 +293,47 @@ export class MonitorController {
      * Pause monitoring (pauses the backing scheduled task).
      */
     public pause = async (req: RequestWithAuth, res: Response): Promise<void> => {
-        try {
-            const { id } = req.params;
-            const owner = this.getOwnerContext(req);
-            const db = await getDB();
-
-            const monitor = await getOwnedMonitor(db, id!, owner);
-            if (!monitor) {
-                res.status(404).json({ success: false, error: "Monitor not found" });
-                return;
-            }
-
-            await db.update(schemas.monitors).set({ isActive: false, updatedAt: new Date() }).where(eq(schemas.monitors.uuid, id));
-            if (monitor.scheduledTaskUuid) {
-                await db.update(schemas.scheduledTasks)
-                    .set({ isPaused: true, pauseReason: "Paused by user (monitor)", updatedAt: new Date() })
-                    .where(eq(schemas.scheduledTasks.uuid, monitor.scheduledTaskUuid));
-                try {
-                    const { SchedulerManager } = await import("@anycrawl/scrape");
-                    await SchedulerManager.getInstance().removeScheduledTask(monitor.scheduledTaskUuid);
-                } catch (error) {
-                    log.warning(`Failed to pause monitor task: ${error}`);
-                }
-            }
-            res.json({ success: true, message: "Monitor paused successfully" });
-        } catch (error) {
-            this.handleError(error, res);
-        }
+        await this.setActive(req, res, false);
     };
 
-    /**
-     * Resume monitoring.
-     */
     public resume = async (req: RequestWithAuth, res: Response): Promise<void> => {
+        await this.setActive(req, res, true);
+    };
+
+    private async setActive(req: RequestWithAuth, res: Response, isActive: boolean): Promise<void> {
         try {
-            const { id } = req.params;
+            const id = z.string().uuid().parse(req.params.id);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
-
-            const monitor = await getOwnedMonitor(db, id!, owner);
-            if (!monitor) {
+            const task = await updateOwnedMonitor(db, id, owner, (monitor, backingTask) => prepareMonitorUpdate(monitor, backingTask, { is_active: isActive }));
+            if (!task) {
                 res.status(404).json({ success: false, error: "Monitor not found" });
                 return;
             }
+            await this.syncTask(task);
+            res.json({ success: true, message: `Monitor ${isActive ? "resumed" : "paused"} successfully`, data: serializeRecord(await getOwnedMonitor(db, id, owner)) });
+        } catch (error) { this.handleError(error, res); }
+    }
 
-            await db.update(schemas.monitors).set({ isActive: true, updatedAt: new Date() }).where(eq(schemas.monitors.uuid, id));
-            if (monitor.scheduledTaskUuid) {
-                await db.update(schemas.scheduledTasks)
-                    .set({ isPaused: false, pauseReason: null, consecutiveFailures: 0, updatedAt: new Date() })
-                    .where(eq(schemas.scheduledTasks.uuid, monitor.scheduledTaskUuid));
-                try {
-                    const { SchedulerManager } = await import("@anycrawl/scrape");
-                    const scheduler = SchedulerManager.getInstance();
-                    if (scheduler.isSchedulerRunning()) {
-                        const resumedTask = await db
-                            .select()
-                            .from(schemas.scheduledTasks)
-                            .where(eq(schemas.scheduledTasks.uuid, monitor.scheduledTaskUuid))
-                            .limit(1);
-                        if (resumedTask.length > 0) await scheduler.addScheduledTask(resumedTask[0]);
-                    }
-                } catch (error) {
-                    log.warning(`Failed to resume monitor task: ${error}`);
-                }
-            }
-            res.json({ success: true, message: "Monitor resumed successfully" });
+    private async syncTask(task: any): Promise<void> {
+        try {
+            const { SchedulerManager } = await import("@anycrawl/scrape");
+            const scheduler = SchedulerManager.getInstance();
+            if (task.isPaused || !task.isActive) await scheduler.removeScheduledTask(task.uuid);
+            else if (scheduler.isSchedulerRunning()) await scheduler.addScheduledTask(task);
         } catch (error) {
-            this.handleError(error, res);
+            // The scheduler polls persisted updatedAt; the committed state remains
+            // authoritative when Redis is temporarily unavailable.
+            log.warning(`Monitor schedule will be reconciled from the database: ${error}`);
         }
-    };
+    }
 
     /**
      * Trigger an immediate check (on-demand run).
      */
     public check = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id } = req.params;
+            const id = z.string().uuid().parse(req.params.id);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
 
@@ -504,10 +360,12 @@ export class MonitorController {
             // A paused/inactive monitor would 202 here but the worker silently drops
             // the job at the isPaused re-check — surface the real state instead of a
             // spinner that never completes.
-            if (!monitor.isActive || taskRows[0].isPaused) {
+            if (!monitor.isActive || !taskRows[0].isActive || taskRows[0].isPaused) {
                 res.status(409).json({
                     success: false,
                     error: "Monitor is paused. Resume it before triggering a check.",
+                    code: "MONITOR_PAUSED",
+                    pause_reason: taskRows[0].pauseReason,
                 });
                 return;
             }
@@ -522,10 +380,11 @@ export class MonitorController {
                         AND ${schemas.taskExecutions.status} IN ('pending', 'running')`
                 )
                 .limit(1);
-            if (inFlight.length > 0) {
+            if (monitor.inProgress || inFlight.length > 0) {
                 res.status(409).json({
                     success: false,
                     error: "A check is already in progress for this monitor",
+                    code: "MONITOR_CHECK_IN_PROGRESS",
                 });
                 return;
             }
@@ -562,7 +421,7 @@ export class MonitorController {
      */
     public snapshots = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id } = req.params;
+            const id = z.string().uuid().parse(req.params.id);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
 
@@ -577,8 +436,8 @@ export class MonitorController {
                 req.query.offset as string | undefined,
                 { defaultLimit: 50, maxLimit: 200 }
             );
-            const rows = await listSnapshotsByMonitor(db, id!, offset, limit);
-            res.json({ success: true, data: serializeRecords(rows) });
+            const rows = await listSnapshotsByMonitor(db, id!, offset, limit + 1, z.string().optional().parse(req.query.cursor));
+            this.sendPage(res, rows, limit, "capturedAt");
         } catch (error) {
             this.handleError(error, res);
         }
@@ -591,7 +450,7 @@ export class MonitorController {
      */
     public snapshotDetail = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id, snapshotId } = req.params;
+            const { id, snapshotId } = z.object({ id: z.string().uuid(), snapshotId: z.string().uuid() }).parse(req.params);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
 
@@ -606,7 +465,12 @@ export class MonitorController {
                 res.status(404).json({ success: false, error: "Snapshot not found" });
                 return;
             }
-            res.json({ success: true, data: serializeRecord(snapshot) });
+            const content = snapshot.content ?? null;
+            const contentTruncated = typeof content === "string" && content.length > config.monitor.maxInlineContentChars;
+            res.json({ success: true, data: serializeRecord({ ...snapshot,
+                content: contentTruncated ? content.slice(0, config.monitor.maxInlineContentChars) : content,
+                contentTruncated, contentLength: content?.length ?? 0,
+            }) });
         } catch (error) {
             this.handleError(error, res);
         }
@@ -617,7 +481,7 @@ export class MonitorController {
      */
     public changes = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id } = req.params;
+            const id = z.string().uuid().parse(req.params.id);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
 
@@ -632,8 +496,10 @@ export class MonitorController {
                 req.query.offset as string | undefined,
                 { defaultLimit: 50, maxLimit: 200 }
             );
-            const rows = await listChangesByMonitor(db, id!, offset, limit);
-            res.json({ success: true, data: serializeRecords(rows) });
+            const cursor = z.string().optional().parse(req.query.cursor);
+            const includeDiffText = z.enum(["true", "false"]).optional().parse(req.query.include_diff_text) !== "false";
+            const rows = await listChangesByMonitor(db, id!, offset, limit + 1, { cursor, includeDiffText });
+            this.sendPage(res, rows, limit);
         } catch (error) {
             this.handleError(error, res);
         }
@@ -644,7 +510,7 @@ export class MonitorController {
      */
     public changeDetail = async (req: RequestWithAuth, res: Response): Promise<void> => {
         try {
-            const { id, changeId } = req.params;
+            const { id, changeId } = z.object({ id: z.string().uuid(), changeId: z.string().uuid() }).parse(req.params);
             const owner = this.getOwnerContext(req);
             const db = await getDB();
 
@@ -666,11 +532,40 @@ export class MonitorController {
                 res.status(404).json({ success: false, error: "Change not found" });
                 return;
             }
-            res.json({ success: true, data: serializeRecord(rows[0]) });
+            const notifications = await listMonitorNotificationHistory(db, id, changeId);
+            res.json({ success: true, data: serializeRecord({ ...rows[0], notifications: serializeRecords(notifications) }) });
         } catch (error) {
             this.handleError(error, res);
         }
     };
+
+    public checks = async (req: RequestWithAuth, res: Response): Promise<void> => {
+        await this.history(req, res, "checks");
+    };
+
+    public notifications = async (req: RequestWithAuth, res: Response): Promise<void> => {
+        await this.history(req, res, "notifications");
+    };
+
+    private async history(req: RequestWithAuth, res: Response, kind: "checks" | "notifications"): Promise<void> {
+        try {
+            const id = z.string().uuid().parse(req.params.id), db = await getDB();
+            if (!await getOwnedMonitor(db, id, this.getOwnerContext(req))) {
+                res.status(404).json({ success: false, error: "Monitor not found" });
+                return;
+            }
+            const { limit } = normalizePagination(req.query.limit as string | undefined, undefined, { defaultLimit: 50, maxLimit: 200 });
+            const rows = kind === "checks" ? await listMonitorCheckHistory(db, id, limit) : await listMonitorNotificationHistory(db, id, undefined, limit);
+            res.json({ success: true, data: serializeRecords(rows) });
+        } catch (error) { this.handleError(error, res); }
+    }
+
+    private sendPage(res: Response, rows: any[], limit: number, timeField: "createdAt" | "capturedAt" = "createdAt"): void {
+        const hasMore = rows.length > limit, page = rows.slice(0, limit);
+        res.json({ success: true, data: serializeRecords(page), pagination: {
+            has_more: hasMore, next_cursor: hasMore ? encodeMonitorCursor(page[page.length - 1], timeField) : null,
+        } });
+    }
 
     private calculateNextExecution(cronExpression: string, timezone: string): Date | null {
         try {
@@ -693,7 +588,9 @@ export class MonitorController {
     }
 
     private handleError(error: any, res: Response): void {
-        if (error instanceof z.ZodError) {
+        if (error instanceof MonitorCursorError) {
+            res.status(400).json({ success: false, error: error.message, code: error.code });
+        } else if (error instanceof z.ZodError) {
             const formattedErrors = error.errors.map((err) => ({
                 field: err.path.join("."),
                 message: err.message,

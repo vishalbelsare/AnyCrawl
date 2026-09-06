@@ -1,0 +1,93 @@
+{
+  "uuid": "f5d64d2d-4b37-4f75-9b8c-819fb3191c01",
+  "templateId": "youtube-video-data-extractor",
+  "logo": "https://ac-public.anycrawl.dev/youtube-video-data-extractor.png",
+  "name": "YouTube Video Data Extractor",
+  "description": "No-code YouTube API and scraper. Extract video title, channel name and username, channel URL/ID, visibility, upload/publish dates, duration, views, likes, category, description, thumbnail, subtitles/transcript (when available), end screen recommendations, and age-restriction flag—no quotas or limits.",
+  "tags": ["youtube", "video", "social", "data"],
+  "version": "1.0.0",
+  "templateType": "scrape",
+  "pricing": { "perCall": 1, "currency": "credits" },
+  "reqOptions": {
+    "engine": "playwright",
+    "formats": ["markdown"],
+    "timeout": 60000,
+    "retry": true,
+    "wait_for": 500,
+    "wait_for_selector": {
+      "selector": "meta[property=\"og:description\"], meta[name=\"description\"]",
+      "state": "attached",
+      "timeout": 12000
+    }
+  },
+  "handlers": {
+    "requestHandler": {
+      "language": "javascript",
+      "sourcePath": "requestHandler.js"
+    },
+    "failedRequestHandler": {
+      "language": "javascript",
+      "source": "function handleFailedRequest(context, error) {\n    const { request } = context;\n    return {\n        success: false,\n        url: request?.url,\n        error: error?.message || 'Unknown error',\n        timestamp: new Date().toISOString()\n    };\n}\n\nreturn handleFailedRequest(context, error);"
+    }
+  },
+  "metadata": {
+    "allowedDomains": {
+      "type": "glob",
+      "patterns": [
+        "https://www.youtube.com/watch?*",
+        "https://m.youtube.com/watch?*",
+        "https://youtube.com/watch?*",
+        "https://youtu.be/*"
+      ]
+    },
+    "source": "custom",
+    "resultTabs": [
+      { "name": "jsonResult", "label": "JSON Result" },
+      { "name": "transcript", "label": "Transcript" }
+    ],
+    "reviewRecords": [
+      {
+        "reviewDate": "2025-09-30T12:00:00.000Z",
+        "reviewStatus": "approved",
+        "reviewNotes": "Verified based on official YouTube watch page structure"
+      },
+      {
+        "reviewDate": "2025-10-05T12:00:00.000Z",
+        "reviewStatus": "approved",
+        "reviewNotes": "Updated to v2.0 - Enhanced using ytInitialPlayerResponse with improved consent handling"
+      }
+    ]
+  },
+  "variables": {
+    "waitFor": {
+      "type": "number",
+      "label": "Wait For (ms)",
+      "description": "Override default wait time before extraction",
+      "required": false,
+      "defaultValue": 1500,
+      "mapping": { "target": "wait_for" }
+    },
+    "timeoutMs": {
+      "type": "number",
+      "label": "Timeout (ms)",
+      "description": "Override request timeout for the scraper",
+      "required": false,
+      "defaultValue": 60000,
+      "mapping": { "target": "timeout" }
+    }
+  },
+  "createdBy": "system-admin",
+  "publishedBy": "system-admin",
+  "reviewedBy": "system-admin",
+  "status": "published",
+  "reviewStatus": "approved",
+  "reviewNotes": "data extraction using ytInitialPlayerResponse",
+  "trusted": true,
+  "createdAt": "2025-09-30T12:00:00.000Z",
+  "updatedAt": "2025-10-05T12:00:00.000Z",
+  "publishedAt": "2025-09-30T12:00:00.000Z",
+  "reviewedAt": "2025-10-05T12:00:00.000Z",
+  "output": {
+    "sqlPath": "youtube-template-insert.sql"
+  }
+}

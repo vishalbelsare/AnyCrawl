@@ -444,7 +444,7 @@ export class ProgressManager {
                         },
                         "crawl",
                         jobId,
-                        dbJob.userId ?? undefined
+                        { userId: dbJob.userId ?? undefined, apiKeyId: dbJob.apiKey ?? undefined }
                     );
                 }
             } catch (e) {

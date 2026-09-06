@@ -307,6 +307,9 @@ importers:
       ts-jest-resolver:
         specifier: ^2.0.1
         version: 2.0.1
+      tsx:
+        specifier: ^4.19.4
+        version: 4.20.5
       typescript:
         specifier: ^5.7.2
         version: 5.9.2
@@ -466,8 +469,8 @@ importers:
         specifier: ^1.0.0
         version: 1.1.2
       cloakbrowser:
-        specifier: 0.3.30
-        version: 0.3.30(playwright-core@1.55.0)(puppeteer-core@24.22.0)
+        specifier: 0.5.7
+        version: 0.5.7(playwright-core@1.55.0)(puppeteer-core@24.22.0)
       crawlee:
         specifier: ^3.13.0
         version: 3.15.0(@types/node@22.14.1)(playwright@1.55.0)(puppeteer@24.22.0(typescript@5.8.2))
@@ -3418,8 +3421,8 @@ packages:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
     engines: {node: '>=12'}
 
-  cloakbrowser@0.3.30:
-    resolution: {integrity: sha512-e7kDZzOmqRn9VOFskTDLU6rFqj+TYj68942XFqs2m+CC5G8yHwkHhitjMQJaI/c5Zvl7Aez/kf1JjO/b3VqYaA==}
+  cloakbrowser@0.5.7:
+    resolution: {integrity: sha512-QUCM+rVduu4NQmQne0FePojl2X4144n+rm/Cfva9MSkG4Cssr5zvQa5LAYYoBNiwonv2GxhCtp1/YZWyOuHvuA==}
     engines: {node: '>=20.0.0'}
     hasBin: true
     peerDependencies:
@@ -10630,7 +10633,7 @@ snapshots:
       strip-ansi: 6.0.1
       wrap-ansi: 7.0.0
 
-  cloakbrowser@0.3.30(playwright-core@1.55.0)(puppeteer-core@24.22.0):
+  cloakbrowser@0.5.7(playwright-core@1.55.0)(puppeteer-core@24.22.0):
     dependencies:
       tar: 7.4.3
     optionalDependencies:

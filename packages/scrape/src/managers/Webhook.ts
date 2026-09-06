@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import axios from "axios";
-import { log } from "@anycrawl/libs";
-import { getDB, schemas, eq, sql } from "@anycrawl/db";
+import { log, appConfig, type OwnerContext } from "@anycrawl/libs";
+import { getDB, schemas, eq, sql, listWebhooksByOwner, and, lte, or, refreshWebhookMonitorNotification, withDatabaseTransaction, type DatabaseSteps } from "@anycrawl/db";
 import { QueueManager } from "./Queue.js";
 import { WorkerManager } from "./Worker.js";
 import { randomUUID } from "crypto";
@@ -75,7 +75,7 @@ export class WebhookManager {
             }
         );
 
-        // Start retry processor (check every 30 seconds for pending retries)
+        // Start retry processor for persisted pending/retrying deliveries
         this.startRetryProcessor();
 
         log.info("[WEBHOOK] ✅ Webhook Manager initialized successfully");
@@ -83,98 +83,84 @@ export class WebhookManager {
 
     /**
      * Fan an event out to all matching subscriptions.
-     * Returns the number of deliveries actually enqueued — 0 means nothing was
-     * dispatched (no matching subscription, or a lookup failure). Callers that
-     * track delivery state (e.g. the monitor post-processor's `notified` flag)
-     * must check the count: this method never rejects.
+     * Scope is evaluated within the owner's subscriptions. Errors propagate so
+     * a lookup/enqueue failure cannot be confused with zero subscriptions.
      */
     public async triggerEvent(
         eventType: string,
         payload: any,
         eventSource: string,
         eventSourceId: string,
-        userId?: string
+        owner: OwnerContext,
+        options: { notificationUuid?: string } = {}
     ): Promise<number> {
+        if (!owner.userId && !owner.apiKeyId && appConfig.authEnabled) {
+            throw new Error("Webhook delivery requires an owner when authentication is enabled");
+        }
         const db = await getDB();
         let enqueued = 0;
-
-        try {
-            // Find all active subscriptions for this event type
-            const subscriptions = await db
-                .select()
-                .from(schemas.webhookSubscriptions)
-                .where(
-                    sql`${schemas.webhookSubscriptions.isActive} = true
-                        AND ${schemas.webhookSubscriptions.eventTypes}::jsonb @> ${JSON.stringify([eventType])}`
-                );
-
-            log.debug(`[WEBHOOK] Found ${subscriptions.length} webhook subscriptions for event ${eventType}`);
-
-            for (const subscription of subscriptions) {
-                // Filter by userId if provided
-                if (userId && subscription.userId !== userId) {
-                    continue;
-                }
-
-                // Filter by scope
-                if (subscription.scope !== "all" && subscription.specificTaskIds) {
-                    const taskIds = subscription.specificTaskIds as string[];
-                    if (!taskIds.includes(eventSourceId)) {
-                        continue;
-                    }
-                }
-
-                await this.enqueueDelivery(subscription, eventType, payload, eventSource, eventSourceId);
-                enqueued++;
+        // Filtering decoded JSON after the owner-scoped query works with both
+        // PostgreSQL jsonb and SQLite JSON text, without dialect-specific casts.
+        const subscriptions = await listWebhooksByOwner(db, owner);
+        const errors: unknown[] = [];
+        for (const subscription of subscriptions) {
+            if (!subscription.isActive) continue;
+            const directTest = eventType === "webhook.test" && eventSource === "webhook";
+            if (directTest ? subscription.uuid !== eventSourceId : !Array.isArray(subscription.eventTypes) || !subscription.eventTypes.includes(eventType)) continue;
+            if (owner.userId ? subscription.userId !== owner.userId : owner.apiKeyId && subscription.apiKey !== owner.apiKeyId) continue;
+            if (!directTest && subscription.scope !== "all" && (!Array.isArray(subscription.specificTaskIds) || !subscription.specificTaskIds.includes(eventSourceId))) continue;
+            try {
+                if (await this.enqueueDelivery(subscription, eventType, payload, eventSource, eventSourceId, options.notificationUuid)) enqueued++;
+            } catch (error) {
+                errors.push(error);
             }
-        } catch (error) {
-            log.error(`[WEBHOOK] Failed to trigger webhook event ${eventType}: ${error}`);
         }
-
+        if (errors.length) throw new AggregateError(errors, `Failed to enqueue ${errors.length} webhook delivery(s)`);
         return enqueued;
     }
 
     private async enqueueDelivery(
-        subscription: any,
-        eventType: string,
-        payload: any,
-        eventSource: string,
-        eventSourceId: string
-    ): Promise<void> {
+        subscription: any, eventType: string, payload: any, eventSource: string,
+        eventSourceId: string, notificationUuid?: string
+    ): Promise<boolean> {
         const db = await getDB();
-
-        try {
-            // Create delivery record
-            const deliveryUuid = randomUUID();
-            await db.insert(schemas.webhookDeliveries).values({
-                uuid: deliveryUuid,
-                webhookSubscriptionUuid: subscription.uuid,
-                eventType: eventType,
-                eventSource: eventSource,
-                eventSourceId: eventSourceId,
-                status: "pending",
-                attemptNumber: 1,
-                maxAttempts: subscription.maxRetries || 3,
-                requestUrl: subscription.webhookUrl,
-                requestMethod: "POST",
-                requestHeaders: subscription.customHeaders || {},
-                requestBody: payload,
-                createdAt: new Date(),
-            });
-
-            // Enqueue for delivery
-            const queueManager = QueueManager.getInstance();
-            const queue = queueManager.getQueue(this.WEBHOOK_QUEUE);
-            await queue.add(
-                "webhook-delivery",
-                { deliveryId: deliveryUuid },
-                { jobId: deliveryUuid }
-            );
-
-            log.debug(`[WEBHOOK] Enqueued webhook delivery ${deliveryUuid} for event ${eventType}`);
-        } catch (error) {
-            log.error(`[WEBHOOK] Failed to enqueue webhook delivery: ${error}`);
+        const digest = notificationUuid ? crypto.createHash("sha256").update(`${notificationUuid}/${subscription.uuid}`).digest("hex") : null;
+        const deliveryUuid = digest
+            ? `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`
+            : randomUUID();
+        const record = {
+            uuid: deliveryUuid, webhookSubscriptionUuid: subscription.uuid,
+            monitorNotificationUuid: notificationUuid ?? null, eventType, eventSource, eventSourceId,
+            status: "pending", attemptNumber: 1, maxAttempts: Math.max(1, subscription.maxRetries ?? 3),
+            requestUrl: subscription.webhookUrl, requestMethod: "POST", requestHeaders: subscription.customHeaders || {},
+            requestBody: payload, createdAt: new Date(), updatedAt: new Date(),
+        };
+        const insert = db.insert(schemas.webhookDeliveries).values(record);
+        if (notificationUuid) {
+            await insert.onConflictDoNothing();
+            const [existing] = await db.select().from(schemas.webhookDeliveries)
+                .where(eq(schemas.webhookDeliveries.uuid, deliveryUuid)).limit(1);
+            if (!existing || existing.status !== "pending") return false;
+            await this.enqueuePendingDelivery(existing);
+        } else {
+            await insert;
+            await this.enqueuePendingDelivery(record);
         }
+        return true;
+    }
+
+    private async enqueuePendingDelivery(delivery: any): Promise<void> {
+        const queue = QueueManager.getInstance().getQueue(this.WEBHOOK_QUEUE);
+        const jobId = `${delivery.uuid}-attempt-${delivery.attemptNumber}`;
+        const existing = await boundedQueueOperation(queue.getJob(jobId));
+        if (existing) {
+            const state = await boundedQueueOperation(existing.getState());
+            if (state !== "completed" && state !== "failed") return;
+            // A completed queue job with a pending DB record has an unknown
+            // delivery outcome. Retry with the same delivery/event identity.
+            await boundedQueueOperation(existing.remove());
+        }
+        await boundedQueueOperation(queue.add("webhook-delivery", { deliveryId: delivery.uuid }, { jobId }));
     }
 
     private async deliverWebhook(deliveryId: string): Promise<void> {
@@ -193,6 +179,18 @@ export class WebhookManager {
             }
 
             const deliveryRecord = delivery[0];
+            if (deliveryRecord.status !== "pending") return;
+            if (deliveryRecord.monitorNotificationUuid) {
+                const [notification] = await db.select({ status: schemas.monitorNotifications.status, isActive: schemas.monitors.isActive })
+                    .from(schemas.monitorNotifications).innerJoin(schemas.monitors, eq(schemas.monitorNotifications.monitorUuid, schemas.monitors.uuid))
+                    .where(eq(schemas.monitorNotifications.uuid, deliveryRecord.monitorNotificationUuid)).limit(1);
+                if (!notification || !notification.isActive || notification.status === "skipped") {
+                    await db.update(schemas.webhookDeliveries).set({ status: "skipped", errorMessage: "Monitor notification cancelled" })
+                        .where(eq(schemas.webhookDeliveries.uuid, deliveryId));
+                    if (notification) await refreshWebhookMonitorNotification(db, deliveryRecord.monitorNotificationUuid);
+                    return;
+                }
+            }
 
             const subscription = await db
                 .select()
@@ -201,7 +199,8 @@ export class WebhookManager {
                 .limit(1);
 
             if (!subscription.length || !subscription[0].isActive) {
-                log.info(`[WEBHOOK] Subscription inactive, skipping delivery ${deliveryId}`);
+                await db.update(schemas.webhookDeliveries).set({ status: "skipped", errorMessage: "Subscription inactive" }).where(eq(schemas.webhookDeliveries.uuid, deliveryId));
+                if (deliveryRecord.monitorNotificationUuid) await refreshWebhookMonitorNotification(db, deliveryRecord.monitorNotificationUuid);
                 return;
             }
 
@@ -222,6 +221,7 @@ export class WebhookManager {
                     })
                     .where(eq(schemas.webhookDeliveries.uuid, deliveryId));
 
+                if (deliveryRecord.monitorNotificationUuid) await refreshWebhookMonitorNotification(db, deliveryRecord.monitorNotificationUuid);
                 return;
             }
 
@@ -254,29 +254,20 @@ export class WebhookManager {
 
                 const duration = Date.now() - startTime;
 
-                // Mark as delivered
-                await db
-                    .update(schemas.webhookDeliveries)
-                    .set({
-                        status: "delivered",
-                        responseStatus: response.status,
-                        responseHeaders: response.headers as any,
-                        responseBody: JSON.stringify(response.data).substring(0, 1000),
-                        responseDurationMs: duration,
-                        deliveredAt: new Date(),
-                    })
-                    .where(eq(schemas.webhookDeliveries.uuid, deliveryId));
-
-                // Update subscription stats
-                await db
-                    .update(schemas.webhookSubscriptions)
-                    .set({
-                        lastSuccessAt: new Date(),
-                        consecutiveFailures: 0,
+                await withDatabaseTransaction(db, function* (tx): DatabaseSteps<void> {
+                    const rows = yield tx.update(schemas.webhookDeliveries).set({
+                        status: "delivered", responseStatus: response.status, responseHeaders: response.headers as any,
+                        responseBody: JSON.stringify(response.data).substring(0, 1000), responseDurationMs: duration,
+                        deliveredAt: new Date(), updatedAt: new Date(),
+                    }).where(and(eq(schemas.webhookDeliveries.uuid, deliveryId), eq(schemas.webhookDeliveries.status, "pending"),
+                        eq(schemas.webhookDeliveries.attemptNumber, deliveryRecord.attemptNumber))).returning({ uuid: schemas.webhookDeliveries.uuid });
+                    if (rows.length) yield tx.update(schemas.webhookSubscriptions).set({
+                        lastSuccessAt: new Date(), consecutiveFailures: 0,
                         totalDeliveries: sql`${schemas.webhookSubscriptions.totalDeliveries} + 1`,
                         successfulDeliveries: sql`${schemas.webhookSubscriptions.successfulDeliveries} + 1`,
-                    })
-                    .where(eq(schemas.webhookSubscriptions.uuid, sub.uuid));
+                    }).where(eq(schemas.webhookSubscriptions.uuid, sub.uuid));
+                });
+                if (deliveryRecord.monitorNotificationUuid) await refreshWebhookMonitorNotification(db, deliveryRecord.monitorNotificationUuid);
 
                 log.info(`[WEBHOOK] ✅ Webhook delivered: ${deliveryId} to ${sub.webhookUrl} (${duration}ms)`);
             } catch (error: any) {
@@ -305,77 +296,31 @@ export class WebhookManager {
 
         log.warning(`[WEBHOOK] Webhook delivery failed: ${delivery.uuid} - ${errorMessage}`);
 
-        if (delivery.attemptNumber < delivery.maxAttempts) {
-            // Calculate next retry time with exponential backoff
-            const backoffMultiplier = subscription.retryBackoffMultiplier || 2;
-            const backoffMs = Math.pow(backoffMultiplier, delivery.attemptNumber) * 60000; // Base: 1 minute
-            const nextRetryAt = new Date(Date.now() + backoffMs);
-
-            await db
-                .update(schemas.webhookDeliveries)
-                .set({
-                    status: "retrying",
-                    attemptNumber: delivery.attemptNumber + 1,
-                    errorMessage: errorMessage,
-                    responseStatus: responseStatus,
-                    responseHeaders: responseHeaders as any,
-                    responseBody: responseBody,
-                    responseDurationMs: duration,
-                    nextRetryAt: nextRetryAt,
-                })
-                .where(eq(schemas.webhookDeliveries.uuid, delivery.uuid));
-
-            log.info(
-                `[WEBHOOK] Webhook delivery ${delivery.uuid} will retry (attempt ${delivery.attemptNumber + 1}/${delivery.maxAttempts}) at ${nextRetryAt.toISOString()}`
-            );
-        } else {
-            // Max attempts reached - mark as failed
-            await db
-                .update(schemas.webhookDeliveries)
-                .set({
-                    status: "failed",
-                    errorMessage: errorMessage,
-                    responseStatus: responseStatus,
-                    responseHeaders: responseHeaders as any,
-                    responseBody: responseBody,
-                    responseDurationMs: duration,
-                })
-                .where(eq(schemas.webhookDeliveries.uuid, delivery.uuid));
-
-            // Increment subscription failure count
-            await db
-                .update(schemas.webhookSubscriptions)
-                .set({
-                    lastFailureAt: new Date(),
-                    consecutiveFailures: sql`${schemas.webhookSubscriptions.consecutiveFailures} + 1`,
-                    totalDeliveries: sql`${schemas.webhookSubscriptions.totalDeliveries} + 1`,
-                    failedDeliveries: sql`${schemas.webhookSubscriptions.failedDeliveries} + 1`,
-                })
-                .where(eq(schemas.webhookSubscriptions.uuid, subscription.uuid));
-
-            // Check if we should auto-disable
-            const updatedSub = await db
-                .select()
-                .from(schemas.webhookSubscriptions)
-                .where(eq(schemas.webhookSubscriptions.uuid, subscription.uuid))
-                .limit(1);
-
-            if (
-                updatedSub[0] &&
-                updatedSub[0].consecutiveFailures >= updatedSub[0].autoDisableAfterFailures
-            ) {
-                await db
-                    .update(schemas.webhookSubscriptions)
-                    .set({ isActive: false })
-                    .where(eq(schemas.webhookSubscriptions.uuid, subscription.uuid));
-
-                log.warning(
-                    `[WEBHOOK] Webhook subscription ${subscription.uuid} auto-disabled after ${updatedSub[0].consecutiveFailures} consecutive failures`
-                );
+        const retrying = delivery.attemptNumber < delivery.maxAttempts;
+        const nextRetryAt = new Date(Date.now() + Math.pow(subscription.retryBackoffMultiplier || 2, delivery.attemptNumber) * 60000);
+        const changed = await withDatabaseTransaction(db, function* (tx): DatabaseSteps<boolean> {
+            const updated = yield tx.update(schemas.webhookDeliveries).set({
+                status: retrying ? "retrying" : "failed", errorMessage,
+                responseStatus, responseHeaders: responseHeaders as any, responseBody, responseDurationMs: duration,
+                ...(retrying ? { attemptNumber: delivery.attemptNumber + 1, nextRetryAt } : {}),
+            }).where(and(eq(schemas.webhookDeliveries.uuid, delivery.uuid), eq(schemas.webhookDeliveries.status, "pending"),
+                eq(schemas.webhookDeliveries.attemptNumber, delivery.attemptNumber))).returning({ uuid: schemas.webhookDeliveries.uuid });
+            if (!updated.length) return false;
+            if (!retrying) {
+                const [updatedSub] = yield tx.update(schemas.webhookSubscriptions).set({
+                    lastFailureAt: new Date(), consecutiveFailures: sql`${schemas.webhookSubscriptions.consecutiveFailures} + 1`,
+                    totalDeliveries: sql`${schemas.webhookSubscriptions.totalDeliveries} + 1`, failedDeliveries: sql`${schemas.webhookSubscriptions.failedDeliveries} + 1`,
+                }).where(eq(schemas.webhookSubscriptions.uuid, subscription.uuid)).returning();
+                if (updatedSub && updatedSub.consecutiveFailures >= updatedSub.autoDisableAfterFailures) {
+                    yield tx.update(schemas.webhookSubscriptions).set({ isActive: false }).where(eq(schemas.webhookSubscriptions.uuid, subscription.uuid));
+                }
             }
-
-            log.error(`[WEBHOOK] Webhook delivery permanently failed: ${delivery.uuid}`);
-        }
+            return true;
+        });
+        if (!changed) return;
+        if (retrying) log.info(`[WEBHOOK] Delivery ${delivery.uuid} retry ${delivery.attemptNumber + 1}/${delivery.maxAttempts} at ${nextRetryAt.toISOString()}`);
+        else log.error(`[WEBHOOK] Delivery permanently failed: ${delivery.uuid}`);
+        if (delivery.monitorNotificationUuid) await refreshWebhookMonitorNotification(db, delivery.monitorNotificationUuid);
     }
 
     private generateSignature(payload: any, secret: string): string {
@@ -384,56 +329,34 @@ export class WebhookManager {
         return `sha256=${hmac.digest("hex")}`;
     }
 
-    private startRetryProcessor(): void {
-        // Check for pending retries every 30 seconds
-        this.retryProcessorInterval = setInterval(async () => {
+    /** Recover both retrying deliveries and DB-persisted intents whose Redis
+     * enqueue failed (including failures after retrying -> pending). */
+    public async reconcilePendingDeliveries(): Promise<void> {
+        const db = await getDB();
+        const now = new Date();
+        const deliveries = await db.select().from(schemas.webhookDeliveries).where(or(
+            eq(schemas.webhookDeliveries.status, "pending"),
+            and(eq(schemas.webhookDeliveries.status, "retrying"), lte(schemas.webhookDeliveries.nextRetryAt, now)),
+        )).orderBy(sql`${schemas.webhookDeliveries.createdAt} ASC`).limit(100);
+        for (const delivery of deliveries) {
             try {
-                const db = await getDB();
-
-                // Find deliveries due for retry
-                const retries = await db
-                    .select()
-                    .from(schemas.webhookDeliveries)
-                    .where(
-                        sql`${schemas.webhookDeliveries.status} = 'retrying'
-                            AND ${schemas.webhookDeliveries.nextRetryAt} <= NOW()`
-                    )
-                    .limit(100);
-
-                if (retries.length > 0) {
-                    log.debug(`[WEBHOOK] Processing ${retries.length} pending webhook retries`);
-                }
-
-                for (const retry of retries) {
-                    // Step 1: Update status FIRST to prevent duplicate pickup by other instances
-                    // Use atomic update with status check to win the race
-                    const updated = await db
-                        .update(schemas.webhookDeliveries)
-                        .set({ status: "pending", updatedAt: new Date() })
-                        .where(
-                            sql`${schemas.webhookDeliveries.uuid} = ${retry.uuid}
-                                AND ${schemas.webhookDeliveries.status} = 'retrying'`
-                        )
+                if (delivery.status === "retrying") {
+                    const rows = await db.update(schemas.webhookDeliveries).set({ status: "pending", updatedAt: now })
+                        .where(and(eq(schemas.webhookDeliveries.uuid, delivery.uuid), eq(schemas.webhookDeliveries.status, "retrying")))
                         .returning({ uuid: schemas.webhookDeliveries.uuid });
-
-                    // Step 2: Only enqueue if we successfully updated (won the race)
-                    if (updated.length > 0) {
-                        const queueManager = QueueManager.getInstance();
-                        const queue = queueManager.getQueue(this.WEBHOOK_QUEUE);
-                        await queue.add(
-                            "webhook-delivery",
-                            { deliveryId: retry.uuid },
-                            { jobId: `${retry.uuid}-retry-${retry.attemptNumber}` }
-                        );
-                        log.debug(`[WEBHOOK] Re-enqueued delivery ${retry.uuid} for retry`);
-                    }
+                    if (!rows.length) continue;
                 }
+                await this.enqueuePendingDelivery(delivery);
             } catch (error) {
-                log.error(`[WEBHOOK] Retry processor error: ${error}`);
+                log.warning(`[WEBHOOK] Pending delivery ${delivery.uuid} will be retried: ${error}`);
             }
-        }, 30000);
+        }
+    }
 
-        // Avoid keeping the process alive solely for retry processing
+    private startRetryProcessor(): void {
+        this.retryProcessorInterval = setInterval(() => {
+            void this.reconcilePendingDeliveries().catch(error => log.error(`[WEBHOOK] Retry processor error: ${error}`));
+        }, 5000);
         this.retryProcessorInterval.unref?.();
     }
 
@@ -447,4 +370,13 @@ export class WebhookManager {
 
         log.info("[WEBHOOK] ✅ Webhook Manager stopped successfully");
     }
+}
+
+async function boundedQueueOperation<T>(operation: Promise<T>): Promise<T> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+        return await Promise.race([operation, new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("Webhook queue operation timed out")), 5000);
+        })]);
+    } finally { if (timer) clearTimeout(timer); }
 }

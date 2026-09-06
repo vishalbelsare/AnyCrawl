@@ -36,9 +36,10 @@ function createCleanupDbStub(
         }),
     }));
 
-    const db = {
+    const db: any = {
         select,
         update,
+        transaction: (work: (tx: any) => unknown) => work(db),
     };
 
     return { db, update };
@@ -127,7 +128,7 @@ describe("Scheduler lifecycle guards", () => {
         const manager = SchedulerManager.getInstance();
         await (manager as any).cleanupStaleRunningExecutions(db);
 
-        // taskExecutions transition + scheduledTasks stats + jobs status update
-        expect(update).toHaveBeenCalledTimes(3);
+        // Execution + task stats + durable check readiness + job status.
+        expect(update).toHaveBeenCalledTimes(4);
     });
 });

@@ -4,6 +4,15 @@ import { STATUS, JOB_RESULT_STATUS } from "./map.js";
 import { Job, CreateJobParams } from "./model/Job.js";
 import { Template, CreateTemplateParams } from "./model/Template.js";
 import { Billing } from "./model/Billing.js";
+export { withDatabaseTransaction, runDatabaseWork, isSQLiteExecutor } from "./transaction.js";
+export type { DatabaseSteps, DatabaseWork } from "./transaction.js";
+export { databaseType } from "./db/index.js";
+export { lt, lte, or, inArray, isNull, ne, asc, notExists } from "drizzle-orm";
+export * from "./model/MonitorWorkflow.js";
+export { updateOwnedMonitor, deleteOwnedMonitor } from "./model/MonitorConfiguration.js";
+export { pruneMonitorHistory } from "./model/MonitorRetention.js";
+export { encodeMonitorCursor, MonitorCursorError } from "./model/MonitorAccess.js";
+export { migrateSQLiteDatabase } from "./migrations.js";
 import {
     buildTaskWhereClause as buildTaskWhereClauseByOwner,
     buildWebhookWhereClause as buildWebhookWhereClauseByOwner,
@@ -21,6 +30,7 @@ import {
     listSnapshotsByMonitor as listSnapshotsByMonitorFn,
     getSnapshotForMonitor as getSnapshotForMonitorFn,
     listChangesByMonitor as listChangesByMonitorFn,
+    listChangesByOwner as listChangesByOwnerFn,
 } from "./model/MonitorAccess.js";
 import {
     buildDatasetWhereClause as buildDatasetWhereClauseByOwner,
@@ -119,6 +129,7 @@ export const getLatestSnapshot = getLatestSnapshotFn;
 export const listSnapshotsByMonitor = listSnapshotsByMonitorFn;
 export const getSnapshotForMonitor = getSnapshotForMonitorFn;
 export const listChangesByMonitor = listChangesByMonitorFn;
+export const listChangesByOwner = listChangesByOwnerFn;
 
 // Dataset ownership + access helpers
 export const buildDatasetWhereClause = buildDatasetWhereClauseByOwner;

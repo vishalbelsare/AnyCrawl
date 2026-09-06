@@ -352,6 +352,7 @@ export const webhookDeliveries = p.sqliteTable("webhook_deliveries", {
         .primaryKey()
         .$defaultFn(() => randomUUID()),
     webhookSubscriptionUuid: p.text("webhook_subscription_uuid").notNull().references(() => webhookSubscriptions.uuid, { onDelete: "cascade" }),
+    monitorNotificationUuid: p.text("monitor_notification_uuid"),
     eventType: p.text("event_type").notNull(),
     eventSource: p.text("event_source").notNull(),
     eventSourceId: p.text("event_source_id").notNull(),
@@ -432,6 +433,7 @@ export const monitors = p.sqliteTable("monitors", {
     apiKey: p.text("api_key_id").references(() => apiKey.uuid),
     userId: p.text("user_id"),
     name: p.text("name").notNull(),
+    revision: p.integer("revision").default(1).notNull(),
     description: p.text("description"),
     // 'webpage' | 'price'
     monitorType: p.text("monitor_type").default("webpage").notNull(),
@@ -462,16 +464,22 @@ export const monitorSnapshots = p.sqliteTable("monitor_snapshots", {
     monitorUuid: p.text("monitor_uuid").notNull().references(() => monitors.uuid, { onDelete: "cascade" }),
     taskExecutionUuid: p.text("task_execution_uuid").references(() => taskExecutions.uuid),
     url: p.text("url").notNull(),
+    checkUuid: p.text("check_uuid").unique(),
+    monitorRevision: p.integer("monitor_revision").default(0).notNull(),
+    sequenceNumber: p.integer("sequence_number").default(0).notNull(),
+    contentComplete: p.integer("content_complete", { mode: "boolean" }).default(false).notNull(),
     // sha256 of normalized content
     contentHash: p.text("content_hash").notNull(),
-    // Inlined normalized content (truncated); large content moves to S3 later
+    // Complete normalized comparison content; detail APIs truncate only the preview
     content: p.text("content"),
     // Structured extraction result (price mode)
     extracted: p.text("extracted", { mode: "json" }),
     // 'new' | 'same' | 'changed' | 'removed' | 'error'
     status: p.text("status").notNull(),
     capturedAt: p.integer("captured_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => [
+    p.index("monitor_snapshots_revision_idx").on(table.monitorUuid, table.monitorRevision, table.url, table.sequenceNumber),
+]);
 
 export const monitorChanges = p.sqliteTable("monitor_changes", {
     uuid: p
@@ -487,11 +495,64 @@ export const monitorChanges = p.sqliteTable("monitor_changes", {
     diffText: p.text("diff_text"),
     // [{ path, from, to, delta? }]
     diffJson: p.text("diff_json", { mode: "json" }),
+    checkUuid: p.text("check_uuid").unique(),
+    notificationStatus: p.text("notification_status").default("legacy").notNull(),
     // { meaningful, confidence, reason }
     judgment: p.text("judgment", { mode: "json" }),
     notified: p.integer("notified", { mode: "boolean" }).default(false).notNull(),
     createdAt: p.integer("created_at", { mode: "timestamp" }).notNull().$defaultFn(() => new Date()),
-});
+}, (table) => [
+    p.index("monitor_changes_monitor_idx").on(table.monitorUuid, table.createdAt),
+]);
+
+// A check is created atomically with its scheduled execution. Scraping and
+// post-processing have separate durable states; only one active check per monitor.
+export const monitorChecks = p.sqliteTable("monitor_checks", {
+    uuid: p.text("uuid").primaryKey().references(() => taskExecutions.uuid, { onDelete: "cascade" }),
+    monitorUuid: p.text("monitor_uuid").notNull().references(() => monitors.uuid, { onDelete: "cascade" }),
+    jobUuid: p.text("job_uuid").references(() => jobs.uuid),
+    sequenceNumber: p.integer("sequence_number").notNull(),
+    monitorRevision: p.integer("monitor_revision").notNull(),
+    configSnapshot: p.text("config_snapshot", { mode: "json" }).notNull(),
+    state: p.text("state").default("pending").notNull(),
+    resultStatus: p.text("result_status"),
+    sourceError: p.text("source_error", { mode: "json" }),
+    attempts: p.integer("attempts").default(0).notNull(),
+    nextAttemptAt: p.integer("next_attempt_at", { mode: "timestamp" }).notNull(),
+    leaseToken: p.text("lease_token"),
+    leaseExpiresAt: p.integer("lease_expires_at", { mode: "timestamp" }),
+    lastError: p.text("last_error"),
+    createdAt: p.integer("created_at", { mode: "timestamp" }).notNull(),
+    processedAt: p.integer("processed_at", { mode: "timestamp" }),
+}, (table) => [
+    p.uniqueIndex("monitor_checks_active_uidx").on(table.monitorUuid).where(sql`${table.state} IN ('pending', 'ready', 'processing')`),
+    p.index("monitor_checks_due_idx").on(table.state, table.nextAttemptAt),
+    p.index("monitor_checks_monitor_idx").on(table.monitorUuid, table.sequenceNumber),
+]);
+
+export const monitorNotifications = p.sqliteTable("monitor_notifications", {
+    uuid: p.text("uuid").primaryKey().$defaultFn(() => randomUUID()),
+    monitorUuid: p.text("monitor_uuid").notNull().references(() => monitors.uuid, { onDelete: "cascade" }),
+    checkUuid: p.text("check_uuid").notNull().references(() => monitorChecks.uuid, { onDelete: "cascade" }),
+    changeUuid: p.text("change_uuid").references(() => monitorChanges.uuid, { onDelete: "cascade" }),
+    idempotencyKey: p.text("idempotency_key").notNull().unique(),
+    channel: p.text("channel").notNull(),
+    eventType: p.text("event_type").notNull(),
+    recipient: p.text("recipient"),
+    payload: p.text("payload", { mode: "json" }).notNull(),
+    status: p.text("status").default("pending").notNull(),
+    attempts: p.integer("attempts").default(0).notNull(),
+    nextAttemptAt: p.integer("next_attempt_at", { mode: "timestamp" }).notNull(),
+    leaseToken: p.text("lease_token"),
+    leaseExpiresAt: p.integer("lease_expires_at", { mode: "timestamp" }),
+    lastError: p.text("last_error"),
+    createdAt: p.integer("created_at", { mode: "timestamp" }).notNull(),
+    deliveredAt: p.integer("delivered_at", { mode: "timestamp" }),
+}, (table) => [
+    p.index("monitor_notifications_due_idx").on(table.status, table.nextAttemptAt),
+    p.index("monitor_notifications_change_idx").on(table.changeUuid),
+    p.index("monitor_notifications_monitor_idx").on(table.monitorUuid, table.createdAt),
+]);
 
 // ============================================================================
 // Dataset (L2) tables — SQLite parallel of platform §11 / dedicated §5.9.

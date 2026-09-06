@@ -404,7 +404,7 @@ export class ScheduledTasksController {
                             },
                             "task",
                             taskId!,
-                            pausedTask[0].userId ?? undefined
+                            { userId: pausedTask[0].userId ?? undefined, apiKeyId: pausedTask[0].apiKey ?? undefined }
                         );
                     }
                 }
@@ -486,7 +486,7 @@ export class ScheduledTasksController {
                             },
                             "task",
                             taskId!,
-                            resumedTask[0].userId ?? undefined
+                            { userId: resumedTask[0].userId ?? undefined, apiKeyId: resumedTask[0].apiKey ?? undefined }
                         );
                     }
                 }

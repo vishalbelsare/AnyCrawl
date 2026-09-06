@@ -6,7 +6,10 @@ export { ALLOWED_ENGINES, SCRAPE_FORMATS, EXTRACT_SOURCES };
 // Define the recursive JSON Schema type
 export const jsonSchemaType: z.ZodType<any> = z.lazy(() =>
     z.object({
-        type: z.enum(["object", "array", "string", "number", "boolean", "null"]),
+        type: z.union([
+            z.enum(["object", "array", "string", "number", "integer", "boolean", "null"]),
+            z.array(z.enum(["object", "array", "string", "number", "integer", "boolean", "null"])).min(1),
+        ]),
         // For object schemas
         properties: z.record(jsonSchemaType).optional(),
         required: z.array(z.string()).optional(),
@@ -14,7 +17,7 @@ export const jsonSchemaType: z.ZodType<any> = z.lazy(() =>
         items: z.union([jsonSchemaType, z.array(jsonSchemaType)]).optional(),
         // Helpful hints for LLM extraction
         description: z.string().optional(),
-    })
+    }).passthrough()
 );
 
 // define json options schema
@@ -65,6 +68,16 @@ export const baseSchema = z.object({
         z.enum(["auto", "base", "stealth"]),
         z.string().url()
     ]).default("auto"),
+
+    /**
+     * Human-like interaction behavior (mouse/keyboard/scroll). Only effective for
+     * browser engines (Playwright); ignored for Cheerio/Puppeteer.
+     * - "auto": enable only when escalating — stealth proxy, or on a retry after a
+     *   block/challenge (default). Keeps the common navigate+extract path fast.
+     * - "on": force human-like behavior from the first attempt.
+     * - "off": never enable, even under stealth/retry.
+     */
+    humanize: z.enum(["auto", "on", "off"]).default("auto"),
 
     /**
      * The formats to be used

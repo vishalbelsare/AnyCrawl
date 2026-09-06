@@ -1,0 +1,99 @@
+{
+  "uuid": "b1c2d3e4-f5a6-4b7c-8d9e-0f1a2b3c4d5e",
+  "logo": "https://ac-public.anycrawl.dev/facebook-scraper.png",
+  "templateId": "facebook-scraper",
+  "name": "Facebook Scraper",
+  "description": "Extract public posts, page feed snippets, and embedded metadata from Facebook URLs (pages, groups, public posts). Outputs structured JSON and Markdown summaries. For public, ethically accessible content only.",
+  "tags": [
+    "facebook scraper",
+    "scrape facebook posts",
+    "facebook page scraper",
+    "facebook group scraper",
+    "social media scraper"
+  ],
+  "version": "1.0.0",
+  "templateType": "scrape",
+  "pricing": { "perCall": 1, "currency": "credits" },
+  "reqOptions": {
+    "engine": "playwright",
+    "formats": ["markdown"],
+    "timeout": 120000,
+    "retry": true,
+    "wait_until": "networkidle",
+    "wait_for": 4000,
+    "wait_for_selector": [
+      {
+        "selector": "[role=\"main\"]",
+        "state": "visible",
+        "timeout": 25000
+      }
+    ]
+  },
+  "handlers": {
+    "requestHandler": {
+      "language": "javascript",
+      "sourcePath": "requestHandler.js"
+    },
+    "failedRequestHandler": {
+      "language": "javascript",
+      "source": "function handleFailedRequest(context, error) {\n    const { request } = context;\n    return {\n        success: false,\n        url: request?.url,\n        error: error?.message || 'Unknown error',\n        timestamp: new Date().toISOString()\n    };\n}\n\nreturn handleFailedRequest(context, error);"
+    }
+  },
+  "metadata": {
+    "allowedDomains": {
+      "type": "glob",
+      "patterns": [
+        "https://www.facebook.com/**",
+        "https://facebook.com/**",
+        "https://m.facebook.com/**",
+        "https://web.facebook.com/**"
+      ]
+    },
+    "source": "custom",
+    "resultTabs": [{ "name": "jsonResult", "label": "JSON Result" }],
+    "reviewRecords": [
+      {
+        "reviewDate": "2026-03-21T00:00:00.000Z",
+        "reviewStatus": "approved",
+        "reviewNotes": "Initial version"
+      }
+    ]
+  },
+  "variables": {
+    "waitFor": {
+      "type": "number",
+      "label": "Wait For (ms)",
+      "description": "Extra delay before extraction in milliseconds",
+      "required": false,
+      "defaultValue": 4000,
+      "mapping": { "target": "wait_for" }
+    },
+    "timeoutMs": {
+      "type": "number",
+      "label": "Timeout (ms)",
+      "description": "Override request timeout for the scraper",
+      "required": false,
+      "defaultValue": 120000,
+      "mapping": { "target": "timeout" }
+    },
+    "maxItems": {
+      "type": "number",
+      "label": "Max Posts",
+      "description": "Maximum post-like items to collect from embedded page data",
+      "required": false,
+      "defaultValue": 40
+    }
+  },
+  "createdBy": "system-admin",
+  "publishedBy": "system-admin",
+  "reviewedBy": "system-admin",
+  "status": "published",
+  "reviewStatus": "approved",
+  "reviewNotes": "Initial version",
+  "trusted": true,
+  "createdAt": "2026-03-21T00:00:00.000Z",
+  "updatedAt": "2026-03-21T00:00:00.000Z",
+  "publishedAt": "2026-03-21T00:00:00.000Z",
+  "reviewedAt": "2026-03-21T00:00:00.000Z",
+  "output": { "sqlPath": "facebook-scraper.sql" }
+}

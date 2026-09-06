@@ -13,6 +13,7 @@ import { appConfig } from "@anycrawl/libs";
 
 export const app: Application = express();
 const port = process.env.ANYCRAWL_API_PORT || 8080;
+const host = process.env.ANYCRAWL_API_HOST || "0.0.0.0";
 
 app.disable("x-powered-by");
 app.use(cors());
@@ -71,7 +72,7 @@ app.use(deductCreditsMiddleware);
 app.use("/v1", v1Router);
 
 // Start the server
-const server = app.listen(port, async () => {
+const server = app.listen(Number(port), host, async () => {
     log.info(`✨ Server is running on port ${port}`);
     log.info(`🔐 Auth enabled: ${appConfig.authEnabled}`);
     log.info(`💳 Credits deduction enabled: ${appConfig.creditsEnabled}`);

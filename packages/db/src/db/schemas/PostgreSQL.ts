@@ -353,6 +353,7 @@ export const webhookDeliveries = p.pgTable("webhook_deliveries", {
         .primaryKey()
         .$defaultFn(() => randomUUID()),
     webhookSubscriptionUuid: p.uuid("webhook_subscription_uuid").notNull().references(() => webhookSubscriptions.uuid, { onDelete: "cascade" }),
+    monitorNotificationUuid: p.uuid("monitor_notification_uuid"),
     eventType: p.text("event_type").notNull(),
     eventSource: p.text("event_source").notNull(),
     eventSourceId: p.uuid("event_source_id").notNull(),
@@ -442,6 +443,7 @@ export const monitors = p.pgTable("monitors", {
     apiKey: p.uuid("api_key_id").references(() => apiKey.uuid),
     userId: p.uuid("user_id"),
     name: p.text("name").notNull(),
+    revision: p.integer("revision").default(1).notNull(),
     description: p.text("description"),
     // 'webpage' | 'price'
     monitorType: p.text("monitor_type").default("webpage").notNull(),
@@ -476,9 +478,13 @@ export const monitorSnapshots = p.pgTable("monitor_snapshots", {
     monitorUuid: p.uuid("monitor_uuid").notNull().references(() => monitors.uuid, { onDelete: "cascade" }),
     taskExecutionUuid: p.uuid("task_execution_uuid").references(() => taskExecutions.uuid),
     url: p.text("url").notNull(),
+    checkUuid: p.uuid("check_uuid").unique(),
+    monitorRevision: p.integer("monitor_revision").default(0).notNull(),
+    sequenceNumber: p.integer("sequence_number").default(0).notNull(),
+    contentComplete: p.boolean("content_complete").default(false).notNull(),
     // sha256 of normalized content
     contentHash: p.text("content_hash").notNull(),
-    // Inlined normalized content (truncated); large content moves to S3 later
+    // Complete normalized comparison content; detail APIs truncate only the preview
     content: p.text("content"),
     // Structured extraction result (price mode)
     extracted: p.jsonb("extracted"),
@@ -486,6 +492,7 @@ export const monitorSnapshots = p.pgTable("monitor_snapshots", {
     status: p.text("status").notNull(),
     capturedAt: p.timestamp("captured_at", { withTimezone: true }).default(sql`now()`).notNull(),
 }, (table) => [
+    p.index("monitor_snapshots_revision_idx").on(table.monitorUuid, table.monitorRevision, table.url, table.sequenceNumber),
     p.index("monitor_snapshots_monitor_url_idx").on(table.monitorUuid, table.url, table.capturedAt),
 ]);
 
@@ -503,12 +510,63 @@ export const monitorChanges = p.pgTable("monitor_changes", {
     diffText: p.text("diff_text"),
     // [{ path, from, to, delta? }]
     diffJson: p.jsonb("diff_json"),
+    checkUuid: p.uuid("check_uuid").unique(),
+    notificationStatus: p.text("notification_status").default("legacy").notNull(),
     // { meaningful, confidence, reason }
     judgment: p.jsonb("judgment"),
     notified: p.boolean("notified").default(false).notNull(),
     createdAt: p.timestamp("created_at", { withTimezone: true }).default(sql`now()`).notNull(),
 }, (table) => [
     p.index("monitor_changes_monitor_idx").on(table.monitorUuid, table.createdAt),
+]);
+
+// A check is created atomically with its scheduled execution. Scraping and
+// post-processing have separate durable states; only one active check per monitor.
+export const monitorChecks = p.pgTable("monitor_checks", {
+    uuid: p.uuid("uuid").primaryKey().references(() => taskExecutions.uuid, { onDelete: "cascade" }),
+    monitorUuid: p.uuid("monitor_uuid").notNull().references(() => monitors.uuid, { onDelete: "cascade" }),
+    jobUuid: p.uuid("job_uuid").references(() => jobs.uuid),
+    sequenceNumber: p.integer("sequence_number").notNull(),
+    monitorRevision: p.integer("monitor_revision").notNull(),
+    configSnapshot: p.jsonb("config_snapshot").notNull(),
+    state: p.text("state").default("pending").notNull(),
+    resultStatus: p.text("result_status"),
+    sourceError: p.jsonb("source_error"),
+    attempts: p.integer("attempts").default(0).notNull(),
+    nextAttemptAt: p.timestamp("next_attempt_at", { withTimezone: true }).notNull(),
+    leaseToken: p.text("lease_token"),
+    leaseExpiresAt: p.timestamp("lease_expires_at", { withTimezone: true }),
+    lastError: p.text("last_error"),
+    createdAt: p.timestamp("created_at", { withTimezone: true }).notNull(),
+    processedAt: p.timestamp("processed_at", { withTimezone: true }),
+}, (table) => [
+    p.uniqueIndex("monitor_checks_active_uidx").on(table.monitorUuid).where(sql`${table.state} IN ('pending', 'ready', 'processing')`),
+    p.index("monitor_checks_due_idx").on(table.state, table.nextAttemptAt),
+    p.index("monitor_checks_monitor_idx").on(table.monitorUuid, table.sequenceNumber),
+]);
+
+export const monitorNotifications = p.pgTable("monitor_notifications", {
+    uuid: p.uuid("uuid").primaryKey().$defaultFn(() => randomUUID()),
+    monitorUuid: p.uuid("monitor_uuid").notNull().references(() => monitors.uuid, { onDelete: "cascade" }),
+    checkUuid: p.uuid("check_uuid").notNull().references(() => monitorChecks.uuid, { onDelete: "cascade" }),
+    changeUuid: p.uuid("change_uuid").references(() => monitorChanges.uuid, { onDelete: "cascade" }),
+    idempotencyKey: p.text("idempotency_key").notNull().unique(),
+    channel: p.text("channel").notNull(),
+    eventType: p.text("event_type").notNull(),
+    recipient: p.text("recipient"),
+    payload: p.jsonb("payload").notNull(),
+    status: p.text("status").default("pending").notNull(),
+    attempts: p.integer("attempts").default(0).notNull(),
+    nextAttemptAt: p.timestamp("next_attempt_at", { withTimezone: true }).notNull(),
+    leaseToken: p.text("lease_token"),
+    leaseExpiresAt: p.timestamp("lease_expires_at", { withTimezone: true }),
+    lastError: p.text("last_error"),
+    createdAt: p.timestamp("created_at", { withTimezone: true }).notNull(),
+    deliveredAt: p.timestamp("delivered_at", { withTimezone: true }),
+}, (table) => [
+    p.index("monitor_notifications_due_idx").on(table.status, table.nextAttemptAt),
+    p.index("monitor_notifications_change_idx").on(table.changeUuid),
+    p.index("monitor_notifications_monitor_idx").on(table.monitorUuid, table.createdAt),
 ]);
 
 // ============================================================================

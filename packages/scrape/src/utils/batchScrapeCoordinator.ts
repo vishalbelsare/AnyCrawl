@@ -218,7 +218,7 @@ async function triggerBatchWebhook(
             { job_id: jobId, url: dbJob.url, ...payload },
             "batch_scrape",
             jobId,
-            dbJob.userId ?? undefined
+            { userId: dbJob.userId ?? undefined, apiKeyId: dbJob.apiKey ?? undefined }
         );
     } catch (e) {
         log.warning(`[BatchScrape] ${jobId} failed to trigger webhook ${eventType}: ${e}`);

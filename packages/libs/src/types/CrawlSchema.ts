@@ -50,6 +50,7 @@ const crawlOptionsSchema = z.object({
 const selectedSchema = baseSchema
     .pick({
         proxy: true,
+        humanize: true,
         formats: true,
         timeout: true,
         wait_for: true,

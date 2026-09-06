@@ -15,6 +15,8 @@ export interface TextDiffResult {
     diffText: string;
     /** Fraction of lines that differ (0 = identical, 1 = completely different) */
     ratio: number;
+    /** The rendered summary omits some edits; an AI judge must not assume it is complete. */
+    truncated?: boolean;
 }
 
 /**
@@ -130,7 +132,7 @@ function summaryDiff(
     lines.push(`... diff truncated (${prevMid.length}/${nextMid.length} lines compared)`);
 
     const ratio = Math.min(Math.max(differing, 1) / totalLines, 1);
-    return { changed: true, diffText: lines.join("\n"), ratio };
+    return { changed: true, diffText: lines.join("\n"), ratio, truncated: true };
 }
 
 // --- LCS helpers ---
@@ -252,6 +254,22 @@ export interface FieldDiff {
     from: any;
     to: any;
     delta?: number;
+    currency?: string;
+    fromCurrency?: string;
+}
+
+/** Find a price's currency in the nearest containing object, then its parents.
+ * Missing currency stays unknown; it must never be inferred from a country. */
+export function currencyForPath(value: any, path: string): string | undefined {
+    const segments = path.replace(/\[(\d+)\]/g, ".$1").split(".").filter(Boolean);
+    segments.pop();
+    while (true) {
+        const parent = segments.reduce((node, key) => node?.[key], value);
+        const currency = parent?.currency ?? parent?.currency_code;
+        if (typeof currency === "string" && /^[A-Za-z]{3}$/.test(currency)) return currency.toUpperCase();
+        if (!segments.length) return undefined;
+        segments.pop();
+    }
 }
 
 /**

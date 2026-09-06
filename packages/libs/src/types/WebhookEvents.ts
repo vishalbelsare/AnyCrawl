@@ -121,7 +121,9 @@ export interface MonitorEventPayload {
     summary?: MonitorCheckSummary;
     diff_text?: string;
     diff_json?: MonitorFieldDiff[];
-    judgment?: { meaningful: boolean; confidence: string; reason: string };
+    judgment?: { meaningful: boolean | null; confidence: string; reason: string; status?: "complete" | "unavailable" | "incomplete" };
+    check_id?: string;
+    change_id?: string;
     // Present on monitor.error events only
     error?: { message: string; code?: string };
     captured_at: string;

@@ -30,6 +30,7 @@ export * from "./managers/Event.js";
 export * from "./managers/Progress.js";
 export * from "./managers/Webhook.js";
 export * from "./managers/Scheduler.js";
+export { MonitorManager } from "./monitor/MonitorManager.js";
 export * from "./HttpClient.js";
 
 // Services

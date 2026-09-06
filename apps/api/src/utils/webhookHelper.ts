@@ -28,7 +28,7 @@ export async function triggerWebhookEvent(
                 },
                 resourceType,
                 jobId,
-                dbJob.userId ?? undefined
+                { userId: dbJob.userId ?? undefined, apiKeyId: dbJob.apiKey ?? undefined }
             );
         }
     } catch (e) {

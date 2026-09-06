@@ -148,6 +148,20 @@
       "when": 1786469378185,
       "tag": "0020_backfill_scheduler_webhook_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1788676882528,
+      "tag": "0021_monitor_workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1788683877889,
+      "tag": "0022_repair_sqlite_job_billing",
+      "breakpoints": true
     }
   ]
 }

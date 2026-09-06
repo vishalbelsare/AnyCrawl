@@ -32,11 +32,8 @@ function pickContentField(data: Record<string, any>): string {
 }
 
 /**
- * Apply diff_options.ignore_selectors by stripping matching CSS-selector-like
- * substrings from content. In text/markdown mode this is a best-effort removal
- * of lines that match the selector pattern verbatim — it is not a full HTML
- * DOM operation, which would require re-parsing. Full DOM removal is out of
- * scope for the MVP text diff path.
+ * Apply diff_options.ignore_selectors as literal substring filters on text
+ * lines. The legacy API field name does not imply CSS/DOM selector evaluation.
  */
 function applyIgnoreSelectors(content: string, ignoreSelectors: string[]): string {
     if (!ignoreSelectors || ignoreSelectors.length === 0) return content;
@@ -86,8 +83,8 @@ export function hashContent(normalized: string): string {
 }
 
 /**
- * Truncate inline content to the configured maximum length (default 256 KB)
- * before storing in `monitor_snapshots.content`.
+ * Legacy preview helper. Never use this result as stored comparison content;
+ * new monitor snapshots retain the complete normalized text.
  */
 export function truncateForStorage(content: string): string {
     const maxChars = config.monitor.maxInlineContentChars;

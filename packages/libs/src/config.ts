@@ -85,10 +85,17 @@ export const config = {
     },
 
     monitor: {
-        // Max characters of normalized content stored inline per snapshot
+        // API preview only; comparison uses complete content retained in the DB.
         get maxInlineContentChars(): number {
-            return parseIntEnv('ANYCRAWL_MONITOR_MAX_INLINE_CHARS', 262_144);
+            return parsePositiveIntEnv('ANYCRAWL_MONITOR_MAX_INLINE_CHARS', 262_144);
         },
+        get maxContentChars(): number { return parsePositiveIntEnv('ANYCRAWL_MONITOR_MAX_CONTENT_CHARS', 2_000_000); },
+        get leaseMs(): number { return parsePositiveIntEnv('ANYCRAWL_MONITOR_LEASE_MS', 120_000); },
+        get maxAttempts(): number { return parsePositiveIntEnv('ANYCRAWL_MONITOR_MAX_ATTEMPTS', 5); },
+        get retryDelayMs(): number { return parsePositiveIntEnv('ANYCRAWL_MONITOR_RETRY_DELAY_MS', 5_000); },
+        get pollMs(): number { return parsePositiveIntEnv('ANYCRAWL_MONITOR_POLL_MS', 5_000); },
+        // Opt-in: do not erase history merely because an installation upgrades.
+        get retentionDays(): number { return Math.max(0, parseIntEnv('ANYCRAWL_MONITOR_RETENTION_DAYS', 0)); },
     },
 
     email: {
@@ -146,6 +153,13 @@ export const config = {
         },
         get lightMode(): boolean {
             return process.env.ANYCRAWL_LIGHT_MODE !== "false";
+        },
+        get humanize(): boolean {
+            // Operator kill switch for the cloakbrowser human-behavior layer.
+            // Default enabled (the per-request `humanize` param drives actual behavior;
+            // its default "auto" only activates under stealth/retry). Set
+            // ANYCRAWL_HUMANIZE=false to hard-disable humanize for every request.
+            return process.env.ANYCRAWL_HUMANIZE !== "false";
         },
         get keepAlive(): boolean {
             const raw = process.env.ANYCRAWL_KEEP_ALIVE ?? process.env.ANYCRAWL_KEEPALIVE;

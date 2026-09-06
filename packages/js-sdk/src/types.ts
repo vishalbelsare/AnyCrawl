@@ -23,6 +23,14 @@ export type JsonOptions = {
 export type ProxyMode = 'auto' | 'base' | 'stealth';
 
 /**
+ * Human-like interaction behavior (mouse/keyboard/scroll). Browser engines (Playwright) only.
+ * - "auto": enable only when escalating (stealth proxy or a retry after a block)
+ * - "on": force human-like behavior from the first attempt
+ * - "off": never enable, even under stealth/retry
+ */
+export type HumanizeMode = 'auto' | 'on' | 'off';
+
+/**
  * Resolved proxy mode returned in responses
  * - "base": Using ANYCRAWL_PROXY_URL (default)
  * - "stealth": Using ANYCRAWL_PROXY_STEALTH_URL
@@ -45,6 +53,11 @@ export type ScrapeOptionsInput = {
      * - Custom URL: A full proxy URL string (e.g., "http://user:pass@proxy:8080")
      */
     proxy?: ProxyMode | string;
+    /**
+     * Human-like interaction behavior (browser engines only). Default "auto":
+     * only activates under stealth proxy or on a retry after a block.
+     */
+    humanize?: HumanizeMode;
     formats?: ScrapeFormat[];
     timeout?: number;
     retry?: boolean;
@@ -495,6 +508,7 @@ export type MonitorTarget = {
     url: string;
     engine?: 'auto' | 'cheerio' | 'playwright' | 'puppeteer';
     options?: Record<string, any>;
+    /** Read-only legacy metadata; fixed-country routing is unsupported for new requests. */
     location?: { country: string };
 };
 
@@ -527,23 +541,46 @@ export type CreateMonitorRequest = {
     metadata?: Record<string, any>;
 };
 
-export type UpdateMonitorRequest = Partial<CreateMonitorRequest> & { is_active?: boolean };
+export type UpdateMonitorRequest = Partial<Omit<CreateMonitorRequest, 'monitor_type' | 'goal' | 'extract_schema' | 'tags' | 'metadata'>> & {
+    is_active?: boolean;
+    goal?: string | null;
+    extract_schema?: Record<string, unknown> | null;
+    tags?: string[] | null;
+    metadata?: Record<string, unknown> | null;
+};
 
 export interface MonitorBase {
-    uuid?: string;
-    name?: string;
-    description?: string | null;
-    monitor_type?: MonitorType;
-    scheduled_task_uuid?: string;
-    targets?: MonitorTarget[];
-    goal?: string | null;
-    track_mode?: MonitorTrackMode;
-    is_active?: boolean;
-    created_at?: string;
-    updated_at?: string;
+    uuid: string;
+    name: string;
+    description: string | null;
+    monitor_type: MonitorType;
+    scheduled_task_uuid: string | null;
+    targets: MonitorTarget[];
+    goal: string | null;
+    track_mode: MonitorTrackMode;
+    extract_schema: Record<string, unknown> | null;
+    diff_options: CreateMonitorRequest['diff_options'] | null;
+    notify_options: MonitorNotifyOptions | null;
+    is_active: boolean;
+    is_paused: boolean;
+    pause_reason: string | null;
+    in_progress: boolean;
+    revision: number;
+    last_check_state: MonitorCheck['state'] | null;
+    last_check_error: string | null;
+    last_check_at: string | null;
+    cron_expression: string;
+    timezone: string;
+    next_execution_at: string | null;
+    last_execution_at: string | null;
+    tags: string[] | null;
+    metadata: Record<string, unknown> | null;
+    capabilities: { location: false; ignore_selectors: 'text_lines'; targets_per_check: 1 };
+    created_at: string;
+    updated_at: string;
 }
 
-export type Monitor = MonitorBase & Record<string, any>;
+export type Monitor = MonitorBase;
 
 export type MonitorCreateResponse = {
     monitor_id: string;
@@ -553,25 +590,76 @@ export type MonitorCreateResponse = {
 };
 
 export interface MonitorSnapshotBase {
-    uuid?: string;
-    monitor_uuid?: string;
-    url?: string;
-    content_hash?: string;
-    status?: 'new' | 'same' | 'changed' | 'removed' | 'error';
-    extracted?: Record<string, any> | null;
-    captured_at?: string;
+    uuid: string;
+    monitor_uuid: string;
+    task_execution_uuid: string | null;
+    check_uuid: string | null;
+    monitor_revision: number;
+    sequence_number: number;
+    url: string;
+    content_hash: string;
+    content_complete: boolean;
+    status: 'new' | 'same' | 'changed' | 'removed' | 'error';
+    captured_at: string;
 }
-export type MonitorSnapshot = MonitorSnapshotBase & Record<string, any>;
-
+export type MonitorSnapshotSummary = MonitorSnapshotBase;
+export type MonitorSnapshot = MonitorSnapshotBase & {
+    /** Detail endpoint only; text is a bounded preview. */
+    content?: string | null;
+    extracted?: unknown;
+    content_truncated?: boolean;
+    content_length?: number;
+};
+export type MonitorSnapshotDetail = MonitorSnapshotBase & {
+    content: string | null;
+    extracted: unknown;
+    content_truncated: boolean;
+    content_length: number;
+};
+export type MonitorJudgment = { meaningful: boolean | null; confidence: 'low' | 'medium' | 'high'; reason: string; status?: 'complete' | 'unavailable' | 'incomplete' };
+export type MonitorNotificationStatus = 'legacy' | 'none' | 'pending' | 'queued' | 'delivered' | 'failed' | 'skipped';
 export interface MonitorChangeBase {
-    uuid?: string;
-    monitor_uuid?: string;
-    url?: string;
-    change_type?: string;
+    uuid: string;
+    monitor_uuid: string;
+    check_uuid: string | null;
+    url: string;
+    change_type: 'content' | 'text' | 'price_up' | 'price_down' | 'stock' | 'new' | 'removed';
+    from_snapshot_uuid: string | null;
+    to_snapshot_uuid: string | null;
     diff_text?: string | null;
-    diff_json?: Array<{ path: string; from: any; to: any; delta?: number }> | null;
-    judgment?: { meaningful: boolean; confidence: string; reason: string } | null;
-    notified?: boolean;
-    created_at?: string;
+    diff_json: Array<{ path: string; from?: unknown; to?: unknown; delta?: number; currency?: string; fromCurrency?: string }> | null;
+    judgment: MonitorJudgment | null;
+    notified: boolean;
+    notification_status: MonitorNotificationStatus;
+    created_at: string;
+    notifications?: MonitorNotification[];
 }
-export type MonitorChange = MonitorChangeBase & Record<string, any>;
+export type MonitorChange = MonitorChangeBase;
+export type MonitorChangeFeedItem = Pick<MonitorChange, 'uuid' | 'monitor_uuid' | 'url' | 'change_type' | 'judgment' | 'notified' | 'notification_status' | 'created_at'> & { monitor_name: string; monitor_type: MonitorType };
+export type MonitorPage<T> = { data: T[]; pagination: { has_more: boolean; next_cursor: string | null } };
+export type MonitorPageParams = { limit?: number; offset?: number; cursor?: string };
+export interface MonitorCheck {
+    uuid: string;
+    sequence_number: number;
+    monitor_revision: number;
+    state: 'pending' | 'ready' | 'processing' | 'completed' | 'failed';
+    result_status: string | null;
+    source_error: { message: string; code?: string } | null;
+    attempts: number;
+    last_error: string | null;
+    created_at: string;
+    processed_at: string | null;
+}
+export interface MonitorNotification {
+    uuid: string;
+    check_uuid: string;
+    change_uuid: string | null;
+    channel: MonitorChannel;
+    event_type: string;
+    recipient: string | null;
+    status: 'pending' | 'processing' | 'retrying' | 'queued' | 'delivered' | 'failed' | 'skipped';
+    attempts: number;
+    last_error: string | null;
+    created_at: string;
+    delivered_at: string | null;
+}

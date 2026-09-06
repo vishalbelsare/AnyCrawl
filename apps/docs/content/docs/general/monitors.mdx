@@ -28,6 +28,7 @@ Monitors are built on top of [Scheduled Tasks](./scheduled-tasks). Creating a mo
 ```
 POST   /v1/monitors                         # Create a monitor
 GET    /v1/monitors                         # List monitors
+GET    /v1/monitors/changes                 # List changes across all monitors (feed)
 GET    /v1/monitors/:id                     # Get monitor details
 PATCH  /v1/monitors/:id                     # Update monitor
 DELETE /v1/monitors/:id                     # Delete monitor
@@ -192,7 +193,7 @@ Track a product price every 15 minutes with structured extraction:
 | `url` | string | Yes | - | Page URL to monitor |
 | `engine` | string | No | `"auto"` | `"auto"`, `"cheerio"`, `"playwright"`, or `"puppeteer"` |
 | `options` | object | No | - | Additional scrape options passed through to the worker |
-| `location` | object | No | - | Geo location override, e.g. `{ "country": "US" }` |
+| `location` | object | No | - | Unsupported for new targets; fixed-country routing is not available |
 
 ### Diff Options
 
@@ -220,11 +221,11 @@ Email notifications require SMTP configuration on self-hosted deployments. See [
 Each scheduled run follows this pipeline:
 
 1. **Scrape** — The backing scheduled task scrapes the target URL.
-2. **Normalize** — Content is normalized (main content extraction, selector filtering).
-3. **Snapshot** — A new snapshot is stored with a content hash.
-4. **Diff** — Text monitors use line-level diff; price/json monitors compare extracted fields.
-5. **Judge** — When `goal` is set, an AI judge filters noise before alerting.
-6. **Notify** — Webhook and/or email alerts are sent for meaningful changes.
+2. **Normalize** — Content is normalized (main content extraction, literal text-line exclusion).
+3. **Compare** — Text and JSON are compared independently; mixed mode considers both. Invalid extraction, including on the first check, produces an error.
+4. **Judge** — When `goal` is set, the judge receives both kinds of diff. Unavailable or incomplete judgment is recorded as unknown and preserves the change.
+5. **Commit** — Snapshot, change, durable notification intents and check completion commit together.
+6. **Deliver** — A recovery worker attempts each recipient/channel with bounded retries and records actual SMTP/HTTP delivery.
 
 ### Snapshot Status Values
 
@@ -232,7 +233,7 @@ Each scheduled run follows this pipeline:
 |--------|---------|
 | `same` | No meaningful change detected |
 | `changed` | Content or extracted fields changed |
-| `new` | First snapshot for this URL |
+| `new` | First valid snapshot for this configuration revision |
 | `error` | Scrape or processing failed |
 
 ## Managing Monitors
@@ -313,6 +314,19 @@ curl -X GET "https://api.anycrawl.dev/v1/monitors/:id/changes?limit=20" \
 ```javascript tab="JavaScript (SDK)"
 const changes = await client.getMonitorChanges(monitorId, { limit: 20 });
 const detail = await client.getMonitorChange(monitorId, changeId);
+```
+
+### Cross-Monitor Change Feed
+
+List detected changes across **all** of your monitors, newest first — the source
+for a unified "changes inbox". Rows are lightweight (monitor name/type, url,
+change type, AI judgment, timestamp) and omit the heavy diff payload; fetch the
+full diff per change via `GET /v1/monitors/:id/changes/:changeId`.
+
+```bash
+# Optional ?change_type= filters (e.g. content, price_up, price_down)
+curl -X GET "https://api.anycrawl.dev/v1/monitors/changes?limit=50" \
+  -H "Authorization: Bearer <your-api-key>"
 ```
 
 ### Example Change Record
@@ -455,3 +469,31 @@ The scheduler worker must be running to process `/check` requests. On self-hoste
 - [Webhooks](./webhooks) — Event notifications including monitor events
 - [Scrape API](./scrape) — Scrape options passed through targets
 - [JSON Mode](./json-mode) — Structured extraction used by price monitors
+
+## Reliable Checks, History and Delivery
+
+A check has durable `pending`, `ready`, `processing`, `completed` or `failed` state. Concurrent processing uses leases; an expired processor cannot publish the result twice. Only one check per monitor is active across scraping and post-processing. `skip` drops an overlapping cron run; `queue` delays it. Manual requests also respect the guard. Monitor-backed tasks do not count toward the ordinary scheduled-task quota.
+
+`GET /v1/monitors/:id` includes `in_progress`, `last_check_state`, `last_check_at`, `last_check_error`, `pause_reason` and `revision`. Use `is_active && !is_paused` for the effective state. HTTP 409 codes distinguish `MONITOR_PAUSED` and `MONITOR_CHECK_IN_PROGRESS`. Resume an auto-paused monitor directly.
+
+PATCH merges option siblings and validates the resulting configuration inside the transaction. `goal: null` clears the goal and extraction prompt; schema removal is only allowed when the final mode does not require it. `monitor_type` cannot be changed. Unknown top-level fields return 400. Target options cannot use templates. Changes to effective scraping, tracking mode, goal or ignored text lines create a new revision and baseline. Notification/threshold-only edits retain the baseline.
+
+Snapshot lists are slim. `GET /v1/monitors/:id/snapshots/:snapshotId` returns a bounded content preview and extracted data, with `content_truncated`, `content_length`, `content_complete` and `monitor_revision`. Complete comparison text is retained in the database. The default preview limit is 262,144 characters; the comparison limit is 2,000,000 characters. Oversized content is an error. Legacy incomplete snapshots remain readable but are not used as a new baseline.
+
+Snapshot, monitor-change and owner-feed lists return `pagination: {has_more, next_cursor}` alongside `data`. Send the returned cursor for the next page; offset remains available. Changes support `include_diff_text=false`, with full diffs fetched from change detail. IDs break timestamp ties, so new arrivals do not shift cursor pages.
+
+New `notified` values mean at least one actual SMTP acceptance or Webhook HTTP 2xx. `notification_status` distinguishes `none`, `pending`, `queued`, `delivered`, `failed` and `skipped`; `legacy` means the older boolean cannot prove delivery. Check detail uses `GET /v1/monitors/:id/checks`; per-recipient delivery history uses `GET /v1/monitors/:id/notifications`. Change detail also returns its `notifications`. Error checks send email when email is enabled. Missing SMTP configuration and temporary transport failures remain visible and retryable. Delivery is at least once; stable Webhook delivery IDs and email Message-IDs support deduplication.
+
+The recovery worker runs with the scheduler, or separately with `--queues=monitor`. Defaults: `ANYCRAWL_MONITOR_MAX_ATTEMPTS=5`, `ANYCRAWL_MONITOR_RETRY_DELAY_MS=5000`, `ANYCRAWL_MONITOR_LEASE_MS=120000`, `ANYCRAWL_MONITOR_POLL_MS=5000`. Set `ANYCRAWL_MONITOR_RETENTION_DAYS` to enable bounded history cleanup; default `0` retains history. Cleanup protects healthy baselines, retained references, pending deliveries and legacy records. Upgrading never replays old alerts automatically.
+
+`capabilities.location=false` means country locking is unavailable. `ignore_selectors` matches literal substrings of normalized text lines, not CSS. Price history should be grouped by URL, field path and known currency; loaded change points are not the complete price history.
+
+```ts
+const feed = await client.listMonitorChanges({ limit: 20 });
+const page = await client.getMonitorSnapshotsPage(monitorId, { limit: 20 });
+if (page.data[0]) {
+  const detail = await client.getMonitorSnapshot(monitorId, page.data[0].uuid);
+}
+const checks = await client.getMonitorChecks(monitorId);
+const deliveries = await client.getMonitorNotifications(monitorId);
+```

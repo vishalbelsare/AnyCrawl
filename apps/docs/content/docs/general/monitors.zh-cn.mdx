@@ -155,7 +155,7 @@ console.log("Monitor ID:", monitor.monitor_id);
 | 参数 | 说明 |
 |------|------|
 | `only_main_content` | 仅对比正文，默认 `true` |
-| `ignore_selectors` | 忽略的 CSS 选择器 |
+| `ignore_selectors` | 排除包含指定字面短语的文本行；不是 CSS 选择器 |
 | `min_change_ratio` | 最小变更比例（0–1） |
 
 ### notify_options
@@ -174,7 +174,7 @@ console.log("Monitor ID:", monitor.monitor_id);
 ## 变更检测流程
 
 1. **抓取** — 后台定时任务执行 scrape
-2. **标准化** — 提取正文、应用 selector 过滤
+2. **标准化** — 提取正文、应用字面文本行排除
 3. **快照** — 存储内容与 hash
 4. **Diff** — 文本 diff 或 JSON 字段对比
 5. **判断** — 设置 `goal` 时由 AI 过滤噪声
@@ -234,3 +234,29 @@ pnpm add @anycrawl/js-sdk
 - [Webhooks](./webhooks)
 - [Scrape API](./scrape)
 - [JSON Mode](./json-mode)
+
+## 检查恢复、状态与分页
+
+每次检查在 DB 中记录 pending → ready → processing → completed/failed，抓取终态与后处理意图一起提交。Worker 用 lease 与 fencing 恢复失败处理；快照、变化、通知意图及处理终态原子提交。同一 monitor 在抓取和后处理期间只有一个活跃检查，skip 跳过重叠 cron，queue 延后；手动检查也遵守单飞。监控不占普通 scheduled-task 配额。
+
+Monitor GET 返回 in_progress、last_check_state、last_check_at、last_check_error、pause_reason 和 revision。有效运行状态为 is_active && !is_paused；自动暂停直接 resume。409 的 code 分为 MONITOR_PAUSED 与 MONITOR_CHECK_IN_PROGRESS，不能统一当作“正在检查”。
+
+PATCH 在事务内合并并验证最终配置。嵌套 options 保留未提交的兄弟字段；goal=null 清除说明及抽取 prompt；price/json/mixed 必须保留可用 schema。monitor_type 不支持修改，未知顶层字段返回 400，target options 不支持模板。有效抓取、模式、goal 或文本排除规则变化会开始新 revision 的基线；仅通知/阈值变化保留原基线。复杂 JSON schema 在请求和 UI 编辑过程中保留原结构。
+
+首次无效抽取返回 error，不建立健康基线。完整正文保存在数据库；快照详情 `/v1/monitors/:id/snapshots/:snapshotId` 返回预览，含 content_truncated/content_length/content_complete/monitor_revision。预览默认 262144 字符，比较正文上限默认 2000000 字符；超过比较上限是错误，不是 same。旧不完整正文保留历史，但不参与新基线。
+
+快照、单 monitor changes 和 `/v1/monitors/changes` 返回 `{success,data,pagination:{has_more,next_cursor}}`。下一页使用服务器 cursor，offset 仍兼容；时间相同时按 uuid 排序。changes 可传 include_diff_text=false，展开时读取单条详情。
+
+notified 仅在至少一个 SMTP 收件人被接受或 Webhook HTTP 2xx 后为 true。notification_status 区分 none/pending/queued/delivered/failed/skipped；legacy 的历史 boolean 无法证明送达。`/v1/monitors/:id/checks` 返回检查历史，`/v1/monitors/:id/notifications` 返回按渠道/收件人的状态与错误，change detail 也包含 notifications。错误检查同样可以发 email；SMTP 未配置或临时失败会有限重试并保留原因。稳定 Delivery-ID/Message-ID 支持识别重试，但不保证邮件 exactly-once。
+
+AI 判断服务不可用或组合 diff 输入不完整时记录 meaningful=null、status=unavailable/incomplete，保留变化证据。固定 country routing 不支持，capabilities.location=false；不能用 location 字段证明真实出口。价格图按 URL/path/currency 分组，并说明只展示已加载的变化点。
+
+恢复 Worker 随 scheduler 启动，也可单独 `--queues=monitor`。默认 ANYCRAWL_MONITOR_MAX_ATTEMPTS=5、RETRY_DELAY_MS=5000、LEASE_MS=120000、POLL_MS=5000（后三者均以 ANYCRAWL_MONITOR_ 为前缀）。ANYCRAWL_MONITOR_RETENTION_DAYS 默认 0；显式启用后分批清理新工作流历史，保护健康基线、保留引用、待送达记录及 legacy。升级不自动补发旧告警。
+
+```ts
+const feed = await client.listMonitorChanges({ limit: 20 });
+const page = await client.getMonitorSnapshotsPage(monitorId, { limit: 20 });
+if (page.data[0]) await client.getMonitorSnapshot(monitorId, page.data[0].uuid);
+const checks = await client.getMonitorChecks(monitorId);
+const notifications = await client.getMonitorNotifications(monitorId);
+```
